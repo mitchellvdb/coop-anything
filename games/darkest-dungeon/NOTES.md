@@ -549,6 +549,15 @@ start and after each turn, and trace raw draws with real callers around room ent
   co-op switches on only when the profile mounted in device slot 5 is one of them (read only); later an in-game
   overlay toggle. Profile 9 is always refused.
 
+## Framework 0.2 on the owner's PC (2026-10-30 23:50): co-op campaign check works
+
+- `coop_slots=3` in ddcoop.ini; started via start-coop.ps1 (backup of all saves, `-nosave`).
+- Log: READY 18/18; "co-op campaigns: menu slot(s) 3"; loading slot 3 → `steam_profile_2` "co-op allowed"; main menu →
+  "no campaign loaded"; loading slot 1 → `steam_profile_0` "single player". Read path confirmed:
+  `*0x141174ac8` → `+0x10 + 5*8` (device) → `+0x20` (name).
+- Caveat for when co-op acts on this: the campaign menu briefly mounts every profile in device slot 5 to list them
+  (test 8), so co-op must require a fully loaded campaign (roster present / after LoadCampaign), not a momentary mount.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -635,3 +644,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test on the owner's PC: OK (0 failures), so CNG matches the published vectors.
 - 2026-10-30: save system mapped; owner chose a dedicated co-op slot + -nosave tests. Kit 8 (slot mapping) sent.
 - 2026-10-30: runtime test 8: menu position k = steam_profile_{k-1}; profile 9 is the game's restore area; co-op slots become an ini setting.
+- 2026-10-30: framework 0.2 test passed: slot 3 co-op allowed, slot 1 single player.
