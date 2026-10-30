@@ -467,6 +467,21 @@ start and after each turn, and trace raw draws with real callers around room ent
 - Probe v7 / test kit 7: unit snapshot (side, class, HP, current) at every AI decision + Party::OnRaidStart call
   stack (step 1) + named draw trace + named reseed. Runs A and B reuse kit 6's dungeon-entrance save.
 
+## Runtime test 7 (probe v7, determinism take 3, 2026-10-30): **game state identical** (combat deterministic)
+
+- Same setup as test 6 (both runs continue from one dungeon-entrance save, `-randomseed 424242 -enable_autobattle
+  -nosave`), now with a unit snapshot at every AI decision. Owner: the fight looked the same.
+- **All 9 snapshots identical in A and B**: the same 3 monsters (`skeleton_courtier_A`, 2x `cultist_brawler_A`) vs
+  shieldbreaker, highwayman, vestal, occultist; the same HP for every unit at every decision; the same round order;
+  the same current unit; the same position in the random stream (rng seq 33, 97, 115, 160, 177, 188, 266, 279, 318).
+- RNG traces: 35 of 36 calling functions identical, 0 diverging; the one difference is `0x1405f9ce6` (Rules) after the
+  fight (quit timing).
+- Conclusion: from the same dungeon save with the same inputs, combat runs identically, game state included. The test-6
+  observation (4 vs 3 enemies) cannot be re-checked (no unit logging then); test 7 settles the question for this setup.
+- Step 1, half: `Party::OnRaidStart` fired only on the dungeon load (`restoring=1`, params null). Stack: `0x1405f7170` <-
+  `0x140600f72` (raid init `0x140600370`) <- `0x1403d4913` (`Darkest::RaidStart` `0x1403d44b0`) <- `0x1403f3dce`
+  (app-state lambda `0x1403f3d60`) <- `0x14036e7fd` (main loop). The fresh-embark call (run B step 11) is not in the log.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -548,3 +563,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: owner chose to keep our own mod, using DD Co-op as a reference; its changelog lessons recorded.
 - 2026-10-30: runtime test 6: Battle stream consumption identical (309/309), but the owner saw different enemies → full determinism NOT proven (corrected). Turn order likely uses Rules. Step 1 still open.
 - 2026-10-30: kit 7 built (unit snapshots to compare game state; Party::OnRaidStart stack for step 1).
+- 2026-10-30: runtime test 7: identical game state in A and B (9/9 snapshots, 35/36 RNG callers, 0 diverging). Combat deterministic from the same save.
