@@ -386,6 +386,39 @@ What its README says it does (claims, not verified by us):
 Against the owner's goals: fights with own heroes and one copy per player = covered. **Parallel town work by all
 players = not covered (host only).** Walking/curios/camping = host only.
 
+Owner's decision (2026-10-30): keep building our own mod and use DD Co-op as a reference only (its docs and
+observable behaviour; it has no license, so no decompiling of its DLL and no copied code).
+
+### Lessons from its CHANGELOG (paraphrased; source: DD Co-op CHANGELOG 0.3-1.1.1)
+
+Desync causes they hit (our lockstep must handle each):
+- Turn order split between PCs in about one fight in four, until rolled from the host's dice. → Find which
+  generator initiative uses (test kit 6).
+- Torch level and damage-over-time while walking advanced independently per PC (time-driven, not step-driven).
+- Curio/trap effects came out differently when two happened close together; trap debuffs hit only the host.
+- Surprise/ambush decided per PC; the host must decide.
+- Guests used un-upgraded skills (5 % accuracy per level) → same dice, different hits. (Our full save at each visit +
+  replicated upgrades covers this.)
+- Monsters summoned mid-round got different identities per PC (attacks hit the wrong unit) → units need a shared id.
+- Corridors were mirrored on the guest when entered from the far end (fight/trap/curio on different tiles).
+- The game reloads a fight one turn early if a unit died earlier in the round (save/restore quirk).
+- Resolve checks at 100 stress must roll the same on all PCs (consume the same stream).
+- A broken frame time passed to the game froze timed logic (Farmstead "Onward").
+
+Design choices worth copying:
+- Lockstep **plus host-authoritative correction** (HP, stress, stun, death take the host's value when they drift);
+  full reload from the host's save only for larger differences, or on demand ("fix desync").
+- Barrier: every game waits while a player loads in; no turn time limits; a dropped player keeps their heroes.
+- Separate co-op save folder; saves written complete-or-nothing; one game per campaign (lock); save points;
+  version + protocol checks; DLC and Workshop-mod mismatch checks (wait until the mod list has loaded).
+- Direct TCP needs a password and encryption (they use a password proof + AES-256-GCM).
+- Crash dumps and a bug-report zip with personal data masked; ping; gentle reconnect.
+- Their mod went dead on each Steam update (14 Sep and 23 Sep 2026) until re-targeted. → We should find
+  addresses by byte pattern, not hard-code them. (Our exe, linked 21 Sep, matches the 23 Sep update.)
+- Thread safety: two game threads used their message queue at once and crashed.
+- In town, never reload/sync while a hero is being dragged ("held on the mouse").
+- Several game windows on one PC work with the Steam build (their splitscreen) → multi-instance bot QA is feasible.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -463,3 +496,4 @@ players = not covered (host only).** Walking/curios/camping = host only.
 - 2026-10-30: departure path traced to app+0x16a0 (writer found at runtime next). Determinism test designed: dev options + full RNG trace (test kit 5).
 - 2026-10-30: runtime test 5: determinism inconclusive (different maps/inputs); Rules/Battle streams and the seeds to control found. Kit 6 sent.
 - 2026-10-30 evening: owner pointed out DD Co-op v1.1.1 (Nexus 2282). Stopped per rule 6; own work paused pending the owner's decision.
+- 2026-10-30: owner chose to keep our own mod, using DD Co-op as a reference; its changelog lessons recorded.
