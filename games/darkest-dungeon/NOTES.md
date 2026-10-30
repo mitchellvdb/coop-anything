@@ -60,6 +60,19 @@ symbols whose namespace contains the owner name, decompile the functions that wr
   (`0x14060ab30`) only logs "Received message from external subsystem. Checking victory conditions."
   and checks victory. It does not carry the skill choice.
 
+## Controller input (same build)
+
+- The exe imports 61 SDL2 functions from the loose `SDL2.dll` (proxy candidate), including
+  `SDL_GameControllerOpen/GetButton/GetAxis/Update`, `SDL_NumJoysticks`, `SDL_PollEvent`.
+- Controller events are switched off (`SDL_GameControllerEventState(SDL_IGNORE)`, error string in exe).
+  Controllers are polled instead.
+- `0x14028a400`: the controller manager. It loops `SDL_NumJoysticks()`, opens every
+  `SDL_IsGameController` device into the handle array `0x14117ceb0` (count `DAT_14117d018`), and each
+  frame calls `SDL_GameControllerUpdate()` then reads buttons 0-4,6-14 and axes 0-5 of **every** handle,
+  merged into one input. It also sets a flag "more than one joystick" (`+0x2405`).
+- So several controllers already drive the game at once. Each has its own handle, which lets a proxy
+  tell players apart.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -73,6 +86,10 @@ symbols whose namespace contains the owner name, decompile the functions that wr
   No PvP/PlayFab code runs, so `ReportSuspiciousMatch` can never fire. The PvP mailbox
   (`brain+0x118`) is a fallback, but it is only reached for non-hero actors in `arena_mp`.
 - With a host-authoritative design + streamed view, the guests need no deterministic simulation.
+- Revised MVP (owner: town management open to everyone): a proxy `SDL2.dll` wraps
+  `SDL_GameControllerGetButton/GetAxis` and returns "not pressed" for a controller that may not act
+  now. In town everyone passes; on a hero's combat turn only the owner's controller passes. Friends
+  join via Parsec, so each gets their own virtual controller (unverified). No guest app needed.
 - Explicit `prng_minstd` passing suggests deterministic, seed-driven combat (PvP needs both sides to agree).
 - Fairness boundary (rule 10): never use the PlayFab matchmaking/ranked service or its
   cheat reporting. Reuse in-game turn code over a direct friend-to-friend transport only.
@@ -97,3 +114,4 @@ symbols whose namespace contains the owner name, decompile the functions that wr
   against the Steam base game (no DLC) for now.
 - 2026-10-30: Gate 1 static pass on the exe strings and PE headers: the PvP netcode and network-AI skill path found.
 - 2026-10-30: Ghidra 12.2 headless on the x64 exe (11 min, 12G heap). Combat input path mapped; Gate 1 = go.
+- 2026-10-30: owner wants town open to everyone. Controller manager mapped; design moves to controller-slot ownership through a proxy SDL2.dll.
