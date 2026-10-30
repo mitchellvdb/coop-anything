@@ -260,9 +260,40 @@ Found via the sound strings their commit handlers play (`str:` mode of Decompile
 - Party composition sound/narration: `0x14068bc00` ("/ui/town/party_comp", "combo"), `0x14068cb40`.
 - Nomad wagon sell candidate: `0x14069b400` (wallet add). Wallet-deduct callers not yet explained:
   `0x140668d50`, `0x140686cf0`, `0x140687780`, `0x140689d20`, `0x1406c6590`, `0x1407e2ae0`, `0x140532b50`.
-- Probe v4 sent: execute breakpoints on wallet deduct/add (logs caller), item transfer `0x1405d4910`,
+- Probe v4 (ran, see runtime test 4): execute breakpoints on wallet deduct/add (logs caller), item transfer `0x1405d4910`,
   heirloom exchange `0x14067a550`; byte diffs of every roster record (0x1560 bytes) and the campaign
   object (0x2000 bytes), with per-byte noise suppression.
+
+## Runtime test 4 (probe v4, wallet breakpoints + memory diffs, 2026-10-30)
+
+Memory-diff method worked: per-byte noise suppression only had to silence `entry+0x1548/0x1549/0x154a`
+(a per-hero timer). One diff line per real change.
+
+| Action | Seen | Function (caller of wallet op) | Notes |
+|---|---|---|---|
+| Wallet load | add per currency on campaign load | `0x14055e34d` | 8 currencies |
+| Guild skill level (1000 gold) | deduct | `0x140591088` = inside buy_upgrade | known path |
+| **Nomad wagon buy** (7500 gold) | deduct | `0x140686e57` → **`0x140686cf0`** | |
+| **Nomad wagon sell** (+750 = 10 %) | add | `0x14069b48e` → **`0x14069b400`** | |
+| **Provisions buy** (2 food, -75 each) | deduct gold + second currency (0) | `0x140689f7d`/`0x140689f92` → **`0x140689d20`** | NOT `0x14068a2b0` (another route); `0x1405d4910` did not fire |
+| Provisions return (+75) | add | `0x1407df58d` → `0x1407df430` | as mapped |
+| **Leave provisions without embarking** | add = refund of everything bought | `0x1406d3e70`/`0x1406d3e8d` (also on entering, amount 0) | provisions only matter at departure |
+| Heirloom exchange | not tested (not enough heirlooms) | | |
+
+- **Trinket equip** (Reynauld = roster id 1): `entry+0x123c` 0→1 (equip) and 1→0 (unequip) = slot occupied flag;
+  `campaign+0xeac` 3→2→3 = number of trinkets in the estate store. `entry+0x468` (vector realloc) and `entry+0xcfc`
+  (floats 0.04 / -1.0) are derived stats. The trinket id itself did not change (the slot kept the old id). The game
+  does not allow moving a trinket directly from hero to hero.
+- **Combat skill selection**: `entry+0x1368` low byte e0→dc→e0 = end pointer of a `vector<u32>` at
+  `entry+0x1360..+0x1368` (one skill removed, one added). Likely the same vector the UI reads at `hero+0x1328`,
+  i.e. the Hero object starts at `entry+0x38` (unverified).
+- **Party membership**: `entry+0x1540` = hero location: **0 = in the expedition party**, 1 = roster, 2 = in a
+  building. Put-in/swap/remove gave exactly 16 in, 29 out, 1 in, 2 out, 17 in.
+- **Party order** is not in the roster records nor in campaign[0..0x2000]. Embark: validation `0x140583360` → confirm
+  dialog `0x140583a40` (only builds the yes/no dialog); the departure is in its "yes" callback (not found yet).
+- Autosave writes a hero name and "persist.roster.json" into campaign buffers (`+0x170`, `+0x440`): not an action.
+- After quitting to the menu the probe read an 18-hero roster at `campaign+0x728` (alt flag set) = the Butcher's
+  Circus roster; not the campaign.
 
 ## Derived
 
@@ -336,3 +367,4 @@ Found via the sound strings their commit handlers play (`str:` mode of Decompile
 - 2026-10-30: correction: hero placement commits on lock-in, not on window close.
 - 2026-10-30: provisions (buy/return) and heirloom exchange mapped statically.
 - 2026-10-30: trinkets/skills/party: static leads only; switched to runtime diffing (probe v4, test kit 4).
+- 2026-10-30: runtime test 4: wagon buy/sell, provisions buy/refund, trinket flag, skill vector, party membership found; party order still open (at departure).
