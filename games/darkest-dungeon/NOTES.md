@@ -338,6 +338,28 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - Probe bug found and fixed before v5 shipped: the v3/v4 hit cap returned before setting the resume flag; on an
   execute breakpoint that would loop forever. Earlier runs stayed under the cap.
 
+## Runtime test 5 (probe v5, determinism take 1, 2026-10-30): inconclusive, but useful
+
+- Setup: two runs with `-randomseed 424242 -enable_autobattle -nosave`, same quest and party, autobattle fight.
+  `-nosave` worked (run B started in the hamlet again). Autobattle worked without a key.
+- The runs were NOT the same situation: the map differed (map seed comes from `rand_s`, as predicted), so the
+  dungeon events differed (curio + trap disarmed vs. trap triggered), and the town clicks differed.
+- Named random streams exist: **`Rules`** (seeded by `-randomseed`; starts at 424242 in both runs) and **`Battle`**
+  (own seed: 836305996 in A vs 407629937 in B). Combat draws go through `Battle`.
+- Lesson: comparing only generator states is too weak; minstd from one seed always produces the same states. Compare
+  (state, caller). `Rules` was then identical for only 7 draws, diverging in the town phase where the input already
+  differed, so this is not evidence of nondeterminism.
+- Probe weaknesses found: (1) threads created at load/departure were armed up to 2 s late, so the raid-load
+  breakpoint and the run-A campaign-load reseeds were missed (step 1 not captured); (2) the logged caller was often
+  the PRNG's own int/bool wrapper (`0x14028e355`, `0x14028e449`, `0x14028deee`), not game code.
+- Reseeds at campaign load (run B), all from `rand_s`-like values: `0x14054cb4b` (roster load), `0x14058cad9`,
+  `0x1405640b9`, `0x140563363`. With the map seed and the `Battle` seed, these are what the co-op host must set.
+- Raw generators are dominated by cosmetic, frame-dependent callers (e.g. `0x1407194fc`: 53,610 equal draws, then
+  diverges with timing).
+- Probe v6 / test kit 6: new threads armed at once (DLL_THREAD_ATTACH), real game caller (first frame outside
+  `0x14028d000-0x14028f000`), named-stream reseeds caught (`0x14028e030`), raw draws dropped; runs A and B both
+  continue from ONE dungeon save made in a preparation run P (which also embarks twice for the step-1 capture).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -413,3 +435,4 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - 2026-10-30: runtime test 4: wagon buy/sell, provisions buy/refund, trinket flag, skill vector, party membership found; party order still open (at departure).
 - 2026-10-30: party order solved: RaidStartParameters.heroes (params+0x208), index = rank. Departure message = {quest, heroIds[4], provisions, seed}.
 - 2026-10-30: departure path traced to app+0x16a0 (writer found at runtime next). Determinism test designed: dev options + full RNG trace (test kit 5).
+- 2026-10-30: runtime test 5: determinism inconclusive (different maps/inputs); Rules/Battle streams and the seeds to control found. Kit 6 sent.
