@@ -5,7 +5,8 @@ Goal: host-authoritative co-op where each friend owns heroes in the party.
 
 ## Game identity
 
-- Store: Steam (app 262060). Platform tested: Windows.
+- Store: Steam (app 262060). Platform tested: Windows. Base game only, no DLC: co-op targets
+  base-game combat first. DLC support comes later, tested on legitimately owned DLC.
 - Build id: unknown (not recorded yet).
 - Version: unknown.
 - SHA-256 of main exe: unknown.
@@ -41,3 +42,5 @@ Goal: host-authoritative co-op where each friend owns heroes in the party.
 ## Log
 
 - 2026-10-30: triage done, no prior work. Owner chose to build a real mod over streaming.
+- 2026-10-30: claim issue https://github.com/cranebeaker/coop-anything/issues/267. Building
+  against the Steam base game (no DLC) for now.
