@@ -598,4 +598,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: kit 7 built (unit snapshots to compare game state; Party::OnRaidStart stack for step 1).
 - 2026-10-30: runtime test 7: identical game state in A and B (9/9 snapshots, 35/36 RNG callers, 0 diverging). Combat deterministic from the same save.
 - 2026-10-30: build phase started: framework 0.1, wire format, host-authority town sync (all unit/fuzz/fake-world tested).
-- 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test kit sent.
+- 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test on the owner's PC: OK (0 failures), so CNG matches the published vectors.
