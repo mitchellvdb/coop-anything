@@ -243,6 +243,27 @@ Found via the sound strings their commit handlers play (`str:` mode of Decompile
   the nomad wagon (trinkets); `0x140674160` only picks the buy sound ("/ui/town/buy", "buy_free", "buy_shard").
 - Not runtime-confirmed yet (a probe v4 could add these to the execute breakpoints).
 
+## Trinkets, skill selection, party (static leads, runtime test 4 pending)
+
+- Classes: `EquipmentSlotInterface`, `EquipmentDragObject`, `TrinketDropAreaHeroInterface` (vftables
+  `0x140eb4aa0`, `0x140eb51b8`), `TrinketDropAreaInventoryInterface` (`0x140eb0770`, `0x140eb0c40`),
+  `RealmInventory` (estate trinket storage, `RealmInventoryChangedEvent`), `InventoryModifiedEvent`,
+  `NomadWagon@Building`, `NomadWagonDisplay`, `BaseTrinketSupply`/`ShardTrinketSupply@Store@Building`,
+  `PartySetupDisplay` (vftable `0x140eb4d60`), `PartyBuilderDisplay`, `EmbarkParty`, `EmbarkTownControllerState`.
+- Error string mentions `Hero::SwapTrinket` ("target trinket id %u not found in library"); its function is not found yet.
+- `0x1407ef030(widget, hero)`: refresh that plays "/ui/town/character_equip"/"_unequip" by comparing
+  `0x1405c96e0(hero)` (count from `0x1405caf20` + 1, 0 for a corpse; probably trinket slots) and the size of
+  the `u32` vector at `hero+0x1328..+0x1330` (probably the selected combat skills; embark checks
+  "message_not_full_skills").
+- Embark validation `0x140583360` ("message_not_full_party", "message_not_full_skills",
+  "message_not_trinkets_equipped") → `0x140583a40` ("town_provision_embark_yes/no").
+- Party composition sound/narration: `0x14068bc00` ("/ui/town/party_comp", "combo"), `0x14068cb40`.
+- Nomad wagon sell candidate: `0x14069b400` (wallet add). Wallet-deduct callers not yet explained:
+  `0x140668d50`, `0x140686cf0`, `0x140687780`, `0x140689d20`, `0x1406c6590`, `0x1407e2ae0`, `0x140532b50`.
+- Probe v4 sent: execute breakpoints on wallet deduct/add (logs caller), item transfer `0x1405d4910`,
+  heirloom exchange `0x14067a550`; byte diffs of every roster record (0x1560 bytes) and the campaign
+  object (0x2000 bytes), with per-byte noise suppression.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -314,3 +335,4 @@ Found via the sound strings their commit handlers play (`str:` mode of Decompile
 - 2026-10-30: runtime test 3: upgrade request fully decoded (class.item hash, level char, hero id); recruit/dismiss confirmed; provisions and heirloom exchange found as extra actions.
 - 2026-10-30: correction: hero placement commits on lock-in, not on window close.
 - 2026-10-30: provisions (buy/return) and heirloom exchange mapped statically.
+- 2026-10-30: trinkets/skills/party: static leads only; switched to runtime diffing (probe v4, test kit 4).
