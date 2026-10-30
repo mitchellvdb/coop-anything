@@ -535,6 +535,20 @@ start and after each turn, and trace raw draws with real callers around room ent
   `profile_8` / `steam_profile_8`; test kit 8 (probe v8: mount / remove-directory / LoadCampaign breakpoints,
   `-nosave`) checks which storage is mounted for which menu position.
 
+## Runtime test 8 (probe v8, `-nosave`, 2026-10-30): save slots mapped
+
+- At startup the game mounts "steam_storage" in device slot 4 (from `0x140384ebe`): runtime confirmation that with
+  Steam, campaign saves go through Steam storage.
+- The campaign menu reads `steam_profile_0..8` by mounting each in device slot 5 (`0x14041657b`, `0x14040fa74`):
+  **9 campaign slots, menu position k = `steam_profile_{k-1}`**. Owner's slots: 1 and 2 = own campaigns, 3 = "cooptest".
+- Loading menu slot 3 mounted `steam_profile_2` in device slot 5 (`0x140417c65` select, `0x1403dab59`, `0x1403d821d`
+  in the load path), then **`steam_profile_9` in device slot 9** (`0x1403d82b4`), next to SetSaveRestoreDirectory:
+  profile 9 is the game's own save-restore area, **never a co-op slot**. Then `Darkest::LoadCampaign` (from `0x1403db56a`).
+- Back to the menu: slots 0..8 read again. No StorageRemoveDirectory command at any point.
+- Plan (owner's request): the co-op slots become a setting, `coop_slots = 3` in `ddcoop.ini` (menu positions, a list);
+  co-op switches on only when the profile mounted in device slot 5 is one of them (read only); later an in-game
+  overlay toggle. Profile 9 is always refused.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -620,3 +634,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: build phase started: framework 0.1, wire format, host-authority town sync (all unit/fuzz/fake-world tested).
 - 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test on the owner's PC: OK (0 failures), so CNG matches the published vectors.
 - 2026-10-30: save system mapped; owner chose a dedicated co-op slot + -nosave tests. Kit 8 (slot mapping) sent.
+- 2026-10-30: runtime test 8: menu position k = steam_profile_{k-1}; profile 9 is the game's restore area; co-op slots become an ini setting.
