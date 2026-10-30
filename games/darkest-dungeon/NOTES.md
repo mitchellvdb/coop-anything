@@ -295,6 +295,20 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - After quitting to the menu the probe read an 18-hero roster at `campaign+0x728` (alt flag set) = the Butcher's
   Circus roster; not the campaign.
 
+## Departure: RaidStartParameters (static, same build)
+
+- `RaidStartParameters.heroes` = `vector<Hero*>` at `params+0x208..+0x210`, 1..`c_MaxHeroes` (4) entries; a null
+  entry is an empty slot (assert "(raid_start_parameters.heroes.size() >= 1 && ... <= c_MaxHeroes)").
+- `0x1405f7170` = `Party::OnRaidStart(party, restoring, params, quests*, questIndex)`: copies `params+0x208`
+  into the party (`0x1404729a0`), then for index i calls `0x140479ee0(hero, 1 << i)` = rank bit i, and
+  `0x1405c2a90(hero)`. So **vector index = party position (0 = front rank)**. It also copies `params+0x10`
+  (probably the provisions inventory) to `party+0x218`, and `params+0x240`/`+0x244` to `party+0x230`/`+0x234`;
+  quest entries are 200 bytes (`+0x28` copied to `party+0x1c`).
+- `0x140600370(restoring, params)` = raid init (caller `0x1403d44b0`, app state machine), passes `pRaidStartParameters`.
+- `0x140552f20` = `RaidStartEndLogItem` ctor (campaign log of the departure; reads the same heroes vector).
+- Still open: the function that fills `RaidStartParameters` at departure (the "yes" callback of the embark
+  dialog `0x140583a40`). That is where co-op injects the host's lineup, provisions and seed.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -368,3 +382,4 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - 2026-10-30: provisions (buy/return) and heirloom exchange mapped statically.
 - 2026-10-30: trinkets/skills/party: static leads only; switched to runtime diffing (probe v4, test kit 4).
 - 2026-10-30: runtime test 4: wagon buy/sell, provisions buy/refund, trinket flag, skill vector, party membership found; party order still open (at departure).
+- 2026-10-30: party order solved: RaidStartParameters.heroes (params+0x208), index = rank. Departure message = {quest, heroIds[4], provisions, seed}.
