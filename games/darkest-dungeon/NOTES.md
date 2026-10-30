@@ -182,6 +182,24 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   4. slot[`activity+0x90`] = {heroId, 1, vfunc[+0x68]}; `vfunc[+0x50](this, slot, heroId)`; `activity+0x90 = -1`.
   Callers: UI commit `0x14067ece0` (sets `activity+0x90` from the widget, hero id from `hero+0x130c`) and `0x140532dc0` (not read).
 
+## Town actions v2: model functions (static, to be confirmed by runtime test 3)
+
+| Action | Function | Payload | Notes |
+|---|---|---|---|
+| Buy upgrade (blacksmith weapon/armour, guild skills, buildings, probably camping skills) | `0x140590da0(request*)` → 1 on success | 12 bytes `{u32 tree, u8 code, u32 owner}` (owner meaning unconfirmed) | checks prerequisites (`campaign+0x1808`) and cost against the wallet list `campaign+0xe70`, pays, `0x14055dda0(campaign+0xe50)`, `0x140550730`, `0x1405907f0`, notifies upgrade listeners (`vfunc+0x10(listener, request)`); purchased-set map `DAT_142b54640` keyed by the request |
+| Upgrade lookup | `0x140471f40(treeId, code)` | | tree table `DAT_142c29fa0` (0x70 per tree, id at +0x40, levels map at +0x60 keyed by byte) |
+| Upgrade UI commit | `0x1406c8e60(ctx, code)` (relay `0x1406ca3c0`); request = {ctx+0x90, code, ctx+0x94} | | tree type by id: building `DAT_142a70a74` (→ `0x140589e00(campaign+0x1138, ...)` + narration), trainer `DAT_142a70728`/`DAT_142a70a78`, armour `DAT_142a70bd8`, weapon `DAT_142a70724`; sounds only |
+| Blacksmith refresh | `0x14065e720` (relay `0x14065edc0`) | | `0x1405c9da0` recompute gear, fires `HeroWeaponAndArmourUpgradedEvent{hero+0x130c, hero+0x12bc weapon lvl, hero+0x12c0 armour lvl}` |
+| Assign hero to building | `0x14052c4b0(activity, result, heroId)` | slot in `activity+0x90` | confirmed by runtime test 2 |
+| Dismiss hero | `0x1406a8300(this, heroId)` | hero id | only fires `HeroDismissedEvent{heroId}`; the roster removes the hero in a listener |
+| Recruit hero | `0x1406b7860(storePanel*, hero*, index)` | hero id (`hero+0x130c`) | fires `HeroRecruitedEvent{heroId}` via `0x1406b9120`; then clears the candidate flag (`+0x1538`, stagecoach records of 0x1540 at store+0x68), increments `campaign+0x1708`, saves roster/town. Recruiting is free |
+
+- Event vftables: `HeroRecruitedEvent` `0x140e6bfa8`, `HeroDismissedEvent` `0x140e6c028`.
+- Recruit and dismiss are event-driven: the event is the command. Co-op must also mirror the recruit side
+  effects (candidate flag, counter); otherwise two players could recruit the same stagecoach hero.
+- Not mapped yet: trinket equip/unequip, provisions at embark, party selection, sanitarium disease/quirk
+  purchase (probably the activity path like the tavern), camping-skill purchase (probably the upgrade path).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -249,3 +267,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: test kit 1 built (read-only SDL2.dll proxy, 845 forwarders, hardware write breakpoints on activity slots). Waiting for the owner's Windows run.
 - 2026-10-30: runtime test 1 passed loading; placement is not slot+0. Probe v2 (full slot bytes + roster hero fields) sent for run 2.
 - 2026-10-30: runtime test 2: hero placement = `0x14052c4b0` (commit on window close). Model-level hook found.
+- 2026-10-30: town action map v2 (model functions). Probe v3 (execute breakpoints on the four action functions + wallet log) sent as test kit 3.
