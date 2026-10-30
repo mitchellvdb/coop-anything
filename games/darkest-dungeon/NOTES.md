@@ -453,6 +453,20 @@ start and after each turn, and trace raw draws with real callers around room ent
   function itself; it must fall back to `[rsp]`.
 - `app.log` is not written into the install folder during these runs (the copies were a stale file from 29 Oct).
 
+## Actor layout for fight snapshots (static, same build)
+
+- HP = float at `actor+0x1038`: `Actor::ApplyHealthDamageInternal` `0x14047e570(actor, prng&, float damage, ...)` does
+  `*(float*)(actor+0x1038) -= damage` (Ghidra shows `param_1 + 0x207` on a `longlong*`). Monster override `0x1405f0930`.
+- Vtables: `Actor` `0x140e77d88`, `Hero` `0x140e7c638`, `Monster` `0x140e9b020`. Slot `+0x10` returns `this` for a monster
+  (0 for a hero), slot `+0x20` returns `this` for a hero (0 for a monster), slot `+0x30` returns the class data:
+  hero `*(this+0x12b0)`, monster `*(this+0x13f8)`; the class name is an inline string at `class+8`.
+- Fight round list: `GetMonsterAISelectSkill(brain)` `0x14059fe80` reads `brain+0x20..+0x28` (0x18-byte entries, actor
+  at +0) and the current index `brain+0xa0`.
+- The unnamed static generator `0x142acb870` (next to Rules `0x142acb850`) is also seeded 424242; its draws come
+  from `0x1405a0a39` / `0x1405a1d66` (monster AI code) and its state became the Battle seed (1146677107) in test 6.
+- Probe v7 / test kit 7: unit snapshot (side, class, HP, current) at every AI decision + Party::OnRaidStart call
+  stack (step 1) + named draw trace + named reseed. Runs A and B reuse kit 6's dungeon-entrance save.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -533,3 +547,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30 evening: owner pointed out DD Co-op v1.1.1 (Nexus 2282). Stopped per rule 6; own work paused pending the owner's decision.
 - 2026-10-30: owner chose to keep our own mod, using DD Co-op as a reference; its changelog lessons recorded.
 - 2026-10-30: runtime test 6: Battle stream consumption identical (309/309), but the owner saw different enemies → full determinism NOT proven (corrected). Turn order likely uses Rules. Step 1 still open.
+- 2026-10-30: kit 7 built (unit snapshots to compare game state; Party::OnRaidStart stack for step 1).
