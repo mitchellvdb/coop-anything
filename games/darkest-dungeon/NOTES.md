@@ -497,7 +497,7 @@ start and after each turn, and trace raw draws with real callers around room ent
   identical, gold never negative, no hero in two slots; mutants (no sequence check, local prediction) are caught.
 - Testing note: ASan in this LXC on kernel 7.0 fails at random ("DEADLYSIGNAL" loop) under high mmap randomisation;
   run sanitizer tests under `setarch x86_64 -R`.
-- Framework test kit 1 for the owner's PC: expected "framework READY", 18/18 addresses.
+- Framework test kit 1 on the owner's PC (2026-10-30 22:31): **framework READY, 18 of 18 addresses exact, build known.**
 
 ## Derived
 
