@@ -91,6 +91,33 @@ symbols whose namespace contains the owner name, decompile the functions that wr
 - Also imported: `std::_Random_device` (2 callers) and time sources (QPC, timeGetTime, SDL_GetTicks, _time64).
   Not yet checked whether any of them feeds gameplay.
 
+## Town actions (same build; found via the vftable writes of event classes)
+
+The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEvent`, `HeroSkillUpgradedEvent`,
+`HeroRecruitedEvent`, `HeroDismissedEvent`, `Building::ResidentOccupiesActivityEvent`,
+`ActivityOpenedEvent`, `ActivityFinishedEvent`, `Negative/PositiveQuirkTreatedEvent`, `QuirkLockedEvent`,
+`BuildingUpgradedEvent`, `BuildingStateChangedEvent`, `EstateCurrencyChangeEvent`,
+`Pre/PostOnStartTownVisitEvent`, `TownEventOnStartTownVisitEvent`.
+
+| Action | Function | Level | Confidence |
+|---|---|---|---|
+| Blacksmith weapon/armour upgrade | `0x14065e720` (caller `0x14065edc0`) | UI handler | fires the event; body not read yet |
+| Guild skill upgrade | `0x1406775e0`, `0x140666f10` (no direct callers = button callbacks) | UI handler | fires the event |
+| Stagecoach recruit | `0x1406b7860`, `0x1406c42e0` (sound "/town/stage_coach_purchase") | UI handler | fires the event |
+| Dismiss hero | `0x1406a8300` (caller `0x1407eb740`) | UI handler | fires the event |
+| Building upgrade | `0x140589e00(this, int* building, ...)` (caller `0x1406c8e60`) | model | fires the event |
+| Currency add / deduct | `0x14055e910(this, type, amount)` / `0x14055ea10(this, type, amount)`, 12 callers each; deduct logs "Deducted more currency ... then had in wallet" | model | strong |
+| Sanitarium effects | `0x140588290` (positive), `0x140588520`/`0x140588850` (negative), `0x140588bd0` (lock), all from `0x14052f180` | model, resolved on the next town visit | fires the events |
+| Activity resolution with RNG | `0x140587ae0` (logs PRNG draws), caller `0x14054d3e0` | model, start of town visit | medium |
+| Activity slot object | ctor `0x14052b210` (`Building::Activity::Base`), listens to `ResidentOccupiesActivityEvent` + `HeroDeathEvent` (`0x14052b5c0`) | model | strong |
+| Place hero in building | whoever fires `ResidentOccupiesActivityEvent` | ? | **unknown** |
+
+- The UI handlers do the change inline (set level, deduct currency) and then call the recompute helpers:
+  `0x1405c9da0` rebuilds the weapon/armour stats ("%s.weapon"/"%s.armour"), and `0x1405c9350`/`0x1405c98e0` rebuild skills.
+- Per-subsystem save serializers: roster `0x14057be70` (`persist.roster.json`, "heroes", "dismissed_hero_count"),
+  town `0x1405877e0` (`persist.town.json`, "buildings", "districts"), estate load `0x14055da20`.
+- `0x14054c950` = `Campaign::Current()` (464 callers).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -104,6 +131,11 @@ symbols whose namespace contains the owner name, decompile the functions that wr
   No PvP/PlayFab code runs, so `ReportSuspiciousMatch` can never fire. The PvP mailbox
   (`brain+0x118`) is a fallback, but it is only reached for non-hero actors in `arena_mp`.
 - With a host-authoritative design + streamed view, the guests need no deterministic simulation.
+- Town sync plan: hook the UI handlers on guests → send a request. The host runs the game's own
+  handler (gold/slots checked by the game), then sends a snapshot of the changed subsystem (roster /
+  estate / town, in the game's own persist format), which guests load. The events say when. Guests
+  never compute town effects (incl. random start-of-visit results), so the town needs no determinism.
+  Open: whether a subsystem can be reloaded live in town.
 - Superseded (owner wants parallel town work, all own the game): own copy per player, town actions
   replicated host-authoritatively, dungeon in lockstep with a host-chosen seed. Parsec + proxy SDL2.dll
   stays as the fallback if determinism fails.
@@ -137,3 +169,4 @@ symbols whose namespace contains the owner name, decompile the functions that wr
 - 2026-10-30: Ghidra 12.2 headless on the x64 exe (11 min, 12G heap). Combat input path mapped; Gate 1 = go.
 - 2026-10-30: owner wants town open to everyone. Controller manager mapped; design moves to controller-slot ownership through a proxy SDL2.dll.
 - 2026-10-30: all three players own DD1 on Steam. Design: own copy each, parallel town work, lockstep dungeon. Randomness sources mapped; map seed hookable at one call.
+- 2026-10-30: town action map v1 (events → handlers). Missing: hero→building placement, trinkets, provisions, live subsystem reload.
