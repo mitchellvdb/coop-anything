@@ -222,8 +222,26 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - Hero state at `entry+0x1540`: 0 right after recruit (and after leaving a building on return), 1 = idle in
   town, 2 = busy in a building.
 - Wallet `campaign+0xe70`: 8 currencies; types are hashes (gold = 15651954 here; the heirlooms are others).
-- **Unmapped actions seen in the log:** provisions purchase (gold -75/-150/-200/-250 steps, refunds when
-  returned; not via buy_upgrade) and heirloom exchange (heirloom amounts move without buy_upgrade).
+- Provisions purchase and heirloom exchange (seen in the log without buy_upgrade) are mapped statically below.
+
+## Provisions and heirloom exchange (static, same build)
+
+Found via the sound strings their commit handlers play (`str:` mode of DecompileAt).
+
+| Action | Function | Payload | Model effect |
+|---|---|---|---|
+| Heirloom exchange (confirm) | `0x14067a550(ctx, ...)` (caller `0x14067a890`), sound "/ui/town/heirloom_exchange_confirm" | `{srcType, srcAmount, dstType, dstAmount}` | `0x14055ea10(wallet, srcType, srcAmount)` then `0x14055e910(wallet, dstType, dstAmount)` then `0x14055dda0(wallet)`; the rest is UI bookkeeping. Rates come from `heirloom_exchange.json` (ctx[4]: 16-byte entries {type, divisor, ...}) |
+| Buy provisions | `0x14068a2b0(ctx, storeSlot)` (caller `0x14068b710`; ctx[1] = store inventory, ctx[2] = expedition inventory) | `{storeSlot}` (+ count from the stack) | room check `0x1405d4980` ("not_enough_room_confirm_provisions"); price `0x140571fd0(DAT_14117d978, item)` gold and `0x140572080` second currency (shards); `0x14055ea10(campaign+0xe50, gold DAT_142ba44f0, price*n)` and `(…, DAT_142ba4360, shards*n)`; move items `0x1405d4910(store, slot, n, expeditionInventory)` |
+| Return / sell provisions | `0x1407df430(itemStack*, n)` (callers `0x140688710`, `0x14068a680`, `0x14068b510`, `0x1407e2e10`) | `{expeditionSlot, n}` | refund `0x14055e910(campaign+0xe50, DAT_142c02ae0, price*n)` (+ shards `DAT_142c02950`); put back into the provision store `0x1405d40c0(campaign+0x1618, item, 1)`; stack −n, removed when empty (`0x1405d2ed0`); "item_cant_sell_confirm" otherwise |
+
+- The currency deduct `0x14055ea10` does NOT refuse a too-large amount; it only logs "Deducted more currency…
+  then had in wallet". The exchange handler relies on the UI for limits, so in co-op the host must check the
+  balance and the rate itself before executing a guest's exchange.
+- The provision store stock lives in `campaign+0x1618`. It is generated per visit, so it arrives with the
+  host's save at the start of the visit.
+- Other stores: `0x14069b400` (sell, add currency; callers `0x1406a2090`, `0x1406a20f0`, `0x14069aeb0`) is probably
+  the nomad wagon (trinkets); `0x140674160` only picks the buy sound ("/ui/town/buy", "buy_free", "buy_shard").
+- Not runtime-confirmed yet (a probe v4 could add these to the execute breakpoints).
 
 ## Derived
 
@@ -295,3 +313,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: town action map v2 (model functions). Probe v3 (execute breakpoints on the four action functions + wallet log) sent as test kit 3.
 - 2026-10-30: runtime test 3: upgrade request fully decoded (class.item hash, level char, hero id); recruit/dismiss confirmed; provisions and heirloom exchange found as extra actions.
 - 2026-10-30: correction: hero placement commits on lock-in, not on window close.
+- 2026-10-30: provisions (buy/return) and heirloom exchange mapped statically.
