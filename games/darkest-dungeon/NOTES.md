@@ -73,6 +73,24 @@ symbols whose namespace contains the owner name, decompile the functions that wr
 - So several controllers already drive the game at once. Each has its own handle, which lets a proxy
   tell players apart.
 
+## Randomness and determinism (same build)
+
+- PvP is lockstep with a shared seed. Strings: "Written seedHalf: %d", "Received seedHalf: %d %d",
+  "Not enough received data to init seed half for match init.", "hasOtherParty && hasRNGSeed", "RNGSeed", "OtherSeed".
+- A per-PRNG debug trace exists: "PID: %d Name: %s Random int range A,B: %d , %d Value: %d Seed: %d"
+  (also bool/float/normal/uniform, "Reseed seed %d", "Setting random seed: %d (0x%x)"). PRNG instances are named.
+  The switch that enables it is unknown. It would make desync hunting easy.
+- Gameplay RNG is `prng_minstd` (vftable in exe, default seed 0x17fa1), passed explicitly into combat code.
+- `rand()` has one caller, `0x1404e4770`, which looks like a static initializer filling the global
+  table names "entries"/"chances"/"chance_sum" (caller 0x1400a4260). Probably not gameplay; unverified.
+- `rand_s` is used only for seeding: arg parsing (0x1403cb6d0), PvP match init (0x1403d1a70), roster
+  load (0x14054c9d0), unknown (0x140562fb0), and the map generator.
+- Map generation `0x1405e65b0`: local prng_minstd seeded with `rand_s() & 0x7fffffff` (0 → 0x17fa1),
+  then the generator `0x1405e40f0`. For `arena_mp` the layout comes from the match instead (`0x1405e3ea0`).
+  Co-op: the host's seed replaces that one rand_s result on every copy.
+- Also imported: `std::_Random_device` (2 callers) and time sources (QPC, timeGetTime, SDL_GetTicks, _time64).
+  Not yet checked whether any of them feeds gameplay.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -86,7 +104,10 @@ symbols whose namespace contains the owner name, decompile the functions that wr
   No PvP/PlayFab code runs, so `ReportSuspiciousMatch` can never fire. The PvP mailbox
   (`brain+0x118`) is a fallback, but it is only reached for non-hero actors in `arena_mp`.
 - With a host-authoritative design + streamed view, the guests need no deterministic simulation.
-- Revised MVP (owner: town management open to everyone): a proxy `SDL2.dll` wraps
+- Superseded (owner wants parallel town work, all own the game): own copy per player, town actions
+  replicated host-authoritatively, dungeon in lockstep with a host-chosen seed. Parsec + proxy SDL2.dll
+  stays as the fallback if determinism fails.
+- Earlier MVP idea (owner: town management open to everyone): a proxy `SDL2.dll` wraps
   `SDL_GameControllerGetButton/GetAxis` and returns "not pressed" for a controller that may not act
   now. In town everyone passes; on a hero's combat turn only the owner's controller passes. Friends
   join via Parsec, so each gets their own virtual controller (unverified). No guest app needed.
@@ -115,3 +136,4 @@ symbols whose namespace contains the owner name, decompile the functions that wr
 - 2026-10-30: Gate 1 static pass on the exe strings and PE headers: the PvP netcode and network-AI skill path found.
 - 2026-10-30: Ghidra 12.2 headless on the x64 exe (11 min, 12G heap). Combat input path mapped; Gate 1 = go.
 - 2026-10-30: owner wants town open to everyone. Controller manager mapped; design moves to controller-slot ownership through a proxy SDL2.dll.
+- 2026-10-30: all three players own DD1 on Steam. Design: own copy each, parallel town work, lockstep dungeon. Randomness sources mapped; map seed hookable at one call.
