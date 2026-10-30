@@ -482,6 +482,23 @@ start and after each turn, and trace raw draws with real callers around room ent
   `0x140600f72` (raid init `0x140600370`) <- `0x1403d4913` (`Darkest::RaidStart` `0x1403d44b0`) <- `0x1403f3dce`
   (app-state lambda `0x1403f3d60`) <- `0x14036e7fd` (main loop). The fresh-embark call (run B step 11) is not in the log.
 
+## Build phase: framework 0.1 (2026-10-30, local mod repo, not published)
+
+- Framework (`src/`): proxy `SDL2.dll`; reads `ddcoop.ini`; checks the exe hash; finds the game's `.text` in
+  memory and verifies 18 mapped functions by their first 32 bytes; after a game update it relocates a function only
+  if its bytes occur exactly once, else it stays off. Writes `ddcoop-fw.log`; never logs the password. Changes
+  nothing in the game yet. Unit test against the real exe: 18/18 exact; simulated update: 17/18 relocatable
+  (`provisions_buy`'s first 32 bytes occur twice → would switch off rather than guess).
+- Wire format (`dd_proto`): 16-byte header + body per message type; strict decoder (exact length per type, value
+  ranges, terminated text). 1,000,000 fuzz inputs under ASan/UBSan: no memory errors, accepted inputs re-encode
+  identically.
+- Host-authority town sync (`dd_town`): request → host's game decides → ordered apply to all; a gap or a refused
+  apply → that copy needs a resync. Fake-world test with host + 3 guests acting at once: 50 × 3000 steps, all copies
+  identical, gold never negative, no hero in two slots; mutants (no sequence check, local prediction) are caught.
+- Testing note: ASan in this LXC on kernel 7.0 fails at random ("DEADLYSIGNAL" loop) under high mmap randomisation;
+  run sanitizer tests under `setarch x86_64 -R`.
+- Framework test kit 1 for the owner's PC: expected "framework READY", 18/18 addresses.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -564,3 +581,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: runtime test 6: Battle stream consumption identical (309/309), but the owner saw different enemies → full determinism NOT proven (corrected). Turn order likely uses Rules. Step 1 still open.
 - 2026-10-30: kit 7 built (unit snapshots to compare game state; Party::OnRaidStart stack for step 1).
 - 2026-10-30: runtime test 7: identical game state in A and B (9/9 snapshots, 35/36 RNG callers, 0 diverging). Combat deterministic from the same save.
+- 2026-10-30: build phase started: framework 0.1, wire format, host-authority town sync (all unit/fuzz/fake-world tested).
