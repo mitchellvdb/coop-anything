@@ -110,7 +110,7 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 | Sanitarium effects | `0x140588290` (positive), `0x140588520`/`0x140588850` (negative), `0x140588bd0` (lock), all from `0x14052f180` | model, resolved on the next town visit | fires the events |
 | Activity resolution with RNG | `0x140587ae0` (logs PRNG draws), caller `0x14054d3e0` | model, start of town visit | medium |
 | Activity slot object | ctor `0x14052b210` (`Building::Activity::Base`), listens to `ResidentOccupiesActivityEvent` + `HeroDeathEvent` (`0x14052b5c0`) | model | strong |
-| Place hero in building | writes the hero roster id into `activity+0x78` slot[i] (0x18 bytes, first int = hero id); the writer is in the slot widget class (ctor `0x1406808d0`) | UI | **writer unknown**; find it at runtime with a write breakpoint |
+| Place hero in building | `0x14052c4b0` AssignHero(activity, result*, heroRosterId), slot index pre-set in `activity+0x90`; UI commit `0x14067ece0` on window close | model | **strong (runtime test 2)** |
 
 - The UI handlers do the change inline (set level, deduct currency) and then call the recompute helpers:
   `0x1405c9da0` rebuilds the weapon/armour stats ("%s.weapon"/"%s.armour"), and `0x1405c9350`/`0x1405c98e0` rebuild skills.
@@ -165,6 +165,23 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - Tooling lesson: a stack-trace address is mid-function; decompile the containing function. Creating a
   function there splits the real one (fixed: DecompileAt now uses the containing function + body fixup).
 
+## Runtime test 2 (probe v2, 2026-10-30): hero placement solved
+
+- Dragging a hero into a slot is a UI preview only (drop handler `0x1407d5510` resets slot +0 / +0x10).
+  The game commits when the window closes ("lock in"). Owner's times matched the commit writes exactly.
+- Slot (0x18 bytes, vector at `activity+0x78`): `+0x0` int hero roster id, `+0x4` int occupied (1),
+  `+0x8` qword from `vfunc[+0x68](slot)`, `+0x10` int (-1 when free in the UI), `+0x14` byte.
+- Roster entry: `+0x0` id, `+0x1540` state (1 = idle in town, 2 = busy in a building), `+0x1550` qword =
+  pointer to the activity it is in. `Roster: 0 heroes` when quitting = campaign unload.
+- `0x14052c4b0(activity, result[0x28], heroRosterId)` = assign a hero (activity namespace range):
+  1. `0x14052c240` checks the requirements into `result` (ok flag at +0, failure vector +8..+0x10, flags +0x20/+0x21);
+  2. `vfunc[+0x30](this, &costs, heroId, slot)` builds the cost list (0x48-byte entries: amount at +0,
+     currency type at +0x44); if `0x14052c850(this)` each one is deducted with `0x14055ea10(campaign+0xe50, type, amount)`
+     (`campaign+0xe50` = estate wallet), then `0x14055dda0(wallet)`;
+  3. hero: `0x1405817c0(roster, entry, 2)` (state → busy), `entry+0x1550 = activity`;
+  4. slot[`activity+0x90`] = {heroId, 1, vfunc[+0x68]}; `vfunc[+0x50](this, slot, heroId)`; `activity+0x90 = -1`.
+  Callers: UI commit `0x14067ece0` (sets `activity+0x90` from the widget, hero id from `hero+0x130c`) and `0x140532dc0` (not read).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -178,6 +195,9 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   No PvP/PlayFab code runs, so `ReportSuspiciousMatch` can never fire. The PvP mailbox
   (`brain+0x118`) is a fallback, but it is only reached for non-hero actors in `arena_mp`.
 - With a host-authoritative design + streamed view, the guests need no deterministic simulation.
+- Placement sync: hook `0x14052c4b0` on guests → request {activity class+index, slot, heroId}; the host runs it
+  (the game checks requirements and gold itself), then every copy runs it with `activity+0x90 = slot`.
+  Same pattern expected for the other town actions: find the model function behind each UI commit.
 - Town sync v2 (two layers):
   1. Boundaries (session start, every `as_town_visit_start` after a raid): the host's save is the truth.
      Guests do a full reload through the game's own unload → load path (a loading screen). All random
@@ -228,3 +248,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: hero placement traced to the slot vector (writer: runtime test). Live reload: only the full unload→load path exists → town sync v2. TamperingManager found.
 - 2026-10-30: test kit 1 built (read-only SDL2.dll proxy, 845 forwarders, hardware write breakpoints on activity slots). Waiting for the owner's Windows run.
 - 2026-10-30: runtime test 1 passed loading; placement is not slot+0. Probe v2 (full slot bytes + roster hero fields) sent for run 2.
+- 2026-10-30: runtime test 2: hero placement = `0x14052c4b0` (commit on window close). Model-level hook found.
