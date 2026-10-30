@@ -515,6 +515,26 @@ start and after each turn, and trace raw draws with real callers around room ent
   four Hamlets identical) while a 4th guest with the wrong password was refused. Mutants (no host-proof check,
   no counter check) are caught.
 
+## Save system and the co-op save decision (static + owner decision, 2026-10-30)
+
+- Save path builder `0x1403739b0`: `SHGetFolderPathW(CSIDL_PERSONAL)` → `Documents\Darkest\`; storage "local_user",
+  slots `profile_0..9`. The environment variable `DD_USERDATA_DIR` is read ONLY if the Documents lookup fails
+  (then LocalAppData, then Desktop): a fallback, not an override.
+- With Steam: `API::Steam::Initialize` `0x140384cd0` registers storage "steam_storage" with `steam_profile_0..9` and mounts
+  it as the save device (slot 4); campaign saves then go through Steam (the owner's saves are in
+  `Steam\userdata\<id>\262060\remote`). General files stay in local_user (Documents\Darkest). No developer
+  option turns Steam storage off (`-platform` only picks "pc"/"sDeck").
+- Storage is command driven: `0x140246000(manager, device slot, name)` = StorageMountDeviceCommand,
+  `0x140247860(manager, name, ...)` = StorageRemoveDirectoryCommand; a storage thread executes them. Manager global
+  `DAT_141174ac8`.
+- **Owner's decision: A + D.** Real co-op play uses a dedicated save slot (the bottom slot in the campaign list):
+  co-op switches on only when that slot is loaded, with an automatic backup of it before each session; the game only
+  writes the loaded campaign, so other campaigns are never written. All test sessions run with `-nosave`. A real
+  redirect (own storage device in the manager) is deferred.
+- Open: the game knows 10 profiles but the menu shows 9 campaign slots, so the bottom slot is probably
+  `profile_8` / `steam_profile_8`; test kit 8 (probe v8: mount / remove-directory / LoadCampaign breakpoints,
+  `-nosave`) checks which storage is mounted for which menu position.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -599,3 +619,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: runtime test 7: identical game state in A and B (9/9 snapshots, 35/36 RNG callers, 0 diverging). Combat deterministic from the same save.
 - 2026-10-30: build phase started: framework 0.1, wire format, host-authority town sync (all unit/fuzz/fake-world tested).
 - 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test on the owner's PC: OK (0 failures), so CNG matches the published vectors.
+- 2026-10-30: save system mapped; owner chose a dedicated co-op slot + -nosave tests. Kit 8 (slot mapping) sent.
