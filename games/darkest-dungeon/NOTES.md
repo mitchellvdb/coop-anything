@@ -499,6 +499,22 @@ start and after each turn, and trace raw draws with real callers around room ent
   run sanitizer tests under `setarch x86_64 -R`.
 - Framework test kit 1 on the owner's PC (2026-10-30 22:31): **framework READY, 18 of 18 addresses exact, build known.**
 
+## Build phase: network layer (2026-10-30, local mod repo)
+
+- Crypto from the OS only: Windows CNG in the mod, OpenSSL in the Linux tests (HMAC-SHA256, PBKDF2-SHA256,
+  AES-256-GCM, random); HKDF composed from HMAC per RFC 5869. Published vectors (RFC 4231, RFC 5869, PBKDF2,
+  GCM test cases 13/14) pass on OpenSSL; the same tests are built as `ddcoop-selftest.exe` to check CNG on Windows.
+- Handshake: host sends salt + nonce + PBKDF2 iterations; guest proves knowledge of the password with an HMAC over
+  the transcript; the host answers with its own proof only after checking the guest's; the guest checks the host's
+  (a fake host is refused). Password never sent. Guest refuses fewer than 100k or more than 2M iterations.
+  Known limit: offline guessing from a recorded handshake (same class as DD Co-op) → long random password.
+- Frames: u32 length | u64 counter | AES-256-GCM ciphertext | tag; header authenticated; per-direction keys;
+  counters must arrive in order (replay/reorder/drop refused); malformed or unauthenticated data closes the connection.
+- Transport: TCP via Winsock/POSIX, TCP_NODELAY, timeouts; meant for the mod's own network thread.
+- End to end over loopback TCP: host + 3 guests ran town sync encrypted (369 actions accepted, 561 refused, all
+  four Hamlets identical) while a 4th guest with the wrong password was refused. Mutants (no host-proof check,
+  no counter check) are caught.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -582,3 +598,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: kit 7 built (unit snapshots to compare game state; Party::OnRaidStart stack for step 1).
 - 2026-10-30: runtime test 7: identical game state in A and B (9/9 snapshots, 35/36 RNG callers, 0 diverging). Combat deterministic from the same save.
 - 2026-10-30: build phase started: framework 0.1, wire format, host-authority town sync (all unit/fuzz/fake-world tested).
+- 2026-10-30: network layer built (handshake, encrypted session, TCP) and tested end to end on Linux; Windows self-test kit sent.
