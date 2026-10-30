@@ -145,6 +145,26 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   foundGlobalTamperedFile, listtamperedfiles, was_endless_wave_highscore_tampered). Unknown whether a copied,
   unedited host save counts as tampered. Never bypass it (rule 10, it guards online leaderboards).
 
+## Runtime test 1 (owner's PC, test copy, probe v1, 2026-10-30)
+
+- A proxy `SDL2.dll` (845 forwarders to `SDL2_orig.dll`) loads and runs: two launches, ~20 min, 50 game
+  threads with hardware breakpoints, no crash. Exe hash matched.
+- 8 activities found by vftable scan, 3 slots each: 2x QuirkTreatment, Flagellation, Brothel, Prayer,
+  Meditation, Bar, Gambling (`StressRelief` is only an intermediate class).
+- Dragging a hero IN did not change slot+0 (int). Writes of 0 to slot+0 came only when the panel opened
+  (from the ctor below) and on drag OUT (via the drag-and-drop code `0x140287e0e` / `0x14028899c`).
+- `0x1407d4ee0(this, activity, slotIndex)`: ctor of `ActivityHeroSlotInterface` (bases `DragContext`,
+  `DropContext`, `HeroSlotInterface`), the UI drop target per slot; it is built by the panel `0x14067c0f0`.
+- `0x1407d5510(this, hero)`: the slot widget's "set hero" (drop/remove).
+  - hero != 0: calls `activity->vfunc[+0x38](slotIndex, *(int*)(hero + 0x130c))`; for `Bar` that slot is an
+    empty stub, so the model registration happens elsewhere.
+  - hero == 0: looks the old hero up in the roster (`Campaign::Current()+0x20` vector, entry id at +0); if
+    `entry+0x1540 != 1` → `0x1405817c0(roster, entry, 0)`; clears `entry+0x1550`, `entry+0x1554`; then sets
+    slot qword +0 = 0 and slot byte +0x14 = 0.
+- `Campaign::Current()` returns global `g_pCurrent` = `0x14117d9b8` (`+0x728` when `0x142a5c08b` is set).
+- Tooling lesson: a stack-trace address is mid-function; decompile the containing function. Creating a
+  function there splits the real one (fixed: DecompileAt now uses the containing function + body fixup).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -207,3 +227,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: town action map v1 (events → handlers). Missing: hero→building placement, trinkets, provisions, live subsystem reload.
 - 2026-10-30: hero placement traced to the slot vector (writer: runtime test). Live reload: only the full unload→load path exists → town sync v2. TamperingManager found.
 - 2026-10-30: test kit 1 built (read-only SDL2.dll proxy, 845 forwarders, hardware write breakpoints on activity slots). Waiting for the owner's Windows run.
+- 2026-10-30: runtime test 1 passed loading; placement is not slot+0. Probe v2 (full slot bytes + roster hero fields) sent for run 2.
