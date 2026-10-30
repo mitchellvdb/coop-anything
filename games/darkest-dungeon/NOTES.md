@@ -419,6 +419,32 @@ Design choices worth copying:
 - In town, never reload/sync while a hero is being dragged ("held on the mouse").
 - Several game windows on one PC work with the Steam build (their splitscreen) → multi-instance bot QA is feasible.
 
+## Runtime test 6 (probe v6, determinism take 2, 2026-10-30): **combat is deterministic**
+
+- Setup: preparation run P saved the test campaign at a dungeon entrance; runs A and B (`-randomseed 424242
+  -enable_autobattle -nosave`) both continued from that one save, walked the same path and let the fight play out.
+- **`Battle` stream: 309 of 309 draws identical in A and B, state AND calling code.** Reseeded once at fight start
+  from `0x14059a17e` with **the same seed in both runs (1146677107)**: the Battle seed derives from the saved dungeon
+  state, not from time or `rand_s`.
+- `Rules`: first 72 draws identical (state + caller). Both runs' last Battle draw is global sequence 410. After
+  the fight A drew 9 Rules numbers and B 8 (callers `0x140442753`, `0x1405f9ce6`): the owner quit at a slightly
+  different moment, not a desync.
+- Turn-order hypothesis: `Rules` caller `0x140762544` and `Battle` caller `0x140762605` (adjacent code) both fire 21
+  times (once per turn). So initiative probably draws from `Rules`, which is also used outside combat (town barks,
+  events). One extra Rules draw before a fight on one PC would then split the turn order: matches DD Co-op's
+  "turn order split in about one fight in four". → **Co-op: the host sends both stream states (Battle and Rules) at
+  fight start; everyone continues from there.**
+- Campaign load reseeds two raw generators: gen 1 random then a fixed value (726422083; from the save), gen 2 the
+  saved value (1937452483 left by run P) and THEN a new random seed after load (P 1937452483, A 1056299469,
+  B 1320665766). Gen 2 is a real nondeterminism source per load; what it drives is unknown (run 5 callers
+  `0x14054cb4b`, `0x14058cad9`, `0x1405640b9`, `0x140563363`).
+- `0x1403cf7f0` is NOT the raid load: its breakpoint never fired (two embarks in P, two dungeon loads in A/B).
+  Step 1 (who fills `app+0x16a0`) is still open; next try: breakpoints on `Party::OnRaidStart` `0x1405f7170` /
+  raid init `0x140600370` and unwind to the caller that passes the params.
+- Probe bug: for leaf functions (no unwind info, e.g. the raw reseed `0x14028ddc0`) `real_caller` returns the
+  function itself; it must fall back to `[rsp]`.
+- `app.log` is not written into the install folder during these runs (the copies were a stale file from 29 Oct).
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -455,7 +481,7 @@ Design choices worth copying:
   `SDL_GameControllerGetButton/GetAxis` and returns "not pressed" for a controller that may not act
   now. In town everyone passes; on a hero's combat turn only the owner's controller passes. Friends
   join via Parsec, so each gets their own virtual controller (unverified). No guest app needed.
-- Explicit `prng_minstd` passing suggests deterministic, seed-driven combat (PvP needs both sides to agree).
+- Combat is deterministic (runtime test 6): same save + same inputs → identical Battle stream.
 - Fairness boundary (rule 10): never use the PlayFab matchmaking/ranked service or its
   cheat reporting. Reuse in-game turn code over a direct friend-to-friend transport only.
 
@@ -497,3 +523,4 @@ Design choices worth copying:
 - 2026-10-30: runtime test 5: determinism inconclusive (different maps/inputs); Rules/Battle streams and the seeds to control found. Kit 6 sent.
 - 2026-10-30 evening: owner pointed out DD Co-op v1.1.1 (Nexus 2282). Stopped per rule 6; own work paused pending the owner's decision.
 - 2026-10-30: owner chose to keep our own mod, using DD Co-op as a reference; its changelog lessons recorded.
+- 2026-10-30: runtime test 6: combat deterministic (Battle 309/309 identical, same seed from the save). Turn order likely uses Rules. Step 1 still open.
