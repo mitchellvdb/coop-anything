@@ -419,11 +419,19 @@ Design choices worth copying:
 - In town, never reload/sync while a hero is being dragged ("held on the mouse").
 - Several game windows on one PC work with the Steam build (their splitscreen) → multi-instance bot QA is feasible.
 
-## Runtime test 6 (probe v6, determinism take 2, 2026-10-30): **combat is deterministic**
+## Runtime test 6 (probe v6, determinism take 2, 2026-10-30): streams identical, game state NOT
+
+**Correction (owner's observation): the fights in A and B were not identical; even the enemies differed.** The trace
+below only shows that both runs consumed the same random numbers in the same order from the same code paths.
+It cannot see game state: the same draw against a different monster gives a different result. So the encounter
+(monster selection) comes from a random source outside the saved state and outside the traced named streams;
+suspects: raw generator 2 (random reseed after every load, see below), a `rand_s` at room entry, or a raw
+generator (raw draws were not traced in v6). Next probe: log the battle's units (class, HP, position) at fight
+start and after each turn, and trace raw draws with real callers around room entry.
 
 - Setup: preparation run P saved the test campaign at a dungeon entrance; runs A and B (`-randomseed 424242
   -enable_autobattle -nosave`) both continued from that one save, walked the same path and let the fight play out.
-- **`Battle` stream: 309 of 309 draws identical in A and B, state AND calling code.** Reseeded once at fight start
+- `Battle` stream: 309 of 309 draws identical in A and B, state AND calling code (consumption only, see above). Reseeded once at fight start
   from `0x14059a17e` with **the same seed in both runs (1146677107)**: the Battle seed derives from the saved dungeon
   state, not from time or `rand_s`.
 - `Rules`: first 72 draws identical (state + caller). Both runs' last Battle draw is global sequence 410. After
@@ -481,7 +489,8 @@ Design choices worth copying:
   `SDL_GameControllerGetButton/GetAxis` and returns "not pressed" for a controller that may not act
   now. In town everyone passes; on a hero's combat turn only the owner's controller passes. Friends
   join via Parsec, so each gets their own virtual controller (unverified). No guest app needed.
-- Combat is deterministic (runtime test 6): same save + same inputs → identical Battle stream.
+- Runtime test 6: same save → identical Battle stream consumption, but different enemies (owner). Determinism of
+  the full game state is NOT proven; the encounter source must be found and dictated by the host.
 - Fairness boundary (rule 10): never use the PlayFab matchmaking/ranked service or its
   cheat reporting. Reuse in-game turn code over a direct friend-to-friend transport only.
 
@@ -523,4 +532,4 @@ Design choices worth copying:
 - 2026-10-30: runtime test 5: determinism inconclusive (different maps/inputs); Rules/Battle streams and the seeds to control found. Kit 6 sent.
 - 2026-10-30 evening: owner pointed out DD Co-op v1.1.1 (Nexus 2282). Stopped per rule 6; own work paused pending the owner's decision.
 - 2026-10-30: owner chose to keep our own mod, using DD Co-op as a reference; its changelog lessons recorded.
-- 2026-10-30: runtime test 6: combat deterministic (Battle 309/309 identical, same seed from the save). Turn order likely uses Rules. Step 1 still open.
+- 2026-10-30: runtime test 6: Battle stream consumption identical (309/309), but the owner saw different enemies → full determinism NOT proven (corrected). Turn order likely uses Rules. Step 1 still open.
