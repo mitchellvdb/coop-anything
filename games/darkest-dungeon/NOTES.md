@@ -309,6 +309,35 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - Still open: the function that fills `RaidStartParameters` at departure (the "yes" callback of the embark
   dialog `0x140583a40`). That is where co-op injects the host's lineup, provisions and seed.
 
+## Departure source + determinism setup (static, same build)
+
+- `0x1403d44b0` = `Darkest::RaidStart`: `Raid::Start(restoring = app+0x180b, params = *(app+0x16a0))`, then frees
+  the params (incl. the heroes vector) and sets `app+0x16a0 = 0`.
+- `0x1403cf7f0` (raid load, from the `as_raid_load` lambda `0x1403f3d60` with the app object in its capture): if
+  `app+0x16a0` is still null it generates params itself: `0x1403e10a0` (test values: gold, trinkets, ...) or
+  `0x1403e1ac0` (`GenerateDemoRaidStartParamaters`, when `app+0x1808`). In normal play the field is already set.
+- Who sets `app+0x16a0` at departure: not found statically (only the two stores above use `[reg+0x16a0]`
+  directly; many unrelated structs also use offset 0x16a0 via LEA). Probe v5 watches the field at runtime.
+- **Developer command-line options** (`Darkest::ParseArguments` `0x1403cb6d0`; tokenizer `0x14036a670`): an option
+  is `-name` followed by its values as separate words (`+name` is for Steam). Options live in a map at
+  `DAT_142619068` (`0x140370720` = has option, `0x1403707f0` = value i). Useful ones: `randomseed <n>` (seeds the
+  global named PRNG `0x142acb850`, otherwise `rand_s`; "Setting random seed"), `enable_autobattle` (`app+0x538`),
+  `nosave`, `norestore`, `textsave`, `firstroombattle <monsters...>`, `firstroomcurio`, `skiptutorial`, `forcetown`,
+  `startquest`, `party`, `enabledebughashoutput`, `enabledebugmonsterbrainoutput`, `profile`. Do not use
+  `disable_local_anticheat_checks` (rule 10).
+- **PRNG**: `prng_minstd` (vftable `0x140e35e80`) and `prng_minstd_wrapped` (`0x140e871c0`, logs every draw with its
+  name at `this+0x10`). Core step = Park–Miller minstd, Schrage form: `state = 16807*state mod (2^31-1)` at `this+8`,
+  result `state / (2^31-1)` as float: raw `0x14028dde0`, wrapped `0x14028e0c0` (inline copy). Seed: raw `0x14028ddc0`,
+  wrapped `0x14028e030` (0 → 0x17fa1). int range `= floor(uniform * n)`, bool = top bit. Integer core + one float
+  multiply → identical on every x64 PC. The wrapped draw also formats "%s %d %.10f" (name, seed, value), which looks
+  like PvP desync hashing.
+- `randomseed` does not reach map generation (`0x1405e65b0` seeds a local prng from `rand_s`).
+- Probe v5 (test kit 5): execute breakpoints on both core steps and on raw reseed log every draw (generator, state,
+  caller) to coop-rng.log; the 4th breakpoint learns the app object at raid load and then watches `app+0x16a0`.
+  Comparison tool: `tools/compare_rng.py` in the mod repo (groups draws by calling function).
+- Probe bug found and fixed before v5 shipped: the v3/v4 hit cap returned before setting the resume flag; on an
+  execute breakpoint that would loop forever. Earlier runs stayed under the cap.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -383,3 +412,4 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - 2026-10-30: trinkets/skills/party: static leads only; switched to runtime diffing (probe v4, test kit 4).
 - 2026-10-30: runtime test 4: wagon buy/sell, provisions buy/refund, trinket flag, skill vector, party membership found; party order still open (at departure).
 - 2026-10-30: party order solved: RaidStartParameters.heroes (params+0x208), index = rank. Departure message = {quest, heroIds[4], provisions, seed}.
+- 2026-10-30: departure path traced to app+0x16a0 (writer found at runtime next). Determinism test designed: dev options + full RNG trace (test kit 5).
