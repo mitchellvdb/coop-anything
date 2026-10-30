@@ -110,13 +110,40 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 | Sanitarium effects | `0x140588290` (positive), `0x140588520`/`0x140588850` (negative), `0x140588bd0` (lock), all from `0x14052f180` | model, resolved on the next town visit | fires the events |
 | Activity resolution with RNG | `0x140587ae0` (logs PRNG draws), caller `0x14054d3e0` | model, start of town visit | medium |
 | Activity slot object | ctor `0x14052b210` (`Building::Activity::Base`), listens to `ResidentOccupiesActivityEvent` + `HeroDeathEvent` (`0x14052b5c0`) | model | strong |
-| Place hero in building | whoever fires `ResidentOccupiesActivityEvent` | ? | **unknown** |
+| Place hero in building | writes the hero roster id into `activity+0x78` slot[i] (0x18 bytes, first int = hero id); the writer is in the slot widget class (ctor `0x1406808d0`) | UI | **writer unknown**; find it at runtime with a write breakpoint |
 
 - The UI handlers do the change inline (set level, deduct currency) and then call the recompute helpers:
   `0x1405c9da0` rebuilds the weapon/armour stats ("%s.weapon"/"%s.armour"), and `0x1405c9350`/`0x1405c98e0` rebuild skills.
 - Per-subsystem save serializers: roster `0x14057be70` (`persist.roster.json`, "heroes", "dismissed_hero_count"),
   town `0x1405877e0` (`persist.town.json`, "buildings", "districts"), estate load `0x14055da20`.
 - `0x14054c950` = `Campaign::Current()` (464 callers).
+
+## Stress buildings, reload, tampering (same build)
+
+- Activity subclasses: `Bar`, `Gambling`, `Brothel` (tavern); `Meditation`, `Prayer`, `Flagellation` (abbey);
+  quirk/disease treatment (sanitarium). Side effects: `GoMissing`, `AddQuirk`, `AddTrinket`, `ChangeCurrency`,
+  `ActivityLock`, `ApplyBuff`. Requirements: `IsDiseasedRequirement`, `NotHaveQuirks`.
+- `Building::Activity::Base` vftable `0x140e8c9b8`: slots 7-15 are pure virtual; slot 2/3 save/load
+  ("resident_occupied", "caretaker_occupied", "visitsRemaining"). `Bar` vftable `0x140e8ef70`; slot 14
+  `0x140535110(this, slotIndex)` resolves a slot (rolls the stress heal on named PRNG `0x142acb850`).
+- `ResidentOccupiesActivityEvent` is NOT player placement. It is fired only by `0x140587ae0` (start of town
+  visit), which randomly picks slots that an NPC resident blocks this week (named PRNG `0x142acb850`).
+- Stress relief UI: `TownUI::Panel::HeroStressReliefDisplay` (vftable `0x140eae588`); slot 14 `0x14067c0f0`
+  builds the slot widgets (ctor `0x1406808d0`, 0x358 bytes).
+- Save = 26 `persist.*.json` files. Town-relevant: roster, roster.network, estate, town, upgrades, town_event,
+  party_builder, quest.
+- `Darkest::LoadCampaign` `0x1403d8590` (steps: SetSaveRestoreDirectory, Restore, Campaign::Load,
+  Upgrade::Load, NoveltyTracker::Create, LoadDisplay) → `0x14054c9d0` sub-loads (estate `0x14055da20`, roster
+  `0x14057b260`/`0x14057b810`/`0x14057c620`, town `0x1405875c0`, ...). It runs only in app state
+  `as_load_campaign` (`0x1403db460`), after `TamperingManager::StartCampaign` and `CreateCampaignSystems`.
+- App states: `as_town_visit_start/update/finish`, `as_raid_load`, `as_raid_start/update/finish`,
+  `as_raid_results_*`, `as_raid_result_to_town_transition`, `as_load_campaign`, `as_unload_campaign`,
+  `as_restart`, `as_fe_flow_*`, ... The normal loop never reloads the campaign. unload → load (as from the
+  menu) is the only full reload path.
+- No code reloads a single subsystem mid-session. Whether the open UI survives that is unknown.
+- `TamperingManager` detects edited save files ("Tampered file found : %s", foundLocalTamperedFile,
+  foundGlobalTamperedFile, listtamperedfiles, was_endless_wave_highscore_tampered). Unknown whether a copied,
+  unedited host save counts as tampered. Never bypass it (rule 10, it guards online leaderboards).
 
 ## Derived
 
@@ -131,7 +158,15 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   No PvP/PlayFab code runs, so `ReportSuspiciousMatch` can never fire. The PvP mailbox
   (`brain+0x118`) is a fallback, but it is only reached for non-hero actors in `arena_mp`.
 - With a host-authoritative design + streamed view, the guests need no deterministic simulation.
-- Town sync plan: hook the UI handlers on guests → send a request. The host runs the game's own
+- Town sync v2 (two layers):
+  1. Boundaries (session start, every `as_town_visit_start` after a raid): the host's save is the truth.
+     Guests do a full reload through the game's own unload → load path (a loading screen). All random
+     start-of-visit results (stress relief, sanitarium, NPC residents, recruits) arrive inside that save.
+  2. Within a town visit: action replication. Guest request → host validates and runs the handler → host
+     broadcasts the action → every copy runs the same handler. Town actions are deterministic (upgrade,
+     recruit from the synced pool, place in slot, dismiss, buy), so no RNG sync is needed here.
+  Fallback for a desync inside a visit: a full reload from the host's save.
+- Earlier town sync plan (snapshot after every action; superseded, no live subsystem reload exists): hook the UI handlers on guests → send a request. The host runs the game's own
   handler (gold/slots checked by the game), then sends a snapshot of the changed subsystem (roster /
   estate / town, in the game's own persist format), which guests load. The events say when. Guests
   never compute town effects (incl. random start-of-visit results), so the town needs no determinism.
@@ -170,3 +205,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: owner wants town open to everyone. Controller manager mapped; design moves to controller-slot ownership through a proxy SDL2.dll.
 - 2026-10-30: all three players own DD1 on Steam. Design: own copy each, parallel town work, lockstep dungeon. Randomness sources mapped; map seed hookable at one call.
 - 2026-10-30: town action map v1 (events → handlers). Missing: hero→building placement, trinkets, provisions, live subsystem reload.
+- 2026-10-30: hero placement traced to the slot vector (writer: runtime test). Live reload: only the full unload→load path exists → town sync v2. TamperingManager found.
