@@ -186,7 +186,7 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 
 | Action | Function | Payload | Notes |
 |---|---|---|---|
-| Buy upgrade (blacksmith weapon/armour, guild skills, buildings, probably camping skills) | `0x140590da0(request*)` → 1 on success | 12 bytes `{u32 tree, u8 code, u32 owner}` (owner meaning unconfirmed) | checks prerequisites (`campaign+0x1808`) and cost against the wallet list `campaign+0xe70`, pays, `0x14055dda0(campaign+0xe50)`, `0x140550730`, `0x1405907f0`, notifies upgrade listeners (`vfunc+0x10(listener, request)`); purchased-set map `DAT_142b54640` keyed by the request |
+| Buy upgrade (blacksmith weapon/armour, guild skills, buildings, probably camping skills) | `0x140590da0(request*)` → 1 on success | 12 bytes `{u32 hash("class.item"), u8 level char, u32 heroId or 0}` (**confirmed, test 3**) | checks prerequisites (`campaign+0x1808`) and cost against the wallet list `campaign+0xe70`, pays, `0x14055dda0(campaign+0xe50)`, `0x140550730`, `0x1405907f0`, notifies upgrade listeners (`vfunc+0x10(listener, request)`); purchased-set map `DAT_142b54640` keyed by the request |
 | Upgrade lookup | `0x140471f40(treeId, code)` | | tree table `DAT_142c29fa0` (0x70 per tree, id at +0x40, levels map at +0x60 keyed by byte) |
 | Upgrade UI commit | `0x1406c8e60(ctx, code)` (relay `0x1406ca3c0`); request = {ctx+0x90, code, ctx+0x94} | | tree type by id: building `DAT_142a70a74` (→ `0x140589e00(campaign+0x1138, ...)` + narration), trainer `DAT_142a70728`/`DAT_142a70a78`, armour `DAT_142a70bd8`, weapon `DAT_142a70724`; sounds only |
 | Blacksmith refresh | `0x14065e720` (relay `0x14065edc0`) | | `0x1405c9da0` recompute gear, fires `HeroWeaponAndArmourUpgradedEvent{hero+0x130c, hero+0x12bc weapon lvl, hero+0x12c0 armour lvl}` |
@@ -199,6 +199,29 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   effects (candidate flag, counter); otherwise two players could recruit the same stagecoach hero.
 - Not mapped yet: trinket equip/unequip, provisions at embark, party selection, sanitarium disease/quirk
   purchase (probably the activity path like the tavern), camping-skill purchase (probably the upgrade path).
+
+## Runtime test 3 (probe v3, execute breakpoints, 2026-10-30): town actions confirmed
+
+- Execute breakpoints on four functions ran through town, provisions, a full expedition and back with no
+  problems (set the resume flag `EFlags |= 0x10000` in the handler).
+- **Upgrade request decoded:** `{u32 tree, u8 code, u32 owner}`.
+  - `tree` = `h = h*53 + byte` (uint32) over `"<class>.<item>"` (`0x1405c9350`, debug line "Debug Hash
+    Output"). Verified: `crusader.weapon` = 0x3fb36379, `crusader.armour` = 0x218a59ad, `crusader.smite` = 0x090daa75,
+    all three seen in the log for the owner's starting crusader.
+  - `code` = level as a character: '0', '1' for hero gear/skills; 'a' for building upgrades.
+  - `owner` = hero roster id (1 = the starting crusader) for hero trees; 0 for buildings.
+  - Costs seen: weapon/armour level 0 → 750 gold each, smite level 1 → 250 gold; building upgrades cost heirlooms only.
+  - Lookup per hero: `0x140591270(treeHash, heroId, 1)`.
+- Recruit: `HeroRecruitedEvent{heroId}` from `0x1406b791f` (inside `0x1406b7860`) and also from `0x1406c4413`
+  (inside `0x1406c42e0`, a second stagecoach path). The roster grows right after.
+- Dismiss: `0x1406a8300(this, heroId)` from the roster panel (`0x1407eb958`); the roster shrinks right after.
+- Assign hero is also called at the start of a town visit by `0x140532dc0` (from `0x140532fbf`): heroes that
+  stay in a building get re-seated. Under the reload design that is host-only.
+- Hero state at `entry+0x1540`: 0 right after recruit (and after leaving a building on return), 1 = idle in
+  town, 2 = busy in a building.
+- Wallet `campaign+0xe70`: 8 currencies; types are hashes (gold = 15651954 here; the heirlooms are others).
+- **Unmapped actions seen in the log:** provisions purchase (gold -75/-150/-200/-250 steps, refunds when
+  returned; not via buy_upgrade) and heirloom exchange (heirloom amounts move without buy_upgrade).
 
 ## Derived
 
@@ -268,3 +291,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: runtime test 1 passed loading; placement is not slot+0. Probe v2 (full slot bytes + roster hero fields) sent for run 2.
 - 2026-10-30: runtime test 2: hero placement = `0x14052c4b0` (commit on window close). Model-level hook found.
 - 2026-10-30: town action map v2 (model functions). Probe v3 (execute breakpoints on the four action functions + wallet log) sent as test kit 3.
+- 2026-10-30: runtime test 3: upgrade request fully decoded (class.item hash, level char, hero id); recruit/dismiss confirmed; provisions and heirloom exchange found as extra actions.
