@@ -558,6 +558,31 @@ start and after each turn, and trace raw draws with real callers around room ent
 - Caveat for when co-op acts on this: the campaign menu briefly mounts every profile in device slot 5 to list them
   (test 8), so co-op must require a fully loaded campaign (roster present / after LoadCampaign), not a momentary mount.
 
+## Research round 31 Oct (static; probe v9 / test kit 9 pending for the runtime parts)
+
+- **Load-time reseeds explained.** The two raw generators live in the campaign object:
+  - gen 1 at `campaign+0x1828`, seeded from `0x14058cad9` inside the **town event** loader `0x14058ca20`
+    ("event_id", "current_result_event_id", "bonus_hero_entries", "event_cost") with the **saved** value
+    (726422083 in tests 6/8): deterministic from the save.
+  - gen 2 at `campaign+0x17e0` = the **quest system's** PRNG (quest system at `campaign+0x1680`, PRNG at `+0x160`). The
+    quest/progress loader `0x140563b50` ("completed_plot_quests", "dungeon", "infestation", "last_quest_played_id")
+    restores the saved seed; then `0x140562fb0` reseeds it with **`rand_s`** and immediately draws once (int range) into
+    fields `+0x154`/`+0x158` when `*(DAT_14117d920+0x30)` is set. → Quests generated later (new week) differ per copy:
+    host-only, delivered by the full reload. Risk to check: the immediate draw may differ per copy within a session.
+- **Activity ids** (game data `campaign/town/buildings/*/*.building.json`): sanitarium `treatment` (quirks) and
+  `disease_treatment`; tavern `bar`, `gambling`, `brothel`; abbey `meditation`, `prayer`, `flagellation`. Their game
+  hashes (`h = h*53 + byte`): treatment 0xac8ac504, disease_treatment 0x158969e1, bar 0x000447d9, gambling 0xc5600521,
+  brothel 0x0a8cbccc, meditation 0x6124c91e, prayer 0x1e40b17b, flagellation 0xbc04d1ae. Probe v9 dumps each activity's
+  copied definition data (+0x20..+0x70) to find which of these identifies the instance.
+- **Dungeon leads (RTTI):** `PartyStepEvent` (walking), the curio result family `CurioInteraction{Loot,Effect,Quirk,
+  Disease,Purge,Summon,Scouting,QuestItem,Nothing}Result`, `DefaultDoorInteractionResult`,
+  `ClearObstacleInteractionResult`, `PropInteractionResult`, `HeroUsedItemEvent`, `RaidMapGenerated`, `RaidStartEvent`,
+  `RaidGoalsCompleteEvent`; town controller states incl. `EmbarkTownControllerState`, `ProvisionsTownControllerState`.
+- **Probe v9 / test kit 9** (source kept outside the mod repo while another agent works there): `Darkest::RaidStart`
+  learns the app object then write-watches `app+0x16a0` (departure writer, caught on the second embark); the monster AI
+  breakpoint learns the battle object (`brain - 0x4898`) and the worker diffs `battle+0x4e00..+0x5100` around the chosen
+  skill index (`battle+0x4fb8`) during a manual fight; activity definition dump.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -645,3 +670,4 @@ start and after each turn, and trace raw draws with real callers around room ent
 - 2026-10-30: save system mapped; owner chose a dedicated co-op slot + -nosave tests. Kit 8 (slot mapping) sent.
 - 2026-10-30: runtime test 8: menu position k = steam_profile_{k-1}; profile 9 is the game's restore area; co-op slots become an ini setting.
 - 2026-10-30: framework 0.2 test passed: slot 3 co-op allowed, slot 1 single player.
+- 2026-10-31: research: load reseeds explained (town events deterministic, quest PRNG rand_s), activity ids + hashes, dungeon leads; kit 9 sent.
