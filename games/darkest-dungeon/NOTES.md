@@ -110,7 +110,7 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 | Sanitarium effects | `0x140588290` (positive), `0x140588520`/`0x140588850` (negative), `0x140588bd0` (lock), all from `0x14052f180` | model, resolved on the next town visit | fires the events |
 | Activity resolution with RNG | `0x140587ae0` (logs PRNG draws), caller `0x14054d3e0` | model, start of town visit | medium |
 | Activity slot object | ctor `0x14052b210` (`Building::Activity::Base`), listens to `ResidentOccupiesActivityEvent` + `HeroDeathEvent` (`0x14052b5c0`) | model | strong |
-| Place hero in building | `0x14052c4b0` AssignHero(activity, result*, heroRosterId), slot index pre-set in `activity+0x90`; UI commit `0x14067ece0` on window close | model | **strong (runtime test 2)** |
+| Place hero in building | `0x14052c4b0` AssignHero(activity, result*, heroRosterId), slot index pre-set in `activity+0x90`; UI lock-in handler `0x14067ece0` | model | **strong (runtime tests 2+3)** |
 
 - The UI handlers do the change inline (set level, deduct currency) and then call the recompute helpers:
   `0x1405c9da0` rebuilds the weapon/armour stats ("%s.weapon"/"%s.armour"), and `0x1405c9350`/`0x1405c98e0` rebuild skills.
@@ -168,7 +168,8 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 ## Runtime test 2 (probe v2, 2026-10-30): hero placement solved
 
 - Dragging a hero into a slot is a UI preview only (drop handler `0x1407d5510` resets slot +0 / +0x10).
-  The game commits when the window closes ("lock in"). Owner's times matched the commit writes exactly.
+  The game commits on the explicit **lock-in**; closing the window without locking commits nothing
+  (corrected by runtime test 3: placed, not locked, closed → no AssignHero call).
 - Slot (0x18 bytes, vector at `activity+0x78`): `+0x0` int hero roster id, `+0x4` int occupied (1),
   `+0x8` qword from `vfunc[+0x68](slot)`, `+0x10` int (-1 when free in the UI), `+0x14` byte.
 - Roster entry: `+0x0` id, `+0x1540` state (1 = idle in town, 2 = busy in a building), `+0x1550` qword =
@@ -180,7 +181,7 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
      (`campaign+0xe50` = estate wallet), then `0x14055dda0(wallet)`;
   3. hero: `0x1405817c0(roster, entry, 2)` (state → busy), `entry+0x1550 = activity`;
   4. slot[`activity+0x90`] = {heroId, 1, vfunc[+0x68]}; `vfunc[+0x50](this, slot, heroId)`; `activity+0x90 = -1`.
-  Callers: UI commit `0x14067ece0` (sets `activity+0x90` from the widget, hero id from `hero+0x130c`) and `0x140532dc0` (not read).
+  Callers: UI lock-in `0x14067ece0` (sets `activity+0x90` from the widget, hero id from `hero+0x130c`) and `0x140532dc0` (not read).
 
 ## Town actions v2: model functions (static, to be confirmed by runtime test 3)
 
@@ -213,7 +214,8 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
   - Costs seen: weapon/armour level 0 → 750 gold each, smite level 1 → 250 gold; building upgrades cost heirlooms only.
   - Lookup per hero: `0x140591270(treeHash, heroId, 1)`.
 - Recruit: `HeroRecruitedEvent{heroId}` from `0x1406b791f` (inside `0x1406b7860`) and also from `0x1406c4413`
-  (inside `0x1406c42e0`, a second stagecoach path). The roster grows right after.
+  (inside `0x1406c42e0`, a second stagecoach path; fired 9 s after returning to the hamlet, owner thinks it
+  was a town event). The roster grows right after. Sync hooks the event, so both paths are covered.
 - Dismiss: `0x1406a8300(this, heroId)` from the roster panel (`0x1407eb958`); the roster shrinks right after.
 - Assign hero is also called at the start of a town visit by `0x140532dc0` (from `0x140532fbf`): heroes that
   stay in a building get re-seated. Under the reload design that is host-only.
@@ -292,3 +294,4 @@ The game has an event per town action. Classes: `HeroWeaponAndArmourUpgradedEven
 - 2026-10-30: runtime test 2: hero placement = `0x14052c4b0` (commit on window close). Model-level hook found.
 - 2026-10-30: town action map v2 (model functions). Probe v3 (execute breakpoints on the four action functions + wallet log) sent as test kit 3.
 - 2026-10-30: runtime test 3: upgrade request fully decoded (class.item hash, level char, hero id); recruit/dismiss confirmed; provisions and heirloom exchange found as extra actions.
+- 2026-10-30: correction: hero placement commits on lock-in, not on window close.
