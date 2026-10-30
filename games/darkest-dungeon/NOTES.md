@@ -19,6 +19,10 @@ Goal: host-authoritative co-op where each friend owns heroes in the party.
 
 ## Observations (checked, with source)
 
+- **Correction (2026-10-30, evening): an existing co-op mod exists.** "DD Co-op" v1.1.1 (beta, 2026-10-25),
+  Nexus Mods darkestdungeon/mods/2282, pointed out by the owner. The morning triage missed it: the Nexus page
+  blocks automated fetches (HTTP 403) and a web search did not index it yet (released days earlier).
+  See "Existing project: DD Co-op" below.
 - No co-op mod found in the coop-anything directory, `games/`, issues or PRs (searched 2026-10-30).
 - The only shipped multiplayer is the Butcher's Circus DLC versus mode, which is PvP, not co-op.
   [PlayCo-op](https://playco-opgame.com/darkest-dungeon/)
@@ -360,6 +364,28 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
   `0x14028d000-0x14028f000`), named-stream reseeds caught (`0x14028e030`), raw draws dropped; runs A and B both
   continue from ONE dungeon save made in a preparation run P (which also embarks twice for the step-1 capture).
 
+## Existing project: DD Co-op v1.1.1 (Nexus 2282)
+
+Files inspected statically only (owner's download; not run): `dbghelp.dll` (proxy DLL loaded from `_windows\win64`,
+sha256 `5e5a557c8ef5c9924a482f7d9e10231e832af2c768ea9724c28cf0ba62b46f38`), `ddcoop.ini`, `README.md`, `CHANGELOG.md`
+(0.3 → 1.1.1). No author, source repository or license in the files or in the DLL strings.
+
+What its README says it does (claims, not verified by us):
+- Up to 4 players, one campaign. Host owns the campaign: walks, curios, camping, retreat and the whole Hamlet.
+  Guests follow and play **in fights only**. Teams: Heroes (party shared out), Monsters (players command the
+  monsters), Spectators. Units can be passed between teammates.
+- In battle "every action, target, move and random roll is kept in step; the host's numbers win if anything drifts".
+  DLL strings: "DESYNC @%u: corrected guid=%u hp/stress/stunned ... (the host's is authoritative)". FIX DESYNC
+  reloads the host's save.
+- Direct TCP port 27351 (or Tailscale), password + AES-256-GCM, protocol "DDCoop/direct-ip/v1"; splitscreen; drop and
+  rejoin with own heroes back; version and game-build checks (switches off on an unknown build).
+- Co-op saves in `Documents\Darkest\DDCoop` (own saves untouched while installed; import copies a campaign).
+- Known limits (its README): only tested as several windows on one PC, never between separate PCs; boss fights not
+  played; team switching barely tested.
+
+Against the owner's goals: fights with own heroes and one copy per player = covered. **Parallel town work by all
+players = not covered (host only).** Walking/curios/camping = host only.
+
 ## Derived
 
 - Combat is turn-based and one party moves together, so the turn-based impersonation pattern
@@ -436,3 +462,4 @@ Memory-diff method worked: per-byte noise suppression only had to silence `entry
 - 2026-10-30: party order solved: RaidStartParameters.heroes (params+0x208), index = rank. Departure message = {quest, heroIds[4], provisions, seed}.
 - 2026-10-30: departure path traced to app+0x16a0 (writer found at runtime next). Determinism test designed: dev options + full RNG trace (test kit 5).
 - 2026-10-30: runtime test 5: determinism inconclusive (different maps/inputs); Rules/Battle streams and the seeds to control found. Kit 6 sent.
+- 2026-10-30 evening: owner pointed out DD Co-op v1.1.1 (Nexus 2282). Stopped per rule 6; own work paused pending the owner's decision.
