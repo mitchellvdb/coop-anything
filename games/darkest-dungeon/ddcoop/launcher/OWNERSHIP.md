@@ -1,3 +1,12 @@
+# Test67 runtime compatibility amendment (Codex)
+
+Launcher wire/lobby3 and the live-party mapping contract remain unchanged.
+Runtime protocol31 now carries USE door6 (option0 curio X, option1 obstacle X).
+Every player must install67; the separately pinned runtime kit ID rejects older
+builds. The launcher has no new gameplay authority or automatic restart change.
+The Windows build default is test67. Guest always-nosave and host save preference
+remain. See runtime/INPUT-PHASE.md for the skill-selection and cancel boundaries.
+
 # Automatic checkpoint restart amendment (test66)
 
 Explicit host Resync keeps the Steam lobby/control connection. LR_RESTART binds
