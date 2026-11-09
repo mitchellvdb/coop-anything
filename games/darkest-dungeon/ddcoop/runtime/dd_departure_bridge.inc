@@ -292,7 +292,7 @@ static uintptr_t __fastcall hook_raid_start(void *app) {
     quest_return_reset();
     embark_reset();
     departure_begin(app);
-    departure_view fresh;
+    departure_view fresh = {0};
     int shared = g_cfg.role != DD_ROLE_OFF && InterlockedCompareExchange(&g_session_ready,0,0) && !g_town.needs_resync;
     g_departure_fresh = shared && g_departure_seed && g_departure_rules && departure_read(app,&fresh);
     if (g_departure_fresh && g_cfg.role==DD_ROLE_GUEST && (!g_departure_have_host ||
