@@ -2,17 +2,17 @@
   {
     "version": "0.5.0-test58",
     "runtime_protocol": 27,
-    "runtime_sha256": "708c002a22df82a0c4022d837cd1d349c1c1ea62cf98f155e25c93e6a9104fd9",
-    "launcher_sha256": "eb45a275798ceb17882568432ae03fe1fdad500a4fbfefbf1d563ba2a0e056b4",
-    "kit_sha256": "b7e2b007a2f53c2a59dffd78504bd7d262cbebd99eb933a52b28c3666a0a3b9b",
+    "runtime_sha256": "3f242d74b9fc4e11d8c49fc9ab7f1b6a7a535b5f4bee90208ce3918e2e6fc7e3",
+    "launcher_sha256": "a83ca1d751459c55c82712e558f30e8ae3b592f351019601f8ecb5cd16b4bf48",
+    "kit_sha256": "bffcf98ad0f7cc146c89f09e00b39053d86b2cc378af87e88eee4fd8034dd852",
     "source_variant": "ordinary"
   },
   {
     "version": "0.5.0-duo41",
     "runtime_protocol": 27,
-    "runtime_sha256": "accacb230a3f1bdcc172189af7682bfcd40c89b3f5365ac8590acedbe8b2b85f",
-    "launcher_sha256": "56af67707d31257a6a60f9d5bdf92b7940850bbd07dbc31c2ad37c34cdda9ccb",
-    "kit_sha256": "2cd04729cfa5ec3095438acdd3e5841b959ebddabef62584a5264214f04b34c5",
+    "runtime_sha256": "aaa0c400418e37543f7e9d8ef7f22df36698b31b302c76ce28cea3274497745a",
+    "launcher_sha256": "9968bf5daf908dfdde224aebcc3d119321785676e8d7a0141ad61522101c0b52",
+    "kit_sha256": "2f721f2877c9e0dc397d94168be47952abce75153d662eccbbeab08c20a20567",
     "source_variant": "DD_DUO + matching runtime pin/launcher version"
   }
 ]
