@@ -85,6 +85,14 @@ int lr_owners_set_roster(lr_owners *o, const lr_hero *heroes, int count) {
     return changed;
 }
 
+int lr_owners_assign(lr_owners *o, uint32_t id, int player) {
+    int i = lr_owners_find(o, id);
+    if (i < 0 || player < 0 || player >= LR_MAX_PLAYERS || o->owner[i] == player) return 0;
+    o->owner[i] = (uint8_t)player;
+    o->revision++;
+    return 1;
+}
+
 int lr_owners_claim(lr_owners *o, uint32_t id, int player, int claim) {
     int i = lr_owners_find(o, id);
     if (i < 0 || player < 0 || player >= LR_MAX_PLAYERS) return 0;
@@ -199,7 +207,7 @@ size_t lr_owners_ini(const lr_owners *o, int writer, char *out, size_t cap) {
     size_t n = 0;
     int w = snprintf(out, cap,
                      "; DDCoop hero ownership. Written by DDCoop.exe, read by the runtime at embark.\r\n"
-                     "; hero.<roster id>=<player>: 0 = host, 1 = guest. A hero that is not listed belongs to the host.\r\n"
+                     "; hero.<roster id>=<player>: 0 = host, 1..3 = a guest. A hero that is not listed belongs to the host.\r\n"
                      "version=1\r\nwritten_by=%s\r\nrevision=%u\r\n",
                      writer == LR_PLAYER_HOST ? "host" : "guest", (unsigned)o->revision);
     if (w < 0 || (size_t)w >= cap) return 0;

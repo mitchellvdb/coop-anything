@@ -34,7 +34,7 @@ typedef enum {
     LR_HELLO = 10,      /* role, game build hash prefix, kit id (runtime hash prefix) in id */
     LR_KEEPALIVE = 11,
     LR_BYE = 12,        /* reason */
-    LR_SESSION = 13,    /* host -> guest: password, co-op menu slot */
+    LR_SESSION = 13,    /* host -> guest: password, co-op menu slot (a, low byte) and the guest's player 1..3 (a >> 8) */
     LR_SAVE_BEGIN = 14, /* host -> guest: file count, total bytes, save folder name */
     LR_SAVE_FILE = 15,  /* index, size, crc32, name */
     LR_SAVE_CHUNK = 16, /* index, offset, bytes */
@@ -59,6 +59,8 @@ typedef enum {
     LR_BYE_PROTOCOL = 7,     /* a malformed or unexpected message */
     LR_BYE_DLC = 8,          /* the guest lacks DLC the host's campaign uses */
     LR_BYE_RESTART = 9,      /* the host's game had its one session; it must restart first */
+    LR_BYE_RESYNC = 11,      /* coordinated restart from the host saved checkpoint */
+    LR_BYE_STARTED = 10,     /* the host's game has loaded the campaign already: everyone joins before that */
 } lr_bye_reason;
 
 typedef struct {

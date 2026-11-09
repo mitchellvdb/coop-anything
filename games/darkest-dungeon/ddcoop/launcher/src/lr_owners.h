@@ -9,7 +9,7 @@
 
 #include "lr_roster.h"
 
-#define LR_MAX_PLAYERS 2
+#define LR_MAX_PLAYERS 4 /* the host (0) and up to three guests (1..3) */
 #define LR_PLAYER_HOST 0
 #define LR_PLAYER_GUEST 1
 
@@ -41,6 +41,8 @@ int lr_owners_set_roster(lr_owners *o, const lr_hero *heroes, int count);
 /* Host: player ticks (claim = 1) or unticks (claim = 0) a hero. Ticking makes it theirs; unticking a hero of
  * theirs gives it to the other player. Returns 1 if the owner changed, 0 if nothing changed (unknown hero,
  * bad player, or unticking a hero that is not theirs). */
+/* Explicit owner assignment; caller enforces host authority. */
+int lr_owners_assign(lr_owners *o, uint32_t id, int player);
 int lr_owners_claim(lr_owners *o, uint32_t id, int player, int claim);
 
 /* Host: takes over the owners from an earlier ddcoop-heroes.ini for heroes in the table (so choices survive

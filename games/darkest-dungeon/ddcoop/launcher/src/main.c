@@ -42,14 +42,18 @@
 
 enum {
     ID_HOST = 100, ID_JOIN, ID_INVITE, ID_JOIN_CODE, ID_COPY_CODE, ID_STOP, ID_LOGS, ID_FRIENDS, ID_CODE, ID_TIMER,
-    ID_HOTKEY, ID_HEROES, ID_SLOT, ID_SAVE, ID_UNDO,
+    ID_HOTKEY, ID_HEROES, ID_SLOT, ID_SAVE, ID_UNDO, ID_PLAYERS, ID_ASSIGN_PLAYER, ID_ASSIGN_HERO, ID_RESYNC,
 };
 
 enum { CHK_GAME, CHK_VERSION, CHK_MOD, CHK_STEAM, CHK_SLOT, CHK_LOBBY, CHK_FRIEND, CHK_RUNTIME, CHK_COUNT };
 
 static struct {
     HWND wnd, status, checks, friends, code, host, join, invite, join_code, copy_code, stop, logs, hint, slot;
-    HWND save_box, undo;
+    HWND save_box, undo, players_box, assign_player, assign_button, resync;
+    int resync_closing;
+    uint64_t resync_close_at;
+    uint32_t assign_hero;
+    int players; /* the host's choice: 2..4 players in a session */
     int saving;                 /* host: the game saves its progress in the chosen slot (guests never save) */
     int prepare_undo;           /* the running helper puts the chosen slot back as it was before a session */
     int chosen_slot, slot_busy; /* The player's own choice; a guest's session replaces cfg.coop_slot for its duration. */
@@ -398,6 +402,25 @@ static void slot_remember(int slot) {
     lr_write_file(path, &digit, 1);
 }
 /* Host saving: the player's choice, remembered next to the slot. A missing file means the kit's default. */
+/* The number of players the host plays with (2..4), remembered like the slot. */
+static void players_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-players.txt"); }
+static int players_remembered(void) {
+    char path[LR_PATH_MAX];
+    uint8_t *data;
+    size_t len = 0;
+    int n = 2;
+    players_path(path, sizeof path);
+    if (lr_read_file(path, 64, &data, &len)) {
+        if (len >= 1 && data[0] >= '2' && data[0] <= '4') n = data[0] - '0';
+        free(data);
+    }
+    return n;
+}
+static void players_remember(int n) {
+    char path[LR_PATH_MAX], text[4] = {(char)('0' + n), '\r', '\n', 0};
+    players_path(path, sizeof path);
+    lr_write_file(path, (const uint8_t *)text, 3);
+}
 static void saving_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-save.txt"); }
 static int saving_remembered(void) {
     char path[LR_PATH_MAX];
@@ -630,7 +653,10 @@ static int session_active(void) { return G.core.state != LR_ST_IDLE && G.core.st
 
 static void stop_session(const char *why) {
     if (session_active() || lr_steam_lobby()) logline("stop: %s", why);
-    if (G.core.peer) lr_steam_close_session(G.core.peer);
+    if (G.core.role == LR_ROLE_HOST) {
+        for (int i = 0; i < LR_MAX_GUESTS; i++)
+            if (G.core.guests[i].peer) lr_steam_close_session(G.core.guests[i].peer);
+    } else if (G.core.peer) lr_steam_close_session(G.core.peer);
     lr_core_stop(&G.core);
     lr_steam_leave_lobby();
     G.hosting_pending = 0;
@@ -726,6 +752,8 @@ static void do_host(void) {
     }
     stop_session("new session");
     G.core.cfg.coop_slot = G.chosen_slot;
+    G.core.cfg.max_guests = G.players >= 2 && G.players <= 4 ? G.players - 1 : 1;
+    logline("host: %d players (waits for %d friend(s) before the campaign loads)", G.core.cfg.max_guests + 1, G.core.cfg.max_guests);
     {
         /* Where this game's log lines will start. */
         char path[LR_PATH_MAX];
@@ -866,6 +894,8 @@ static void collect_logs(int open_folder) {
     const char *names[] = {"DDCoop-launcher.log",
                            "ddcoop-fw-host.log",
                            "ddcoop-fw-guest.log",
+                           "ddcoop-fw-guest2.log",
+                           "ddcoop-fw-guest3.log",
                            "ddcoop-heroes.ini",
                            "ddcoop-prepare.log",
                            "ddcoop-restore.log",
@@ -877,7 +907,7 @@ static void collect_logs(int open_folder) {
         char from[LR_PATH_MAX], to[LR_PATH_MAX];
         uint8_t *data;
         size_t len;
-        lr_join(from, sizeof from, i >= 6 ? G.bin : G.moddir, names[i]);
+        lr_join(from, sizeof from, i >= 8 ? G.bin : G.moddir, names[i]);
         lr_join(to, sizeof to, dir, names[i]);
         if (lr_read_file(from, 64u * 1024 * 1024, &data, &len)) {
             lr_write_file(to, data, len);
@@ -1190,6 +1220,7 @@ static void update_runtime_line(void) {
             memcpy(tail, data + G.host_log_start, k);
             tail[k] = 0;
             if (strstr(tail, "guest disconnected") || strstr(tail, "shared actions stopped")) lr_core_host_spent(&G.core);
+            if (strstr(tail, "Start screen: loading slot") || strstr(tail, "town hooks installed")) lr_core_host_loaded(&G.core);
             free(tail);
         }
     }
@@ -1216,6 +1247,9 @@ static void update_heroes(void) {
         G.heroes_recheck_at = 0;
         G.heroes_shown = 0xFFFFFFFFu;
     }
+    int can_assign = role == LR_ROLE_HOST && lr_owners_find(o, G.assign_hero) >= 0;
+    EnableWindow(G.assign_player, can_assign);
+    EnableWindow(G.assign_button, can_assign);
     if (o->revision == G.heroes_shown && role == G.heroes_role) return;
     G.heroes_shown = o->revision;
     G.heroes_role = role;
@@ -1233,7 +1267,8 @@ static void update_heroes(void) {
         for (char *c = cls; *c; c++)
             if (*c == '_') *c = ' ';
         snprintf(level, sizeof level, "%d", lr_hero_level(h->xp));
-        const char *by = o->owner[i] == me ? "you" : o->owner[i] == LR_PLAYER_HOST ? "host" : "friend";
+        static const char *const players[] = {"host", "player 2", "player 3", "player 4"};
+        const char *by = o->owner[i] == me ? "you" : o->owner[i] < 4 ? players[o->owner[i]] : "friend";
         LVITEMW it = {0};
         it.mask = LVIF_TEXT | LVIF_PARAM;
         it.iItem = position;
@@ -1250,6 +1285,8 @@ static void update_heroes(void) {
             SendMessageW(G.heroes, LVM_SETITEMTEXTW, (WPARAM)row, (LPARAM)&sub);
         }
         ListView_SetCheckState(G.heroes, row, o->owner[i] == me);
+        if (h->id == G.assign_hero)
+            ListView_SetItemState(G.heroes, row, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
     }
     SendMessageW(G.heroes, WM_SETREDRAW, TRUE, 0);
     InvalidateRect(G.heroes, NULL, TRUE);
@@ -1262,13 +1299,14 @@ static void update_heroes(void) {
                                              : "Waiting for the host hero list...");
     else
         set_heroes_hint("\xe2\x97\x8f = current in-game party, shown first. Tick the heroes you control; "
-                        "changes apply at the next supported choice boundary.");
+                        "changes apply at the next supported choice boundary. The host can also select a row and assign a player.");
 }
 
 /* A tick box was clicked: ask lr_core (the host decides). The list then follows the table again: the host's
  * own change is a new revision at once; a guest's comes back from the host, so check again after 2 s. */
 static void on_hero_checked(const NMLISTVIEW *nm) {
     if (G.heroes_filling || !(nm->uChanged & LVIF_STATE)) return;
+    if (nm->uNewState & LVIS_SELECTED) G.assign_hero = (uint32_t)nm->lParam;
     UINT old_state = (nm->uOldState & LVIS_STATEIMAGEMASK) >> 12, new_state = (nm->uNewState & LVIS_STATEIMAGEMASK) >> 12;
     if (old_state == 0 || new_state == 0 || old_state == new_state) return; /* not a tick box change */
     uint32_t id = (uint32_t)nm->lParam;
@@ -1330,10 +1368,21 @@ static void tick_body(void) {
     lr_core_tick(&G.core, t);
     /* A guest session that fails on its own (missing DLC, lost host) gets a pop-up, not only the red status line.
      * Failures from a button (Host, Join) already show one there. */
-    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED) {
+    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED && !G.core.resync_requested) {
         message(G.core.error, MB_ICONWARNING);
         collect_logs(0);
     }
+    if (G.core.resync_requested == 2 && !G.core.resend_len && !G.resync_closing) {
+        G.resync_closing = 1;
+        collect_logs(0);
+        request_game_close(); /* WM_CLOSE only: never terminate a save write. */
+        stop_session("Resync: closing normally. Wait for guest recovery, then Host and Join again from the host saved checkpoint.");
+    }
+    if (G.resync_closing && G.game && t-G.resync_close_at >= 1000) {
+        G.resync_close_at=t;request_game_close();
+    }
+    if (G.resync_closing && !G.game && !G.prepare && !restore_pending()) G.resync_closing=0;
+    EnableWindow(G.resync, G.core.role == LR_ROLE_HOST && session_active() && !G.prepare && !G.resync_closing && !G.core.resync_requested);
     if (lr_core_take_launch(&G.core)) {
         if (!launch_game(1)) stop_session("The game could not start.");
     }
@@ -1386,6 +1435,7 @@ static void tick_body(void) {
                 G.slot_busy = busy;
                 EnableWindow(G.slot, !busy);
                 EnableWindow(G.save_box, !busy);
+                EnableWindow(G.players_box, !busy);
                 EnableWindow(G.undo, !busy);
                 if (!busy) slot_fill();
             }
@@ -1429,10 +1479,13 @@ static void build_window(void) {
     y += 36;
     G.host = control(L"BUTTON", L"Host a game", BS_PUSHBUTTON, 14, y, 200, 34, ID_HOST, G.font);
     G.stop = control(L"BUTTON", L"Stop session", BS_PUSHBUTTON, 224, y, 140, 34, ID_STOP, G.font);
-    G.logs = control(L"BUTTON", L"Copy logs", BS_PUSHBUTTON, 374, y, 140, 34, ID_LOGS, G.font);
+    G.logs = control(L"BUTTON", L"Copy logs", BS_PUSHBUTTON, 374, y, 130, 34, ID_LOGS, G.font);
+    G.resync = control(L"BUTTON", L"Resync...", BS_PUSHBUTTON | WS_TABSTOP, 514, y, 140, 34, ID_RESYNC, G.font);
     y += 42;
-    G.save_box = control(L"BUTTON", L"Save progress when hosting", BS_AUTOCHECKBOX | WS_TABSTOP, 14, y, 300, 26, ID_SAVE, G.font);
-    G.undo = control(L"BUTTON", L"Restore this slot's backup...", BS_PUSHBUTTON, 374, y - 2, 280, 30, ID_UNDO, G.font);
+    G.save_box = control(L"BUTTON", L"Save progress when hosting", BS_AUTOCHECKBOX | WS_TABSTOP, 14, y, 260, 26, ID_SAVE, G.font);
+    control(L"STATIC", L"Players:", SS_LEFT, 285, y + 5, 60, 20, 0, G.font);
+    G.players_box = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, 345, y, 60, 200, ID_PLAYERS, G.font);
+    G.undo = control(L"BUTTON", L"Restore this slot's backup...", BS_PUSHBUTTON, 424, y - 2, 230, 30, ID_UNDO, G.font);
     y += 36;
     control(L"STATIC", L"Steam friends (hosts shown first):", SS_LEFT, 14, y, 400, 20, 0, G.font);
     y += 22;
@@ -1453,7 +1506,7 @@ static void build_window(void) {
     G.heroes = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER |
                                    LVS_SHOWSELALWAYS,
-                               D(674), D(40), D(370), D(576), G.wnd, (HMENU)(INT_PTR)ID_HEROES, NULL, NULL);
+                               D(674), D(40), D(370), D(532), G.wnd, (HMENU)(INT_PTR)ID_HEROES, NULL, NULL);
     SendMessageW(G.heroes, WM_SETFONT, (WPARAM)G.font, TRUE);
     LOGFONTW party_style;
     if(GetObjectW(G.font,sizeof party_style,&party_style)) {
@@ -1461,7 +1514,7 @@ static void build_window(void) {
     }
     ListView_SetExtendedListViewStyle(G.heroes, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     static const struct { const wchar_t *name; int width; } cols[] = {
-        {L"Hero", 112}, {L"Class", 120}, {L"Lvl.", 44}, {L"Player", 60}};
+        {L"Hero", 100}, {L"Class", 110}, {L"Lvl.", 36}, {L"Player", 90}};
     for (int i = 0; i < 4; i++) {
         LVCOLUMNW c = {0};
         c.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
@@ -1470,7 +1523,14 @@ static void build_window(void) {
         c.iSubItem = i;
         SendMessageW(G.heroes, LVM_INSERTCOLUMNW, (WPARAM)i, (LPARAM)&c);
     }
-    G.heroes_hint = control(L"STATIC", L"", SS_LEFT, 674, 624, 370, 90, 0, G.font);
+    control(L"STATIC", L"Assign selected hero (host):", SS_LEFT, 674, 580, 370, 20, 0, G.font);
+    G.assign_player = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, 674, 604, 246, 160, ID_ASSIGN_PLAYER, G.font);
+    static const wchar_t *const choices[] = {L"Player 1 (host)", L"Player 2", L"Player 3", L"Player 4"};
+    for (int i = 0; i < 4; i++) SendMessageW(G.assign_player, CB_ADDSTRING, 0, (LPARAM)choices[i]);
+    SendMessageW(G.assign_player, CB_SETCURSEL, 0, 0);
+    G.assign_button = control(L"BUTTON", L"Assign", BS_PUSHBUTTON | WS_TABSTOP, 930, 604, 114, 28, ID_ASSIGN_HERO, G.font);
+    EnableWindow(G.assign_player, FALSE); EnableWindow(G.assign_button, FALSE);
+    G.heroes_hint = control(L"STATIC", L"", SS_LEFT, 674, 646, 370, 68, 0, G.font);
     G.heroes_shown = 0xFFFFFFFFu;
     wchar_t hint[400];
     swprintf(hint, 400, L"%ls  Works best with Darkest Dungeon in windowed or borderless mode. DDCoop %hs",
@@ -1516,6 +1576,37 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case ID_FRIENDS:
             if (HIWORD(wp) == LBN_DBLCLK) do_join_selected();
+            break;
+        case ID_RESYNC:
+            if (HIWORD(wp) == BN_CLICKED && G.core.role == LR_ROLE_HOST && session_active() && !G.prepare) {
+                int answer=MessageBoxW(G.wnd,
+                    L"Restart everyone from the host's last saved checkpoint?\n\n"
+                    L"All games close normally. Guest saves recover automatically. Unsaved progress may be lost. "
+                    L"Wait for recovery, then click Host and have everyone Join again. No live repair is attempted.",
+                    L"DDCoop resync", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+                if(answer==IDYES && lr_core_request_resync(&G.core)) collect_logs(0);
+            }
+            break;
+        case ID_ASSIGN_HERO:
+            if (HIWORD(wp) == BN_CLICKED) {
+                int player = (int)SendMessageW(G.assign_player, CB_GETCURSEL, 0, 0);
+                if (!lr_core_assign(&G.core, G.assign_hero, player)) {
+                    set_heroes_hint("Select a hero and a player included in this session. An unchanged owner needs no update.");
+                    G.heroes_hint_until = now_ms() + 4000;
+                }
+                G.heroes_shown = 0xFFFFFFFFu;
+                update_heroes();
+            }
+            break;
+        case ID_PLAYERS:
+            if (HIWORD(wp) == CBN_SELCHANGE) {
+                LRESULT at = SendMessageW(G.players_box, CB_GETCURSEL, 0, 0);
+                if (at >= 0 && at <= 2) {
+                    G.players = (int)at + 2;
+                    players_remember(G.players);
+                    logline("chosen: %d players", G.players);
+                }
+            }
             break;
         case ID_SLOT:
             if (HIWORD(wp) == CBN_DROPDOWN) slot_fill();
@@ -1702,6 +1793,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
     G.chosen_slot = slot_remembered();
     G.saving = saving_remembered();
     SendMessageW(G.save_box, BM_SETCHECK, G.saving ? BST_CHECKED : BST_UNCHECKED, 0);
+    G.players = players_remembered();
+    SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"2");
+    SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"3");
+    SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"4");
+    SendMessageW(G.players_box, CB_SETCURSEL, (WPARAM)(G.players - 2), 0);
     slot_fill();
     /* A crash or power cut can leave a session ini behind; a normal Steam start must stay single player. */
     PHASE("startup: ini reset");

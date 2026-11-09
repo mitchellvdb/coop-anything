@@ -207,7 +207,8 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
         out->a = get32(p);
         memcpy(out->text, p + 4, LR_PASSWORD_LEN);
         out->text[LR_PASSWORD_LEN] = 0;
-        if (!lr_password_ok(out->text) || out->a < 1 || out->a > 9) return 0;
+        /* a: the co-op slot (1..9) in the low byte, the guest's player (0 = 1, else 1..3) in the next. */
+        if (!lr_password_ok(out->text) || (out->a & 0xffu) < 1 || (out->a & 0xffu) > 9 || (out->a >> 8) > 3) return 0;
         break;
     case LR_SAVE_FILE: {
         if (n < 14) return 0;
@@ -230,6 +231,7 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
 
 const char *lr_bye_text(uint32_t reason) {
     switch (reason) {
+    case LR_BYE_RESYNC: return "The host requested a resync. The games will close normally and guest backups recover. Then the host clicks Host and everyone joins again from the saved checkpoint.";
     case LR_BYE_QUIT: return "The other player closed the session.";
     case LR_BYE_FULL: return "The host already has a player (this version supports one friend at a time).";
     case LR_BYE_VERSION: return "Your DDCoop versions differ; install the same ZIP on both PCs.";
@@ -238,6 +240,7 @@ const char *lr_bye_text(uint32_t reason) {
     case LR_BYE_GAME_RUNNING: return "Close Darkest Dungeon first, then join again.";
     case LR_BYE_PROTOCOL: return "onverwacht bericht (verschillende versies?)";
     case LR_BYE_RESTART: return "The host must close the game and click Host again first; then join the new session.";
+    case LR_BYE_STARTED: return "The host's game has already loaded the campaign. Everyone has to join before that: ask the host to close the game, choose the number of players and click Host again.";
     case LR_BYE_DLC: return "Your friend is missing DLC required by this campaign (see their launcher).";
     default: return "unknown reason";
     }

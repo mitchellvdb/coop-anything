@@ -1,3 +1,23 @@
+# Coordinated checkpoint resync (test65)
+
+Host Resync requests LR_BYE_RESYNC through the existing authenticated launcher
+control channel. Each guest acknowledges, closes its game through WM_CLOSE and
+uses existing journaled backup recovery after game exit. The host retries the
+request until acknowledgements/peer departures, then closes normally too. No
+process termination, live-memory rewrite, save while running or desync flag reset.
+After recovery the host clicks Host and everyone joins the fresh checkpoint.
+Unsaved progress may be lost; the button explains this before proceeding.
+
+# Direct assignment amendment (test65, owner request 9 Nov 2026)
+
+The host can select a hero row and assign Player 1 (host), 2, 3 or 4 directly.
+The launcher validates the persistent hero ID, active host session and configured
+player count. Guests retain their existing self-claim route; they cannot invoke
+this host-only API. A changed owner increments the existing revision, persists
+written_by=host and broadcasts the whole table to every connected guest through
+LR_ROSTER. No wire/file layout change. Mid-dungeon changes still take effect at
+the next supported choice boundary. Selection survives live-party row sorting.
+
 # Live party display amendment, owner feedback 8 Nov 2026 (test55)
 
 Party highlighting is a view of live membership, separate from who owns each hero.

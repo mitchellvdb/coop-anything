@@ -356,11 +356,51 @@ static void test_pending_close(void) {
     printf("relay close: queued EOF survives peer close and backpressure\n");
 }
 
+
+typedef struct {unsigned tries[8],accepted[8],rosters[8];} resync_sender;
+static int resync_send(void *ctx,uint64_t peer,int channel,const uint8_t *buf,size_t len) {
+    resync_sender *sender=ctx;lr_msg m;
+    CHECK(peer<8 && lr_decode(buf,len,channel,&m));
+    if(m.type==LR_ROSTER) {lr_owners o;CHECK(lr_owners_decode(m.data,m.len,m.id,&o) && o.count==1 && o.heroes[0].id==7 && o.owner[0]==3);sender->rosters[peer]++;return 1;}
+    if(m.type!=LR_BYE)return 1;
+    CHECK(m.a==LR_BYE_RESYNC);
+    if(++sender->tries[peer]==1)return 0;
+    sender->accepted[peer]++;return 1;
+}
+static void test_checkpoint_resync(void) {
+    static lr_core h,g;resync_sender hs={0},gs={0};lr_config cfg={0};
+    cfg.send=resync_send;cfg.ctx=&hs;lr_core_init(&h,&cfg);
+    CHECK(!lr_core_request_resync(&h));h.role=LR_ROLE_HOST;h.state=LR_ST_HOST_PLAYING;
+    uint64_t at=now_ms();
+    for(int i=0;i<3;i++) {h.guests[i].peer=(uint64_t)i+2;h.guests[i].playing=1;h.guests[i].last_rx=h.guests[i].last_tx=at;}
+    lr_hero hero={0};hero.id=7;snprintf(hero.name,sizeof hero.name,"Hero");snprintf(hero.cls,sizeof hero.cls,"vestal");
+    CHECK(lr_owners_set_roster(&h.owners,&hero,1) && lr_core_assign(&h,7,3));
+    lr_core_tick(&h,at);
+    for(int i=2;i<=4;i++)CHECK(hs.rosters[i]==1);
+    CHECK(lr_core_request_resync(&h) && !lr_core_request_resync(&h));
+    CHECK(!lr_core_assign(&h,1,0) && !lr_core_claim(&h,1,1));
+    lr_core_tick(&h,at);CHECK(h.resync_requested==1);
+    lr_core_tick(&h,at+1001);
+    for(int i=2;i<=4;i++) CHECK(hs.tries[i]==2 && hs.accepted[i]==1);
+    lr_msg ack={0};ack.type=LR_BYE;ack.a=LR_BYE_RESYNC;uint8_t bytes[LR_MAX_MSG];size_t n=lr_encode(&ack,bytes);
+    for(int i=2;i<=4;i++)lr_core_on_message(&h,(uint64_t)i,LR_CH_CONTROL,bytes,n,at+1002);
+    lr_core_tick(&h,at+1003);CHECK(h.resync_requested==2 && !lr_core_guest_count(&h));
+    cfg.ctx=&gs;lr_core_init(&g,&cfg);g.role=LR_ROLE_GUEST;g.state=LR_ST_GUEST_PLAYING;g.peer=1;
+    CHECK(!lr_core_request_resync(&g));
+    lr_core_on_message(&g,1,LR_CH_CONTROL,bytes,n,at);
+    CHECK(g.state==LR_ST_FAILED && g.resync_requested==2 && g.resend_len);
+    lr_core_tick(&g,at+1);CHECK(!g.resend_len && gs.accepted[1]==1);
+    CHECK(strstr(g.error,"resync") && !g.cfg.restore_path[0]);
+    lr_core_free(&h);lr_core_free(&g);
+    puts("Checkpoint resync: all three guests notified/acknowledged, retry under backpressure, host-only, no live save writes");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(4242);
     lr_sock_startup();
     test_pending_close();
+    test_checkpoint_resync();
 #ifdef _WIN32
     snprintf(root, sizeof root, "build/lrtest-%lu-%llu", GetCurrentProcessId(), (unsigned long long)now_ms());
     CHECK(!lr_dir_exists(root) && lr_make_dirs(root));
@@ -475,6 +515,22 @@ int main(void) {
     CHECK(run_until(&host, &guest, owner_is, (void *)"8g", 5000) && run_until(&host, &guest, owner_is, (void *)"2h", 5000));
     CHECK(run_until(&host, &guest, owners_match, NULL, 5000));
 
+    /* Direct host assignment: all four owners use the existing revision/table path. */
+    CHECK(lr_core_assign(&host.core, 8, 3));
+    CHECK(run_until(&host, &guest, owners_match, NULL, 5000));
+    CHECK(guest.core.owners.owner[2] == 3);
+    ini = read_text(host.core.cfg.heroes_path);
+    CHECK(ini && strstr(ini, "written_by=host") && strstr(ini, "hero.8=3")); free(ini);
+    rev = host.core.owners.revision;
+    CHECK(!lr_core_assign(&host.core, 8, 3) && !lr_core_assign(&host.core, 99, 2));
+    CHECK(!lr_core_assign(&host.core, 8, -1) && !lr_core_assign(&host.core, 8, 4));
+    CHECK(!lr_core_assign(&guest.core, 8, 0) && host.core.owners.revision == rev);
+    host.core.cfg.max_guests = 1;
+    CHECK(!lr_core_assign(&host.core, 8, 2) && host.core.owners.revision == rev);
+    host.core.cfg.max_guests = 0;
+    CHECK(lr_core_assign(&host.core, 8, 2) && lr_core_assign(&host.core, 8, 1));
+    CHECK(run_until(&host, &guest, owners_match, NULL, 5000));
+
     /* 4f. the roster changes while playing (Bourneville died, Corviser recruited): owners kept, new = host */
     CHECK(lr_core_claim(&guest.core, 1, 1));
     CHECK(run_until(&host, &guest, owner_is, (void *)"1g", 5000));
@@ -489,10 +545,40 @@ int main(void) {
     CHECK(guest.core.owners.owner[0] == LR_PLAYER_GUEST && guest.core.owners.owner[1] == LR_PLAYER_HOST &&
           guest.core.owners.owner[2] == LR_PLAYER_HOST && guest.core.owners.heroes[0].xp == 8);
 
-    /* 5. a second friend is told the host is full */
+    /* 5. a second friend joins as player 2: the campaign, its own player number in ddcoop.ini, and the host's
+     *    number of friends for the runtime; then it leaves again and the first friend stays */
+    make_guest_campaign(guest2.core.cfg.remote_dir);
+    CHECK(lr_core_guest_join(&guest2.core, 1, now_ms()));
+    CHECK(run_until(&host, &guest2, state_is, &guest2, 5000));
+    CHECK(guest2.core.state == LR_ST_GUEST_LAUNCH && guest2.core.player == 2 && guest.core.player == 1);
+    CHECK(lr_core_guest_count(&host.core) == 2 && host.core.guests[1].peer);
+    ini = read_text(guest2.core.cfg.ini_path);
+    CHECK(ini && strstr(ini, "role=guest") && strstr(ini, "player=2"));
+    free(ini);
+    ini = read_text(host.core.guests_path);
+    CHECK(!ini); /* No player count chosen (max_guests 0): the runtime is not told a number. */
+    free(ini);
+    lr_core_stop(&guest2.core);
+    for (int i = 0; i < 3; i++) { lr_core_tick(&guest2.core, now_ms()); deliver(); } /* a BYE that waited for room goes out */
+    CHECK(lr_core_guest_count(&host.core) == 1 && host.core.peer && host.core.state == LR_ST_HOST_PLAYING);
+    /* Once the host's game has loaded the campaign, a new friend is refused with its own reason. */
+    lr_core_host_loaded(&host.core);
+    lr_core_free(&guest2.core);
+    setup_node(&guest2, 4, "guest2b");
+    make_guest_campaign(guest2.core.cfg.remote_dir);
     CHECK(lr_core_guest_join(&guest2.core, 1, now_ms()));
     CHECK(run_until(&host, &guest2, failed, &guest2, 3000));
-    CHECK(strstr(guest2.core.error, "one friend"));
+    CHECK(strstr(guest2.core.error, "already loaded") && lr_core_guest_count(&host.core) == 1);
+    host.core.host_loaded = 0;
+    /* The host chose two players: a second friend is told the session is full. */
+    host.core.cfg.max_guests = 1;
+    lr_core_free(&guest2.core);
+    setup_node(&guest2, 4, "guest2c");
+    make_guest_campaign(guest2.core.cfg.remote_dir);
+    CHECK(lr_core_guest_join(&guest2.core, 1, now_ms()));
+    CHECK(run_until(&host, &guest2, failed, &guest2, 3000));
+    CHECK(lr_core_guest_count(&host.core) == 1);
+    host.core.cfg.max_guests = 0;
 
     /* 6. the games: the host's runtime listens only after 1.5 s of "loading" */
     host_game hg = {LR_NOSOCK, LR_NOSOCK, host.core.game_port, now_ms() + 1500, 0, 0};

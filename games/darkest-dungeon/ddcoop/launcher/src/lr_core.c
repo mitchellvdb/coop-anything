@@ -60,11 +60,47 @@ void lr_core_free(lr_core *c) {
 
 /* ---- sending ---- */
 
-static int send_msg(lr_core *c, const lr_msg *m) {
+static int send_to(lr_core *c, uint64_t peer, const lr_msg *m) {
     uint8_t buf[LR_MAX_MSG];
     size_t n = lr_encode(m, buf);
-    if (n == 0 || c->peer == 0) return -1;
-    return c->cfg.send(c->cfg.ctx, c->peer, lr_channel_of(m->type), buf, n);
+    if (n == 0 || peer == 0) return -1;
+    return c->cfg.send(c->cfg.ctx, peer, lr_channel_of(m->type), buf, n);
+}
+static int send_msg(lr_core *c, const lr_msg *m) { return send_to(c, c->peer, m); }
+
+/* ---- host: up to three friends ---- */
+
+static lr_guest *guest_of(lr_core *c, uint64_t peer) {
+    for (int i = 0; peer && i < LR_MAX_GUESTS; i++)
+        if (c->guests[i].peer == peer) return &c->guests[i];
+    return NULL;
+}
+static int guest_player(const lr_core *c, const lr_guest *g) { return (int)(g - c->guests) + 1; }
+int lr_core_guest_count(const lr_core *c) {
+    int n = 0;
+    if (c->role != LR_ROLE_HOST) return 0;
+    for (int i = 0; i < LR_MAX_GUESTS; i++) n += c->guests[i].peer != 0;
+    return n;
+}
+/* The host's state from its friends: waiting with none, sending while any still gets the campaign, else playing.
+ * peer is the first friend (the old single-friend field). The runtime learns how many friends to wait for. */
+static void host_update(lr_core *c) {
+    int any = 0, sending = 0, n = lr_core_guest_count(c);
+    c->peer = 0;
+    for (int i = 0; i < LR_MAX_GUESTS; i++) {
+        if (!c->guests[i].peer) continue;
+        if (!any) c->peer = c->guests[i].peer;
+        any = 1;
+        if (!c->guests[i].playing) sending = 1;
+    }
+    if (c->state == LR_ST_HOST_WAITING || c->state == LR_ST_HOST_SENDING || c->state == LR_ST_HOST_PLAYING)
+        c->state = !any ? LR_ST_HOST_WAITING : sending ? LR_ST_HOST_SENDING : LR_ST_HOST_PLAYING;
+    (void)n; /* ddcoop-guests.txt holds the host's chosen number (lr_core_host_start), not who is here now. */
+}
+static void guest_drop(lr_core *c, lr_guest *g) {
+    if (c->relay_up) lr_relay_drop_peer(&c->relay, g->peer);
+    memset(g, 0, sizeof *g);
+    host_update(c);
 }
 
 /* One-off control messages (BYE, SAVE_RESULT). If Steam's buffer is full the message waits in a resend slot
@@ -103,7 +139,7 @@ static int relay_send(void *ctx, uint64_t peer, int channel, const uint8_t *buf,
 
 /* ---- hero ownership ---- */
 
-int lr_core_player(const lr_core *c) { return c->role == LR_ROLE_GUEST ? LR_PLAYER_GUEST : LR_PLAYER_HOST; }
+int lr_core_player(const lr_core *c) { return c->role == LR_ROLE_GUEST ? (c->player >= 1 && c->player <= 3 ? c->player : 1) : LR_PLAYER_HOST; }
 
 static void owners_save(lr_core *c) {
     static char text[16384];
@@ -120,7 +156,7 @@ static void owners_log(lr_core *c, const char *why) {
     list[0] = 0;
     for (int i = 0; i < c->owners.count && k + 16 < sizeof list; i++)
         k += (size_t)snprintf(list + k, sizeof list - k, " %u:%c", (unsigned)c->owners.heroes[i].id,
-                              c->owners.owner[i] == LR_PLAYER_HOST ? 'h' : 'g');
+                              c->owners.owner[i] == LR_PLAYER_HOST ? 'h' : (char)('0' + c->owners.owner[i]));
     logf_(c, "heroes (%s): revision %u, %d heroes:%s", why, (unsigned)c->owners.revision, c->owners.count, list);
 }
 
@@ -167,7 +203,19 @@ static void guest_send_claims(lr_core *c) {
     c->claim_count -= sent;
 }
 
+int lr_core_assign(lr_core *c, uint32_t hero_id, int player) {
+    if (c->resync_requested) return 0;
+    if (c->role != LR_ROLE_HOST || (c->state != LR_ST_HOST_WAITING &&
+        c->state != LR_ST_HOST_SENDING && c->state != LR_ST_HOST_PLAYING)) return 0;
+    int guests = c->cfg.max_guests >= 1 && c->cfg.max_guests <= LR_MAX_GUESTS ? c->cfg.max_guests : LR_MAX_GUESTS;
+    if (player < 0 || player > guests || !lr_owners_assign(&c->owners, hero_id, player)) return 0;
+    owners_save(c);
+    owners_log(c, "host assigned player");
+    return 1;
+}
+
 int lr_core_claim(lr_core *c, uint32_t hero_id, int claim) {
+    if (c->resync_requested) return 0;
     if (c->state == LR_ST_IDLE || c->state == LR_ST_FAILED) return 0;
     if (c->role == LR_ROLE_HOST) {
         if (!lr_owners_claim(&c->owners, hero_id, LR_PLAYER_HOST, claim)) return 0;
@@ -184,30 +232,36 @@ int lr_core_claim(lr_core *c, uint32_t hero_id, int claim) {
     return 1;
 }
 
-/* Host: the guest gets every new revision of the table (and the whole table again after a refused tick). */
+/* Host: each friend gets every new revision of the table (and the whole table again after a refused tick). */
 static void host_send_owners(lr_core *c) {
     static uint8_t body[LR_CHUNK];
-    if (c->state != LR_ST_HOST_PLAYING || !c->peer || !c->owners.revision || c->owners_sent == c->owners.revision)
-        return;
-    size_t n = lr_owners_encode(&c->owners, body, sizeof body);
-    lr_msg m = {0};
-    m.type = LR_ROSTER;
-    m.id = c->owners.revision;
-    m.data = body;
-    m.len = n;
-    if (n && send_msg(c, &m) > 0) c->owners_sent = c->owners.revision;
+    if (!c->owners.revision) return;
+    for (int i = 0; i < LR_MAX_GUESTS; i++) {
+        lr_guest *g = &c->guests[i];
+        if (!g->peer || !g->playing || g->owners_sent == c->owners.revision) continue;
+        size_t n = lr_owners_encode(&c->owners, body, sizeof body);
+        lr_msg m = {0};
+        m.type = LR_ROSTER;
+        m.id = c->owners.revision;
+        m.data = body;
+        m.len = n;
+        if (n && send_to(c, g->peer, &m) > 0) g->owners_sent = c->owners.revision;
+    }
 }
 
 /* ---- ini and save folders ---- */
 
 int lr_write_ini(const char *path, const char *role, int port, const char *password, int coop_slot) {
+    return lr_write_ini_player(path, role, port, password, coop_slot, 1);
+}
+int lr_write_ini_player(const char *path, const char *role, int port, const char *password, int coop_slot, int player) {
     char text[1024];
     int n = snprintf(text, sizeof text,
                      "; Written by DDCoop.exe. Do not edit: DDCoop rewrites this file for every session.\r\n"
                      "; role=off means a normal game start (from Steam) stays single player.\r\n"
-                     "[net]\r\nrole=%s\r\nport=%d\r\nbind_any=0\r\nhost=127.0.0.1\r\npassword=%s\r\n\r\n"
+                     "[net]\r\nrole=%s\r\nport=%d\r\nbind_any=0\r\nhost=127.0.0.1\r\npassword=%s\r\nplayer=%d\r\n\r\n"
                      "[coop]\r\ncoop_slots=%d\r\n\r\n[log]\r\nverbose=0\r\n",
-                     role, port, password, coop_slot);
+                     role, port, password, player >= 1 && player <= 3 ? player : 1, coop_slot);
     return n > 0 && (size_t)n < sizeof text && lr_write_file(path, (const uint8_t *)text, (size_t)n);
 }
 
@@ -496,6 +550,12 @@ static int store_campaign(lr_core *c) {
 /* ---- host ---- */
 
 #define LR_HOST_RESTART_TEXT "Your friend left. Close the game and click Host again to start a new session."
+void lr_core_host_loaded(lr_core *c) {
+    if (c->role != LR_ROLE_HOST || c->host_loaded) return;
+    c->host_loaded = 1;
+    logf_(c, "host: the game has loaded the campaign; friends who come now are refused (%d in the session)", lr_core_guest_count(c));
+}
+
 void lr_core_host_spent(lr_core *c) {
     if (c->role != LR_ROLE_HOST || c->host_spent) return;
     c->host_spent = 1;
@@ -506,8 +566,29 @@ void lr_core_host_spent(lr_core *c) {
 int lr_core_host_start(lr_core *c, uint64_t now_ms) {
     lr_core_free(c);
     c->host_spent = 0;
+    c->resync_requested = 0; c->resync_sent_at = 0;
     c->role = LR_ROLE_HOST;
     c->peer = 0;
+    memset(c->guests, 0, sizeof c->guests);
+    c->guests_written = -1;
+    c->guests_path[0] = 0;
+    if (c->cfg.ini_path[0]) {
+        char *slash;
+        snprintf(c->guests_path, sizeof c->guests_path, "%s", c->cfg.ini_path);
+        slash = strrchr(c->guests_path, '\\');
+        if (!slash) slash = strrchr(c->guests_path, '/');
+        if (slash && (size_t)(slash + 1 - c->guests_path) + 18 < sizeof c->guests_path) strcpy(slash + 1, "ddcoop-guests.txt");
+        else c->guests_path[0] = 0;
+        if (c->guests_path[0]) lr_delete_file(c->guests_path);
+        c->guests_written = 0;
+        /* The runtime waits at the save screen until this many friends stand there too. */
+        if (c->guests_path[0] && c->cfg.max_guests >= 1 && c->cfg.max_guests <= LR_MAX_GUESTS) {
+            char text[8];
+            snprintf(text, sizeof text, "%d\r\n", c->cfg.max_guests);
+            if (lr_write_file(c->guests_path, (const uint8_t *)text, strlen(text))) c->guests_written = c->cfg.max_guests;
+        }
+    }
+    c->host_loaded = 0;
     c->error[0] = 0;
     c->password[0] = 0;
     c->resend_len = 0;
@@ -562,7 +643,8 @@ int lr_core_host_start(lr_core *c, uint64_t now_ms) {
 }
 
 static void host_accept(lr_core *c, uint64_t peer, const lr_msg *hello, uint64_t now_ms) {
-    if (c->host_spent && c->peer != peer) {
+    lr_guest *g = guest_of(c, peer);
+    if (c->host_spent && !g) {
         logf_(c, "friend refused: the game must restart first");
         send_simple_to(c, peer, LR_BYE, LR_BYE_RESTART);
         return;
@@ -576,92 +658,105 @@ static void host_accept(lr_core *c, uint64_t peer, const lr_msg *hello, uint64_t
         send_simple_to(c, peer, LR_BYE, LR_BYE_VERSION);
         return;
     }
-    if (c->peer != 0 && c->peer != peer) {
-        send_simple_to(c, peer, LR_BYE, LR_BYE_FULL);
+    if (!g && (c->host_loaded || c->resync_requested)) {
+        logf_(c, "friend refused: the host's game has loaded the campaign already");
+        send_simple_to(c, peer, LR_BYE, LR_BYE_STARTED);
         return;
     }
-    if (c->peer == peer && c->state == LR_ST_HOST_SENDING) return; /* a repeated HELLO; already answering */
-    if (c->peer == peer && c->state == LR_ST_HOST_PLAYING) {
+    if (!g) {
+        int limit = c->cfg.max_guests >= 1 && c->cfg.max_guests <= LR_MAX_GUESTS ? c->cfg.max_guests : LR_MAX_GUESTS;
+        for (int i = 0; i < limit && !g; i++)
+            if (!c->guests[i].peer) g = &c->guests[i];
+        if (!g) {
+            logf_(c, "friend refused: the session has its %d friend(s) already", limit);
+            send_simple_to(c, peer, LR_BYE, LR_BYE_FULL);
+            return;
+        }
+    } else if (!g->playing) return; /* a repeated HELLO; already answering */
+    else {
         logf_(c, "friend said HELLO again; resending the session");
         lr_relay_drop_peer(&c->relay, peer);
     }
-    c->peer = peer;
-    c->last_rx = now_ms;
-    c->owners_sent = 0;
     if (c->file_count == 0) {
         send_simple_to(c, peer, LR_BYE, LR_BYE_SAVE);
-        c->peer = 0;
+        memset(g, 0, sizeof *g);
+        host_update(c);
         set_status(c, "The campaign snapshot is missing; friend refused (see DDCoop-launcher.log).");
         return;
     }
-    c->send_phase = SP_HELLO;
-    c->state = LR_ST_HOST_SENDING;
+    memset(g, 0, sizeof *g);
+    g->peer = peer;
+    g->last_rx = g->last_tx = now_ms;
+    g->send_phase = SP_HELLO;
+    c->last_rx = now_ms;
+    host_update(c);
+    logf_(c, "friend joins as player %d (%d in the session)", guest_player(c, g), lr_core_guest_count(c));
     set_status(c, "Friend found; sending campaign.");
 }
 
-/* Sends HELLO, SESSION and the campaign, as much as the transport takes right now. */
-static void host_send_campaign(lr_core *c) {
-    for (int budget = 0; budget < 64 && c->send_phase < SP_DONE; budget++) {
+/* Sends HELLO, SESSION and the campaign to one friend, as much as the transport takes right now. */
+static void host_send_campaign(lr_core *c, lr_guest *g) {
+    for (int budget = 0; budget < 64 && g->send_phase < SP_DONE; budget++) {
         lr_msg m = {0};
-        if (c->send_phase == SP_HELLO) {
+        if (g->send_phase == SP_HELLO) {
             m.type = LR_HELLO;
             m.a = LR_ROLE_HOST;
             m.b = c->cfg.build;
             m.id = c->cfg.kit;
-        } else if (c->send_phase == SP_SESSION) {
+        } else if (g->send_phase == SP_SESSION) {
             m.type = LR_SESSION;
-            m.a = (uint32_t)c->cfg.coop_slot;
+            m.a = (uint32_t)c->cfg.coop_slot | (uint32_t)guest_player(c, g) << 8;
             snprintf(m.text, sizeof m.text, "%s", c->password);
-        } else if (c->send_phase == SP_BEGIN) {
+        } else if (g->send_phase == SP_BEGIN) {
             m.type = LR_SAVE_BEGIN;
             m.a = c->file_count;
             m.b = c->total;
             snprintf(m.text, sizeof m.text, "%s", c->save_folder);
-        } else if (c->send_phase == SP_FILES) {
-            lr_file *f = &c->files[c->sent_file];
+        } else if (g->send_phase == SP_FILES) {
+            lr_file *f = &c->files[g->sent_file];
             m.type = LR_SAVE_FILE;
-            m.id = c->sent_file;
+            m.id = g->sent_file;
             m.a = f->size;
             m.b = f->crc;
             snprintf(m.text, sizeof m.text, "%s", f->name);
-        } else if (c->send_phase == SP_CHUNKS) {
-            while (c->sent_file < c->file_count && c->sent_offset >= c->files[c->sent_file].size) {
-                c->sent_file++;
-                c->sent_offset = 0;
+        } else if (g->send_phase == SP_CHUNKS) {
+            while (g->sent_file < c->file_count && g->sent_offset >= c->files[g->sent_file].size) {
+                g->sent_file++;
+                g->sent_offset = 0;
             }
-            if (c->sent_file >= c->file_count) {
-                c->send_phase = SP_END;
+            if (g->sent_file >= c->file_count) {
+                g->send_phase = SP_END;
                 continue;
             }
-            lr_file *f = &c->files[c->sent_file];
+            lr_file *f = &c->files[g->sent_file];
             m.type = LR_SAVE_CHUNK;
-            m.id = c->sent_file;
-            m.a = c->sent_offset;
-            m.data = f->data + c->sent_offset;
-            m.len = f->size - c->sent_offset < LR_CHUNK ? f->size - c->sent_offset : LR_CHUNK;
+            m.id = g->sent_file;
+            m.a = g->sent_offset;
+            m.data = f->data + g->sent_offset;
+            m.len = f->size - g->sent_offset < LR_CHUNK ? f->size - g->sent_offset : LR_CHUNK;
         } else {
             m.type = LR_SAVE_END;
         }
-        int r = send_msg(c, &m);
+        int r = send_to(c, g->peer, &m);
         if (r == 0) return; /* full: continue next tick */
         if (r < 0) {
             set_status(c, "Friend became unreachable during transfer.");
             return;
         }
-        if (c->send_phase <= SP_BEGIN) {
-            c->send_phase++;
-            c->sent_file = 0;
-        } else if (c->send_phase == SP_FILES) {
-            if (++c->sent_file >= c->file_count) {
-                c->send_phase = SP_CHUNKS;
-                c->sent_file = 0;
-                c->sent_offset = 0;
+        if (g->send_phase <= SP_BEGIN) {
+            g->send_phase++;
+            g->sent_file = 0;
+        } else if (g->send_phase == SP_FILES) {
+            if (++g->sent_file >= c->file_count) {
+                g->send_phase = SP_CHUNKS;
+                g->sent_file = 0;
+                g->sent_offset = 0;
             }
-        } else if (c->send_phase == SP_CHUNKS) {
-            c->sent_offset += (uint32_t)m.len;
-            c->sent_bytes += (uint32_t)m.len;
+        } else if (g->send_phase == SP_CHUNKS) {
+            g->sent_offset += (uint32_t)m.len;
+            g->sent_bytes += (uint32_t)m.len;
         } else {
-            c->send_phase = SP_DONE;
+            g->send_phase = SP_DONE;
         }
     }
 }
@@ -671,6 +766,7 @@ static void host_send_campaign(lr_core *c) {
 int lr_core_guest_join(lr_core *c, uint64_t host_peer, uint64_t now_ms) {
     lr_core_free(c);
     c->role = LR_ROLE_GUEST;
+    c->resync_requested = 0; c->resync_sent_at = 0;
     c->error[0] = 0;
     c->password[0] = 0; /* nothing from an earlier session may carry over */
     c->save_folder[0] = 0;
@@ -810,7 +906,7 @@ static void guest_save_message(lr_core *c, const lr_msg *m) {
                     "of staat in DDCoop-backups");
             return;
         }
-        if (!lr_write_ini(c->cfg.ini_path, "guest", c->game_port, c->password, c->cfg.coop_slot)) {
+        if (!lr_write_ini_player(c->cfg.ini_path, "guest", c->game_port, c->password, c->cfg.coop_slot, c->player)) {
             send_simple_to(c, c->peer, LR_SAVE_RESULT, LR_BYE_SAVE);
             fail(c, "Could not write ddcoop.ini (run Repair DDCoop.bat).");
             return;
@@ -849,40 +945,40 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
             if (m.a == LR_ROLE_GUEST) host_accept(c, peer, &m, now_ms);
             return;
         }
-        if (peer != c->peer) {
+        lr_guest *g = guest_of(c, peer);
+        if (!g) {
             if (m.type != LR_BYE && m.type != LR_KEEPALIVE) send_simple_to(c, peer, LR_BYE, LR_BYE_FULL);
             return;
         }
-        c->last_rx = now_ms;
+        g->last_rx = c->last_rx = now_ms;
         if (channel == LR_CH_STREAM) {
-            if (c->state == LR_ST_HOST_PLAYING || c->state == LR_ST_HOST_SENDING) lr_relay_on_message(&c->relay, peer, &m, now_ms);
+            lr_relay_on_message(&c->relay, peer, &m, now_ms);
             return;
         }
         if (m.type == LR_SAVE_RESULT) {
             if (m.a == 0) {
-                c->state = LR_ST_HOST_PLAYING;
-                char msg[120];
-                snprintf(msg, sizeof msg, "Your friend has the campaign. Both games will open slot %d automatically.", c->cfg.coop_slot);
+                g->playing = 1;
+                host_update(c);
+                char msg[160];
+                snprintf(msg, sizeof msg, "%d friend(s) have the campaign. All games will open slot %d automatically.", lr_core_guest_count(c),
+                         c->cfg.coop_slot);
                 set_status(c, msg);
             } else {
                 set_status(c, lr_bye_text(m.a));
-                c->peer = 0;
-                c->state = LR_ST_HOST_WAITING;
+                guest_drop(c, g);
             }
         } else if (m.type == LR_CLAIM) {
-            if (c->state == LR_ST_HOST_PLAYING && lr_owners_claim(&c->owners, m.id, LR_PLAYER_GUEST, (int)m.a)) {
+            if (g->playing && lr_owners_claim(&c->owners, m.id, guest_player(c, g), (int)m.a)) {
                 owners_save(c);
                 owners_log(c, "friend ticked");
             } else {
-                c->owners_sent = 0; /* refused: the friend's list goes back to the table */
+                g->owners_sent = 0; /* refused: the friend's list goes back to the table */
             }
         } else if (m.type == LR_BYE) {
             char msg[256];
             snprintf(msg, sizeof msg, c->host_spent ? "Friend left: %s. Close the game and click Host again." :
                      "Friend left: %s; waiting for another friend.", lr_bye_text(m.a));
-            lr_relay_drop_peer(&c->relay, peer);
-            c->peer = 0;
-            c->state = LR_ST_HOST_WAITING;
+            guest_drop(c, g);
             set_status(c, msg);
         }
         return;
@@ -903,9 +999,15 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
         case LR_SESSION:
             memcpy(c->password, m.text, LR_PASSWORD_LEN); /* the decoder checked: exactly 32 letters/digits */
             c->password[LR_PASSWORD_LEN] = 0;
-            c->cfg.coop_slot = (int)m.a; /* The decoder checked: 1..9. */
+            c->cfg.coop_slot = (int)(m.a & 0xffu); /* The decoder checked: 1..9. */
+            c->player = (int)(m.a >> 8) ? (int)(m.a >> 8) : 1;
+            logf_(c, "guest: this game is player %d", c->player);
             break;
         case LR_BYE: {
+            if (m.a == LR_BYE_RESYNC) {
+                send_simple_to(c, c->peer, LR_BYE, LR_BYE_RESYNC);
+                c->resync_requested = 2;
+            }
             char msg[256];
             snprintf(msg, sizeof msg, "The host closed the connection: %s", lr_bye_text(m.a));
             fail(c, msg);
@@ -937,43 +1039,86 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
 }
 
 void lr_core_peer_left(lr_core *c, uint64_t peer) {
+    if (c->role == LR_ROLE_HOST) {
+        lr_guest *g = guest_of(c, peer);
+        if (!g) return;
+        guest_drop(c, g);
+        set_status(c, c->host_spent ? LR_HOST_RESTART_TEXT : "Friend left the session; waiting for another friend.");
+        return;
+    }
     if (peer == 0 || peer != c->peer) return;
     if (c->relay_up) lr_relay_drop_peer(&c->relay, peer);
-    if (c->role == LR_ROLE_HOST) {
-        c->peer = 0;
-        c->state = LR_ST_HOST_WAITING;
-        set_status(c, c->host_spent ? LR_HOST_RESTART_TEXT : "Friend left the session; waiting for another friend.");
-    } else if (c->state != LR_ST_FAILED) {
+    if (c->state != LR_ST_FAILED) {
         fail(c, "The host left the session.");
     }
+}
+
+int lr_core_request_resync(lr_core *c) {
+    if (c->role != LR_ROLE_HOST || c->resync_requested ||
+        (c->state != LR_ST_HOST_WAITING && c->state != LR_ST_HOST_SENDING && c->state != LR_ST_HOST_PLAYING)) return 0;
+    c->resync_requested = 1; c->resync_sent_at = 0;
+    set_status(c,"Resync: asking every guest to close normally. Waiting for acknowledgements...");
+    return 1;
 }
 
 void lr_core_tick(lr_core *c, uint64_t now_ms) {
     flush_resend(c);
     if (c->state == LR_ST_IDLE || c->state == LR_ST_FAILED) return;
+    if (c->role == LR_ROLE_HOST && c->resync_requested == 1) {
+        if (!lr_core_guest_count(c)) { c->resync_requested = 2; return; }
+        if (!c->resync_sent_at || now_ms-c->resync_sent_at >= 1000) {
+            lr_msg m={0};m.type=LR_BYE;m.a=LR_BYE_RESYNC;
+            for(int i=0;i<LR_MAX_GUESTS;i++) if(c->guests[i].peer) (void)send_to(c,c->guests[i].peer,&m);
+            c->resync_sent_at=now_ms;
+        }
+    }
     if (c->state == LR_ST_GUEST_HELLO && !c->password[0] && now_ms >= c->hello_at &&
         now_ms - c->hello_at >= LR_HELLO_REPEAT_MS)
         send_hello(c, now_ms);
-    if (c->peer && now_ms >= c->last_tx && now_ms - c->last_tx >= LR_KEEPALIVE_MS) {
-        lr_msg m = {0};
-        m.type = LR_KEEPALIVE;
-        send_msg(c, &m);
-        c->last_tx = now_ms;
+    if (c->role == LR_ROLE_HOST) {
+        for (int i = 0; i < LR_MAX_GUESTS; i++) {
+            lr_guest *g = &c->guests[i];
+            if (!g->peer) continue;
+            if (now_ms >= g->last_tx && now_ms - g->last_tx >= LR_KEEPALIVE_MS) {
+                lr_msg m = {0};
+                m.type = LR_KEEPALIVE;
+                send_to(c, g->peer, &m);
+                g->last_tx = c->last_tx = now_ms;
+            }
+            if (now_ms >= g->last_rx && now_ms - g->last_rx > LR_PEER_TIMEOUT_MS) {
+                logf_(c, "player %d silent for %d s", i + 1, LR_PEER_TIMEOUT_MS / 1000);
+                lr_core_peer_left(c, g->peer);
+                continue;
+            }
+            if (!g->playing) host_send_campaign(c, g);
+        }
+    } else {
+        if (c->peer && now_ms >= c->last_tx && now_ms - c->last_tx >= LR_KEEPALIVE_MS) {
+            lr_msg m = {0};
+            m.type = LR_KEEPALIVE;
+            send_msg(c, &m);
+            c->last_tx = now_ms;
+        }
+        if (c->peer && now_ms >= c->last_rx && now_ms - c->last_rx > LR_PEER_TIMEOUT_MS) {
+            logf_(c, "peer silent for %d s", LR_PEER_TIMEOUT_MS / 1000);
+            lr_core_peer_left(c, c->peer);
+            if (c->state == LR_ST_FAILED) snprintf(c->error, sizeof c->error, "Lost contact with the host (20 s).");
+            return;
+        }
     }
-    if (c->peer && now_ms >= c->last_rx && now_ms - c->last_rx > LR_PEER_TIMEOUT_MS) {
-        logf_(c, "peer silent for %d s", LR_PEER_TIMEOUT_MS / 1000);
-        lr_core_peer_left(c, c->peer);
-        if (c->state == LR_ST_FAILED) snprintf(c->error, sizeof c->error, "Lost contact with the host (20 s).");
-        return;
-    }
-    if (c->state == LR_ST_HOST_SENDING) host_send_campaign(c);
     if (c->role == LR_ROLE_HOST) host_send_owners(c);
     if (c->role == LR_ROLE_GUEST && c->claim_count) guest_send_claims(c);
     if (c->relay_up) lr_relay_tick(&c->relay, now_ms);
 }
 
 void lr_core_stop(lr_core *c) {
-    if (c->peer && c->state != LR_ST_IDLE) send_simple_to(c, c->peer, LR_BYE, LR_BYE_QUIT);
+    c->resync_requested = 0; c->resync_sent_at = 0;
+    if (c->role == LR_ROLE_HOST && c->state != LR_ST_IDLE) {
+        for (int i = 0; i < LR_MAX_GUESTS; i++)
+            if (c->guests[i].peer) send_simple_to(c, c->guests[i].peer, LR_BYE, LR_BYE_QUIT);
+        memset(c->guests, 0, sizeof c->guests);
+        if (c->guests_path[0]) lr_delete_file(c->guests_path);
+    } else if (c->peer && c->state != LR_ST_IDLE) send_simple_to(c, c->peer, LR_BYE, LR_BYE_QUIT);
     if (c->cfg.ini_path[0]) lr_write_ini(c->cfg.ini_path, "off", LR_DEFAULT_GAME_PORT, "unused-until-ddcoop-starts", c->cfg.coop_slot);
     lr_core_free(c);
     c->peer = 0;

@@ -49,6 +49,7 @@ typedef struct {
     char heroes_path[LR_PATH_MAX];               /* mods\DDCoop\ddcoop-heroes.ini; empty = not written */
     char restore_path[LR_PATH_MAX];              /* durable original guest snapshot; empty = legacy/test caller */
     uint64_t steam_user;                         /* owner of the local Steam save, checked by preparation helper */
+    int max_guests;                              /* host: friends in this session, the player count minus one (1..3); 0 = up to three, not announced */
 } lr_config;
 
 typedef struct {
@@ -57,6 +58,17 @@ typedef struct {
     uint8_t *data;
     uint32_t received;
 } lr_file;
+
+#define LR_MAX_GUESTS 3
+/* Host: one friend's session. Player = index + 1. */
+typedef struct {
+    uint64_t peer;            /* 0 = free */
+    int playing;              /* has the campaign; relay running */
+    int send_phase;
+    uint32_t sent_file, sent_offset, sent_bytes;
+    uint32_t owners_sent;
+    uint64_t last_rx, last_tx;
+} lr_guest;
 
 typedef struct {
     lr_config cfg;
@@ -89,6 +101,13 @@ typedef struct {
     } claims[LR_MAX_CLAIMS];  /* guest: ticks waiting for room in Steam's send buffer */
     int claim_count;
     int host_spent;           /* host: this game's runtime had its one session and takes no other */
+    lr_guest guests[LR_MAX_GUESTS]; /* host: up to three friends; peer above is the first of them */
+    int player;               /* guest: 1..3, from the host's SESSION */
+    char guests_path[LR_PATH_MAX]; /* host: mods\DDCoop\ddcoop-guests.txt, how many friends the runtime waits for */
+    int guests_written;       /* host: the number last written there (-1 = none yet) */
+    int resync_requested; /* 1=host awaits guest close acknowledgements, 2=ready for normal game close */
+    uint64_t resync_sent_at;
+    int host_loaded;          /* host: its game has loaded the campaign; a new friend would start behind */
 } lr_core;
 
 void lr_core_init(lr_core *c, const lr_config *cfg);
@@ -110,22 +129,31 @@ void lr_core_host_roster(lr_core *c, const uint8_t *buf, size_t len);
 
 /* This player ticks (1 = mine) or unticks (0) a hero. Host: applied at once. Guest: asks the host, and the
  * answer arrives as a new table. Returns 1 if applied or sent. */
+/* Host-only direct assignment to a player in this session. */
+int lr_core_assign(lr_core *c, uint32_t hero_id, int player);
 int lr_core_claim(lr_core *c, uint32_t hero_id, int claim);
 
+/* Host: its game has loaded the campaign (seen in its log): friends who come now are refused. */
+void lr_core_host_loaded(lr_core *c);
 /* Host: the running game's session ended; its runtime takes no new guest until the game restarts. */
 void lr_core_host_spent(lr_core *c);
 
-/* Player index in the ownership table: LR_PLAYER_HOST or LR_PLAYER_GUEST. */
+/* Player index in the ownership table: LR_PLAYER_HOST (0), or this guest's number 1..3. */
 int lr_core_player(const lr_core *c);
 
 /* Guest: returns 1 once when the game should be started now (state moves to PLAYING). */
 int lr_core_take_launch(lr_core *c);
 
 /* Ends the session: BYE to the peer, ddcoop.ini back to role=off so a normal game start stays single player. */
+int lr_core_request_resync(lr_core *c); /* host-only; no live memory or save writes */
 void lr_core_stop(lr_core *c);
 
 /* Writes ddcoop.ini. role "off" / "host" / "guest". */
 int lr_write_ini(const char *path, const char *role, int port, const char *password, int coop_slot);
+/* The same with the guest's player number (1..3) in [net] player. */
+int lr_write_ini_player(const char *path, const char *role, int port, const char *password, int coop_slot, int player);
+/* Host: how many friends are in the session now (0..3). */
+int lr_core_guest_count(const lr_core *c);
 
 /* Finds the campaign folder for a menu position under remote_dir ("profile_2" or "steam_profile_2").
  * Returns 1 and the folder name, 0 if none exists. */

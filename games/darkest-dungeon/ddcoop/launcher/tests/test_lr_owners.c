@@ -57,6 +57,21 @@ static void test_party_view(void) {
     printf("Legacy saved-status sort retained; live UI uses persistent-ID membership instead\n");
 }
 
+static void test_direct_assignment(void) {
+    lr_owners o; lr_owners_init(&o);
+    lr_hero heroes[] = {hero(7,"A","vestal",0,1),hero(19,"B","leper",0,1)};
+    CHECK(lr_owners_set_roster(&o,heroes,2));
+    for(int player=1;player<4;player++) CHECK(lr_owners_assign(&o,19,player) && o.owner[1]==player);
+    lr_owners before=o;
+    CHECK(!lr_owners_assign(&o,19,3) && !lr_owners_assign(&o,99,1));
+    CHECK(!lr_owners_assign(&o,7,-1) && !lr_owners_assign(&o,7,4) && same(&o,&before));
+    uint8_t encoded[1024];lr_owners copy;
+    size_t n=lr_owners_encode(&o,encoded,sizeof encoded);
+    CHECK(n && lr_owners_decode(encoded,n,o.revision,&copy) && same(&o,&copy));
+    CHECK(lr_owners_assign(&o,19,0) && o.owner[0]==0 && o.owner[1]==0);
+    puts("Direct owner assignment: four players, stable IDs, revision and codec checked");
+}
+
 static void test_live_party(void) {
     lr_owners o; lr_owners_init(&o);
     uint32_t ids[6] = {1, 2, 7, 8, 15, 16};
@@ -103,6 +118,7 @@ static void test_live_party(void) {
 }
 int main(void) {
     test_party_view();
+    test_direct_assignment();
     test_live_party();
     static lr_owners o, d, keep;
     uint8_t buf[16000];
@@ -124,7 +140,9 @@ int main(void) {
     CHECK(lr_owners_claim(&o, 16, LR_PLAYER_HOST, 0) && o.owner[2] == LR_PLAYER_GUEST); /* host hands it over */
     CHECK(lr_owners_claim(&o, 16, LR_PLAYER_GUEST, 0) && o.owner[2] == LR_PLAYER_HOST); /* guest gives it back */
     CHECK(!lr_owners_claim(&o, 99, LR_PLAYER_GUEST, 1));                    /* unknown hero */
-    CHECK(!lr_owners_claim(&o, 1, 2, 1) && !lr_owners_claim(&o, 1, -1, 1)); /* bad player */
+    CHECK(!lr_owners_claim(&o, 1, 4, 1) && !lr_owners_claim(&o, 1, -1, 1)); /* bad player: four players are 0..3 */
+    CHECK(lr_owners_claim(&o, 1, 3, 1) && o.owner[0] == 3);                 /* the fourth player ticks one */
+    CHECK(!lr_owners_claim(&o, 1, 2, 0) && lr_owners_claim(&o, 1, 3, 0) && o.owner[0] == LR_PLAYER_HOST); /* only theirs to give back */
     CHECK(lr_owners_claim(&o, 2, LR_PLAYER_GUEST, 1));
     uint32_t rev = o.revision;
 
@@ -187,7 +205,7 @@ int main(void) {
     CHECK(!lr_owners_decode(extra, n + 1, 1, &d)); /* trailing byte */
     uint8_t t[16000];
     memcpy(t, buf, n);
-    t[5] = 2;  /* owner = player 2 */
+    t[5] = 4;  /* owner = player 4: there are four players, 0..3 */
     CHECK(!lr_owners_decode(t, n, 1, &d));
     memcpy(t, buf, n);
     t[6] = 4;  /* status 3 */
