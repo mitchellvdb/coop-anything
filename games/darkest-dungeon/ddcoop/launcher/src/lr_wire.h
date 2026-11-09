@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LR_VERSION 2 /* slot-3 preparation and automatic guest recovery require both launchers updated */
+#define LR_VERSION 3 /* automatic checkpoint restart requires matching launchers */
 #define LR_HEADER 4                /* 'D' 'L' version type */
 #define LR_CHUNK 16000             /* stream data and save chunks per message */
 #define LR_MAX_MSG (LR_HEADER + 16 + LR_CHUNK)
@@ -41,6 +41,7 @@ typedef enum {
     LR_SAVE_END = 17,
     LR_SAVE_RESULT = 18, /* guest -> host: 0 = stored, else lr_bye_reason */
     LR_ROSTER = 19,      /* host -> guest: hero ownership table (revision in id, lr_owners body in data) */
+    LR_RESTART = 21,     /* generation=id, phase=a, runtime kit=b; automatic checkpoint restart */
     LR_CLAIM = 20,       /* guest -> host: hero id in id, a = 1 tick (mine) / 0 untick */
 } lr_type;
 

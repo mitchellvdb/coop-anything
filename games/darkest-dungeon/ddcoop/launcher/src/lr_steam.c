@@ -8,7 +8,7 @@
 
 #define APPID_SPACEWAR 480
 #define LOBBY_KEY "ddcoop"
-#define LOBBY_VALUE "2" /* requires the launcher with verified preparation and guest recovery */
+#define LOBBY_VALUE "3" /* matching automatic checkpoint-restart launchers */
 
 /* Callback ids and send flags (Steamworks SDK). */
 #define CB_GAME_LOBBY_JOIN_REQUESTED 333

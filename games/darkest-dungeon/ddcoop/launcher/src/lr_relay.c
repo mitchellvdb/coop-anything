@@ -26,6 +26,11 @@ int lr_relay_init(lr_relay *r, lr_role role, int port, lr_send_fn send, void *ct
     return port > 0;
 }
 
+int lr_relay_set_epoch(lr_relay *r,uint32_t epoch) {
+    if(!r || lr_relay_active_streams(r))return 0;
+    r->epoch=epoch;return 1;
+}
+
 static void stream_free(lr_stream *s) {
     lr_close(s->sock);
     free(s->to_local);
@@ -62,7 +67,8 @@ static lr_stream *new_stream(lr_relay *r, uint64_t peer, uint32_t id) {
 
 /* Sends a control-free stream message now, or parks it in s->pend. Returns 1 if nothing is pending. */
 static int send_or_park(lr_relay *r, lr_stream *s, const lr_msg *m) {
-    size_t n = lr_encode(m, s->pend);
+    lr_msg tagged=*m;tagged.b=r->epoch;
+    size_t n = lr_encode(&tagged, s->pend);
     if (n == 0) return 1;
     s->pend_len = n;
     int sent = r->send(r->ctx, s->peer, LR_CH_STREAM, s->pend, s->pend_len);
@@ -74,7 +80,7 @@ static void send_simple(lr_relay *r, uint64_t peer, lr_type t, uint32_t id) {
     lr_msg m = {0};
     uint8_t buf[LR_MAX_MSG];
     m.type = t;
-    m.id = id;
+    m.id = id;m.b=r->epoch;
     size_t n = lr_encode(&m, buf);
     /* OPEN and CLOSE are tiny; Steam queues them even when data is backed up. Retry a few times. */
     for (int tries = 0; tries < 50 && r->send(r->ctx, peer, LR_CH_STREAM, buf, n) == 0; tries++) {
@@ -103,6 +109,7 @@ static void fail_stream(lr_relay *r, lr_stream *s, const char *why) {
 }
 
 void lr_relay_on_message(lr_relay *r, uint64_t peer, const lr_msg *m, uint64_t now_ms) {
+    if(m->b!=r->epoch)return;
     lr_stream *s = find(r, peer, m->id);
     switch (m->type) {
     case LR_STREAM_OPEN:

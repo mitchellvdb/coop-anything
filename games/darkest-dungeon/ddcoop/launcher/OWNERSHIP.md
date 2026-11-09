@@ -1,3 +1,19 @@
+# Automatic checkpoint restart amendment (test66)
+
+Explicit host Resync keeps the Steam lobby/control connection. LR_RESTART binds
+BEGIN/READY/GO/JOINED/ABORT to a nonzero generation and exact runtime kit. Only the
+current host and captured participant IDs are accepted. Every launcher pauses its
+old relay, closes its tracked game normally and finishes existing guest recovery.
+READY requires no game/helper/pending recovery. All READY plus host game exit is
+required before capturing a fresh host snapshot, reserving each original player
+slot and reopening through existing verified preparation. GO makes guests join
+automatically; the usual checked transfer/backup/prepare/autoload route resumes
+the host checkpoint. Duplicates/retries cannot close/relaunch twice. Timeouts or
+recovery/start failures stop automatic work, retaining backups and normal close.
+No live-memory reset or forced save/game termination. Exact unsaved progress is
+not guaranteed. Solo guest .bat windows have no launcher; recovery stays manual.
+Launcher wire version3; runtime protocol30 is unchanged.
+
 # Coordinated checkpoint resync (test65)
 
 Host Resync requests LR_BYE_RESYNC through the existing authenticated launcher
@@ -186,3 +202,11 @@ Launcher notes for the runtime:
   rewrites the file with `written_by=host` (only if the save's roster cannot be read, it leaves the old file
   alone). Suggestion: the host runtime treats a file with `written_by` other than `host` as "not for me" (same
   as a missing file, or fail closed, Codex's choice), so a leftover guest copy is never used as the host table.
+
+Restart relay amendment: every channel0 OPEN/DATA/CLOSE carries its restart
+generation. Both new relays set this epoch before starting new game connections;
+stale frames are ignored even if a stream ID is reused. Epoch changes are refused
+with active streams. Control and data channels can progress independently, so a
+control READY alone is not treated as proof that old data packets have drained.
+The isolated relay regression covers delayed old OPEN/DATA/CLOSE against a new
+same-ID stream. Launcher wire3 includes the tag; runtime protocol30 unchanged.

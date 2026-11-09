@@ -86,6 +86,7 @@ typedef struct {
     uint32_t file_count, total, sent_file, sent_offset, sent_bytes, recv_bytes;
     int send_phase;           /* host: HELLO, SESSION, begin, file headers, chunks, end, done */
     uint64_t hello_at;        /* guest: when HELLO was last sent */
+    uint64_t hello_next;      /* shorter retry after send backpressure */
     uint8_t resend[LR_MAX_MSG];
     size_t resend_len;
     uint64_t resend_peer;
@@ -107,6 +108,7 @@ typedef struct {
     int guests_written;       /* host: the number last written there (-1 = none yet) */
     int resync_requested; /* 1=host awaits guest close acknowledgements, 2=ready for normal game close */
     uint64_t resync_sent_at;
+    uint64_t restart_peers[LR_MAX_GUESTS]; /* retained player slots during automatic restart */
     int host_loaded;          /* host: its game has loaded the campaign; a new friend would start behind */
 } lr_core;
 
@@ -145,6 +147,8 @@ int lr_core_player(const lr_core *c);
 int lr_core_take_launch(lr_core *c);
 
 /* Ends the session: BYE to the peer, ddcoop.ini back to role=off so a normal game start stays single player. */
+void lr_core_pause_restart(lr_core *c); /* no BYE/lobby leave; never changes saves */
+int lr_core_reserve_restart(lr_core *c,const uint64_t peers[LR_MAX_GUESTS]);
 int lr_core_request_resync(lr_core *c); /* host-only; no live memory or save writes */
 void lr_core_stop(lr_core *c);
 

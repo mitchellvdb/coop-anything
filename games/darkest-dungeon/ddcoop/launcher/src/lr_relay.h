@@ -43,6 +43,7 @@ typedef struct {
     void *ctx;
     lr_stream streams[LR_MAX_STREAMS];
     uint32_t next_id;
+    uint32_t epoch; /* restart generation; rejects delayed old-session stream packets */
     uint64_t bytes_to_peer, bytes_from_peer;
     int game_connected;   /* a local game connection is (or was) up */
     char last_event[160];
@@ -51,6 +52,7 @@ typedef struct {
 /* Guest: port 0 picks a free one (read it back from r->port). Returns 1 on success. */
 int lr_relay_init(lr_relay *r, lr_role role, int port, lr_send_fn send, void *ctx);
 void lr_relay_free(lr_relay *r);
+int lr_relay_set_epoch(lr_relay *r,uint32_t epoch); /* only while no streams are active */
 
 /* A channel-0 message from peer (the caller has checked the peer is allowed). */
 void lr_relay_on_message(lr_relay *r, uint64_t peer, const lr_msg *m, uint64_t now_ms);

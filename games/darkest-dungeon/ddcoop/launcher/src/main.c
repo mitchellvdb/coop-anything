@@ -21,6 +21,7 @@
 #include <time.h>
 
 #include "lr_core.h"
+#include "lr_restart.h"
 #include "lr_hashes.h"
 #include "lr_install.h"
 #include "lr_snapshot.h"
@@ -69,6 +70,7 @@ static struct {
     char check_text[CHK_COUNT][200];
     int install_ok, steam_ok;
     lr_core core;
+    lr_restart restart;
     lr_friend friends_list[256];
     int friend_count;
     HANDLE game;
@@ -652,6 +654,11 @@ static int launch_game(int nosave) {
 static int session_active(void) { return G.core.state != LR_ST_IDLE && G.core.state != LR_ST_FAILED; }
 
 static void stop_session(const char *why) {
+    if(lr_restart_active(&G.restart)) {
+        lr_restart_abort(&G.restart);
+        (void)lr_restart_tick(&G.restart,now_ms(),0); /* Send ABORT before dropping transport. */
+    }
+    memset(&G.restart,0,sizeof G.restart);
     if (session_active() || lr_steam_lobby()) logline("stop: %s", why);
     if (G.core.role == LR_ROLE_HOST) {
         for (int i = 0; i < LR_MAX_GUESTS; i++)
@@ -728,7 +735,14 @@ static void do_undo(void) {
     if (!begin_prepare(path, 2, 1)) message("Restore could not start. Nothing was changed.", MB_ICONWARNING);
 }
 
+static void host_log_mark(void) {
+    char path[LR_PATH_MAX];uint8_t *data=NULL;size_t len=0;
+    lr_join(path,sizeof path,G.moddir,"ddcoop-fw-host.log");
+    G.host_log_start=lr_read_file(path,32u*1024*1024,&data,&len)?len:0;
+    free(data);G.last_runtime=0;G.runtime_line[0]=0;G.ok[CHK_RUNTIME]=0;
+}
 static void do_host(void) {
+    if(lr_restart_active(&G.restart)){message("Resync is in progress. Please wait, or click Stop to cancel.",MB_ICONINFORMATION);return;}
     if (G.prepare || restore_pending()) {
         message("DDCoop must restore your own campaign first. Close any guest game and wait for recovery.",
                 MB_ICONINFORMATION);
@@ -754,15 +768,7 @@ static void do_host(void) {
     G.core.cfg.coop_slot = G.chosen_slot;
     G.core.cfg.max_guests = G.players >= 2 && G.players <= 4 ? G.players - 1 : 1;
     logline("host: %d players (waits for %d friend(s) before the campaign loads)", G.core.cfg.max_guests + 1, G.core.cfg.max_guests);
-    {
-        /* Where this game's log lines will start. */
-        char path[LR_PATH_MAX];
-        uint8_t *data;
-        size_t len = 0;
-        lr_join(path, sizeof path, G.moddir, "ddcoop-fw-host.log");
-        G.host_log_start = lr_read_file(path, 32u * 1024 * 1024, &data, &len) ? len : 0;
-        if (G.host_log_start) free(data);
-    }
+    host_log_mark();
     if (!lr_core_host_start(&G.core, now_ms())) {
         message(G.core.error, MB_ICONWARNING);
         return;
@@ -778,6 +784,7 @@ static void do_host(void) {
 }
 
 static void join_lobby(uint64_t lobby) {
+    if(lr_restart_active(&G.restart)){message("Resync is in progress. Please wait, or click Stop to cancel.",MB_ICONINFORMATION);return;}
     if (G.prepare || restore_pending()) {
         message("DDCoop must restore your own campaign first. Close any guest game and wait for recovery.",
                 MB_ICONINFORMATION);
@@ -1065,6 +1072,15 @@ static int allowed_cb(void *ctx, uint64_t peer) {
 
 static void on_message(void *ctx, uint64_t peer, int channel, const uint8_t *buf, size_t len) {
     (void)ctx;
+    lr_msg m;
+    if(lr_decode(buf,len,channel,&m) && m.type==LR_RESTART) {
+        if(!lr_steam_is_member(peer))return;
+        if(!G.restart.kit) {
+            if(m.a!=LR_R_BEGIN || G.core.role!=LR_ROLE_GUEST || peer!=G.core.peer || peer!=lr_steam_lobby_owner())return;
+            lr_restart_init(&G.restart,LR_ROLE_GUEST,peer,G.core.cfg.kit,G.core.cfg.send,G.core.cfg.ctx);
+        }
+        (void)lr_restart_message(&G.restart,peer,&m,now_ms());return;
+    }
     lr_core_on_message(&G.core, peer, channel, buf, len, now_ms());
 }
 
@@ -1087,6 +1103,7 @@ static void on_event(void *ctx, const lr_steam_event *ev) {
         message(ev->text, MB_ICONWARNING);
         break;
     case LR_EV_LOBBY_ENTERED:
+        if(lr_restart_active(&G.restart))break; /* GO alone starts the fresh join. */
         if (G.core.role == LR_ROLE_GUEST && G.core.peer == ev->user && session_active()) break;
         if (!lr_core_guest_join(&G.core, ev->user, now_ms())) {
             lr_steam_leave_lobby();
@@ -1097,6 +1114,11 @@ static void on_event(void *ctx, const lr_steam_event *ev) {
         logline("lobby: %llu joined", (unsigned long long)ev->user);
         break;
     case LR_EV_MEMBER_LEFT:
+        if(lr_restart_active(&G.restart)) {
+            int participant=G.restart.role==LR_ROLE_GUEST?G.restart.host==ev->user:0;
+            for(unsigned i=0;i<3;i++)if(G.restart.peers[i] && G.restart.peers[i]==ev->user)participant=1;
+            if(participant)lr_restart_abort(&G.restart);
+        }
         logline("lobby: %llu left", (unsigned long long)ev->user);
         lr_core_peer_left(&G.core, ev->user);
         lr_steam_close_session(ev->user); /* half-open sessions broke a quick rejoin (1.1.0) */
@@ -1140,7 +1162,7 @@ static void update_checks(void) {
     else if (G.core.relay_up && G.core.relay.game_connected)
         set_check(CHK_RUNTIME, 1, "Games connected through DDCoop (%s)", G.runtime_line[0] ? G.runtime_line : "waiting for runtime");
     else
-        set_check(CHK_RUNTIME, 0, "Games: not connected%s%s", G.runtime_line[0] ? " - laatste regel: " : "",
+        set_check(CHK_RUNTIME, 0, "Games: not connected%s%s", G.runtime_line[0] ? " - last message: " : "",
                   G.runtime_line);
 
     char text[4096];
@@ -1162,7 +1184,7 @@ static void update_checks(void) {
 
     char status[512];
     if (s == LR_ST_FAILED)
-        snprintf(status, sizeof status, "Probleem: %s", G.core.error);
+        snprintf(status, sizeof status, "Problem: %s", G.core.error);
     else
         snprintf(status, sizeof status, "%s", G.core.status);
     if (strcmp(status, G.last_status) != 0) {
@@ -1195,7 +1217,8 @@ static void update_friends(void) {
 }
 
 static void update_runtime_line(void) {
-    const char *name = G.core.role == LR_ROLE_HOST ? "ddcoop-fw-host.log" : G.core.role == LR_ROLE_GUEST ? "ddcoop-fw-guest.log" : NULL;
+    const char *name = G.core.role == LR_ROLE_HOST ? "ddcoop-fw-host.log" : G.core.role == LR_ROLE_GUEST ?
+        (G.core.player==3?"ddcoop-fw-guest3.log":G.core.player==2?"ddcoop-fw-guest2.log":"ddcoop-fw-guest.log") : NULL;
     if (!name) {
         G.runtime_line[0] = 0;
         return;
@@ -1338,6 +1361,40 @@ static void refresh_roster(void) {
     free(data);
 }
 
+static void automatic_restart_tick(uint64_t t) {
+    lr_restart *r=&G.restart;
+    if(G.restore_failed && lr_restart_active(r))lr_restart_abort(r);
+    int ready=0;
+    if((r->phase==LR_R_CLOSING || r->phase==LR_R_WAITING) && !G.game && !G.prepare && !restore_pending())ready=!darkest_running();
+    int action=lr_restart_tick(r,t,ready);
+    if(action==LR_R_CLOSE) {
+        collect_logs(0);G.resync_closing=1;G.resync_close_at=0;
+        G.ok[CHK_RUNTIME]=0;G.runtime_line[0]=0;
+        lr_core_pause_restart(&G.core);request_game_close();
+        logline("automatic resync: normal close requested; lobby retained");
+    } else if(action==LR_R_HOST_START) {
+        G.resync_closing=0;host_log_mark();
+        int ok=lr_core_host_start(&G.core,t) && lr_core_reserve_restart(&G.core,r->peers) && lr_relay_set_epoch(&G.core.relay,r->generation);
+        if(ok)ok=launch_game(!G.saving);
+        lr_restart_started(r,ok);
+        logline("automatic resync: fresh host snapshot/preparation %s",ok?"started":"refused");
+    } else if(action==LR_R_GUEST_JOIN) {
+        G.resync_closing=0;G.last_runtime=0;G.runtime_line[0]=0;G.ok[CHK_RUNTIME]=0;
+        int ok=!G.game && !G.prepare && !restore_pending() && lr_core_guest_join(&G.core,r->host,t) && lr_relay_set_epoch(&G.core.relay,r->generation);
+        lr_restart_started(r,ok);
+        logline("automatic resync: fresh guest join %s",ok?"started":"refused");
+    } else if(action==LR_R_FAIL) {
+        lr_core_pause_restart(&G.core);G.resync_closing=1;request_game_close();collect_logs(0);
+        snprintf(G.core.status,sizeof G.core.status,"Automatic resync stopped. Let recovery finish, then start a new Host/Join session. Backups are retained.");
+        message("Automatic resync could not complete (a player left, recovery/start failed, or the wait expired). "
+                "Games close normally; let guest recovery finish. Then start a new session. Send the collected logs.",MB_ICONWARNING);
+    }
+    if(r->phase==LR_R_RESTARTING && G.game && !G.prepare && G.ok[CHK_RUNTIME] &&
+       (r->role!=LR_ROLE_HOST || G.core.host_loaded))lr_restart_complete(r);
+    if((r->phase==LR_R_CLOSING || r->phase==LR_R_WAITING) && !G.prepare && !G.restore_failed)
+        snprintf(G.core.status,sizeof G.core.status,"Resync: waiting for all games to close and guest recovery. Reconnecting and loading will follow automatically...");
+}
+
 static void tick_body(void);
 static void overlay_publish(void);
 
@@ -1368,7 +1425,9 @@ static void tick_body(void) {
     lr_core_tick(&G.core, t);
     /* A guest session that fails on its own (missing DLC, lost host) gets a pop-up, not only the red status line.
      * Failures from a button (Host, Join) already show one there. */
-    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED && !G.core.resync_requested) {
+    if(lr_restart_active(&G.restart) && G.core.state==LR_ST_FAILED)lr_restart_abort(&G.restart);
+    automatic_restart_tick(t);
+    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED && !G.core.resync_requested && !lr_restart_active(&G.restart) && G.restart.phase!=LR_R_FAILED) {
         message(G.core.error, MB_ICONWARNING);
         collect_logs(0);
     }
@@ -1382,7 +1441,7 @@ static void tick_body(void) {
         G.resync_close_at=t;request_game_close();
     }
     if (G.resync_closing && !G.game && !G.prepare && !restore_pending()) G.resync_closing=0;
-    EnableWindow(G.resync, G.core.role == LR_ROLE_HOST && session_active() && !G.prepare && !G.resync_closing && !G.core.resync_requested);
+    EnableWindow(G.resync, G.core.role == LR_ROLE_HOST && session_active() && !G.prepare && !G.resync_closing && !G.core.resync_requested && !lr_restart_active(&G.restart));
     if (lr_core_take_launch(&G.core)) {
         if (!launch_game(1)) stop_session("The game could not start.");
     }
@@ -1402,7 +1461,9 @@ static void tick_body(void) {
         CloseHandle(G.game);
         G.game = NULL;
         G.hotkey_ok=RegisterHotKey(G.wnd,ID_HOTKEY,MOD_NOREPEAT,VK_F9);
-        stop_session("Darkest Dungeon closed; session ended. Click Host or Join for a new session.");
+        if(G.restart.phase!=LR_R_CLOSING && G.restart.phase!=LR_R_WAITING)
+            stop_session("Darkest Dungeon closed; session ended. Click Host or Join for a new session.");
+        else logline("automatic resync: game exited normally; waiting for recovery");
         if (G.new_campaign_slot) {
             int slot = G.new_campaign_slot;
             lr_campaign_entry list[9];
@@ -1430,7 +1491,7 @@ static void tick_body(void) {
         PHASE("tick: save folder");
         {
             /* The choice is for the next session: not while one is on, or its game or a restore is running. */
-            int busy = session_active() || G.prepare || G.game;
+            int busy = session_active() || G.prepare || G.game || lr_restart_active(&G.restart);
             if (busy != G.slot_busy) {
                 G.slot_busy = busy;
                 EnableWindow(G.slot, !busy);
@@ -1578,13 +1639,28 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (HIWORD(wp) == LBN_DBLCLK) do_join_selected();
             break;
         case ID_RESYNC:
-            if (HIWORD(wp) == BN_CLICKED && G.core.role == LR_ROLE_HOST && session_active() && !G.prepare) {
+            if (HIWORD(wp) == BN_CLICKED && G.core.role == LR_ROLE_HOST && session_active() && !G.prepare && !lr_restart_active(&G.restart)) {
+                int count=lr_core_guest_count(&G.core);
+                if(!count && strstr(DDC_VERSION,"duo")) {
+                    message("Solo .bat guest windows have no launcher. Close all guest windows manually, then stop and Host again.",MB_ICONINFORMATION);break;
+                }
+                if(count<1 || (G.core.cfg.max_guests>0 && count!=G.core.cfg.max_guests)) {
+                    message("Automatic resync needs every selected player present. Close all games and start a new session with the correct player count if someone has left.",MB_ICONINFORMATION);break;
+                }
                 int answer=MessageBoxW(G.wnd,
-                    L"Restart everyone from the host's last saved checkpoint?\n\n"
-                    L"All games close normally. Guest saves recover automatically. Unsaved progress may be lost. "
-                    L"Wait for recovery, then click Host and have everyone Join again. No live repair is attempted.",
+                    L"Automatically restart everyone from the host checkpoint?\n\n"
+                    L"All games close normally and guest saves recover. DDCoop then reconnects, transfers the fresh host save and starts every game automatically. "
+                    L"Keep all launchers open. Unsaved progress may be lost; no live repair is attempted.",
                     L"DDCoop resync", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
-                if(answer==IDYES && lr_core_request_resync(&G.core)) collect_logs(0);
+                if(answer==IDYES) {
+                    uint64_t peers[3];for(unsigned i=0;i<3;i++)peers[i]=G.core.guests[i].peer;
+                    uint32_t generation=0;G.core.cfg.random(G.core.cfg.ctx,(uint8_t *)&generation,sizeof generation);
+                    if(!generation)generation=1;
+                    if(generation==G.restart.generation)generation^=0x9e3779b9u;
+                    if(!generation)generation=1;
+                    lr_restart_init(&G.restart,LR_ROLE_HOST,0,G.core.cfg.kit,G.core.cfg.send,G.core.cfg.ctx);
+                    if(lr_restart_begin(&G.restart,peers,generation,now_ms()))collect_logs(0);
+                }
             }
             break;
         case ID_ASSIGN_HERO:

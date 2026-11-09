@@ -6,6 +6,7 @@
  * once the core says "launch", pushes 2 MB through and checks every answer. */
 #include "lr_core.h"
 #include "lr_snapshot.h"
+#include "lr_restart.h"
 
 #include "dson_writer.h"
 
@@ -59,6 +60,9 @@ typedef struct {
     int allow_all;
     int no_dlc;     /* this node has no DLC installed */
     lr_core core;
+    lr_restart restart;
+    int restart_closes,restart_starts;
+    uint64_t recovery_ready_at;
 } node;
 
 static int fake_send(void *ctx, uint64_t peer, int channel, const uint8_t *buf, size_t len) {
@@ -105,7 +109,12 @@ static void deliver(void) {
         qmsg *m = q_head;
         q_head = m->next;
         if (!q_head) q_tail = NULL;
-        if (m->to < 8 && nodes[m->to]) lr_core_on_message(&nodes[m->to]->core, m->from, m->channel, m->data, m->len, now_ms());
+        if (m->to < 8 && nodes[m->to]) {
+            node *to=nodes[m->to];lr_msg decoded;
+            if(to->restart.kit && lr_decode(m->data,m->len,m->channel,&decoded) && decoded.type==LR_RESTART)
+                (void)lr_restart_message(&to->restart,m->from,&decoded,now_ms());
+            else lr_core_on_message(&to->core,m->from,m->channel,m->data,m->len,now_ms());
+        }
         free(m);
     }
 }
@@ -359,7 +368,7 @@ static void test_pending_close(void) {
 
 typedef struct {unsigned tries[8],accepted[8],rosters[8];} resync_sender;
 static int resync_send(void *ctx,uint64_t peer,int channel,const uint8_t *buf,size_t len) {
-    resync_sender *sender=ctx;lr_msg m;
+    resync_sender *sender=ctx;lr_msg m={0};
     CHECK(peer<8 && lr_decode(buf,len,channel,&m));
     if(m.type==LR_ROSTER) {lr_owners o;CHECK(lr_owners_decode(m.data,m.len,m.id,&o) && o.count==1 && o.heroes[0].id==7 && o.owner[0]==3);sender->rosters[peer]++;return 1;}
     if(m.type!=LR_BYE)return 1;
@@ -395,12 +404,114 @@ static void test_checkpoint_resync(void) {
     puts("Checkpoint resync: all three guests notified/acknowledged, retry under backpressure, host-only, no live save writes");
 }
 
+
+/* Real core file transfer and ownership, fake Steam transport and close/recovery
+ * boundaries. New joins arrive in reverse player order; original slots persist. */
+static void test_restart_stream_epoch(void) {
+    lr_relay r;CHECK(lr_relay_init(&r,LR_ROLE_HOST,27360,NULL,NULL));
+    CHECK(lr_relay_set_epoch(&r,91));
+    lr_msg m={0};m.type=LR_STREAM_OPEN;m.id=1;m.b=0;
+    lr_relay_on_message(&r,2,&m,1);CHECK(!lr_relay_active_streams(&r));
+    m.b=91;lr_relay_on_message(&r,2,&m,1);CHECK(lr_relay_active_streams(&r)==1);
+    CHECK(!lr_relay_set_epoch(&r,92));
+    m.type=LR_STREAM_DATA;m.data=(const uint8_t *)"old";m.len=3;m.b=0;
+    lr_relay_on_message(&r,2,&m,2);CHECK(!r.bytes_from_peer && !r.streams[0].to_local_len);
+    m.type=LR_STREAM_CLOSE;lr_relay_on_message(&r,2,&m,3);CHECK(!r.streams[0].peer_closed);
+    m.type=LR_STREAM_DATA;m.b=91;m.data=(const uint8_t *)"new";
+    lr_relay_on_message(&r,2,&m,4);CHECK(r.bytes_from_peer==3 && r.streams[0].to_local_len==3 && !memcmp(r.streams[0].to_local,"new",3));
+    lr_relay_free(&r);
+    puts("Restart stream epoch: delayed old OPEN/DATA/CLOSE cannot reach or close a new same-ID stream");
+}
+
+static void test_automatic_transfer_restart(void) {
+    static node n[4];
+    drop_queue();backpressure=0;corrupt_chunks=0;
+    for(int i=0;i<4;i++) {char name[32];snprintf(name,sizeof name,"auto-restart-%d",i);setup_node(&n[i],(uint64_t)i+1,name);}
+    n[0].allow_all=1;n[0].core.cfg.max_guests=3;
+    make_host_campaign(n[0].core.cfg.remote_dir);
+    CHECK(lr_core_host_start(&n[0].core,now_ms()));
+    for(int i=1;i<4;i++) {
+        make_guest_campaign(n[i].core.cfg.remote_dir);
+        CHECK(lr_core_guest_join(&n[i].core,1,now_ms()));
+        CHECK(run_until(&n[0],&n[i],state_is,&n[i],10000) && n[i].core.state==LR_ST_GUEST_LAUNCH);
+        CHECK(lr_core_take_launch(&n[i].core) && n[i].core.player==i);
+    }
+    CHECK(lr_core_assign(&n[0].core,8,3));
+    for(int i=0;i<4;i++) {
+        n[i].game_running=1;
+        lr_restart_init(&n[i].restart,i?LR_ROLE_GUEST:LR_ROLE_HOST,i?1:0,n[i].core.cfg.kit,fake_send,&n[i]);
+    }
+    uint64_t peers[3]={2,3,4},begin=now_ms();
+    CHECK(lr_restart_begin(&n[0].restart,peers,91,begin));
+    char password[LR_PASSWORD_LEN+1];snprintf(password,sizeof password,"%s",n[0].core.password);
+    char hostdir[LR_PATH_MAX],hostfile[LR_PATH_MAX];
+    lr_join(hostdir,sizeof hostdir,n[0].core.cfg.remote_dir,"profile_2");lr_join(hostfile,sizeof hostfile,hostdir,"persist.part00.json");
+    backpressure=3;
+    uint64_t end=begin+15000;int done=0;
+    while(now_ms()<end && !done) {
+        uint64_t now=now_ms();
+        /* Reverse callbacks/joins deliberately, while keeping each peer's ID. */
+        for(int index=3;index>=0;index--) {
+            node *x=&n[index];lr_core_tick(&x->core,now);
+            if(x->restart_closes && now>=x->recovery_ready_at && !x->restart_starts)x->game_running=0;
+            int ready=x->restart_closes && !x->game_running && now>=x->recovery_ready_at;
+            int action=lr_restart_tick(&x->restart,now,ready);
+            if(action==LR_R_CLOSE) {
+                x->restart_closes++;x->recovery_ready_at=now+(uint64_t)(4-index)*60;
+                lr_core_pause_restart(&x->core);
+                CHECK(x->core.state==LR_ST_IDLE && !x->core.relay_up);
+            } else if(action==LR_R_HOST_START) {
+                CHECK(index==0 && !x->game_running);
+                for(int j=1;j<4;j++)CHECK(!n[j].game_running && now>=n[j].recovery_ready_at);
+                /* A new native checkpoint appeared on host close: snapshot THIS one. */
+                write_text(hostdir,"persist.part00.json","{\"checkpoint\":2}");
+                CHECK(lr_core_host_start(&x->core,now));CHECK(lr_core_reserve_restart(&x->core,peers));
+                CHECK(lr_relay_set_epoch(&x->core.relay,x->restart.generation));
+                CHECK(strcmp(password,x->core.password)!=0);
+                x->restart_starts++;x->game_running=1;lr_restart_started(&x->restart,1);
+            } else if(action==LR_R_GUEST_JOIN) {
+                CHECK(index>0 && !x->game_running && now>=x->recovery_ready_at);
+                CHECK(lr_core_guest_join(&x->core,1,now));CHECK(lr_relay_set_epoch(&x->core.relay,x->restart.generation));x->restart_starts++;
+                lr_restart_started(&x->restart,1);
+            } else CHECK(action!=LR_R_FAIL);
+            if(index && lr_core_take_launch(&x->core)) {
+                CHECK(x->restart_starts==1 && !x->game_running);x->game_running=1;
+                CHECK(x->core.player==index);lr_restart_complete(&x->restart);
+            }
+            if(!index && x->restart_starts)lr_restart_complete(&x->restart);
+        }
+        deliver();done=n[0].restart.phase==LR_R_DONE;
+        for(int i=1;i<4;i++) {
+            int hero=lr_owners_find(&n[i].core.owners,8);
+            done &= n[i].core.state==LR_ST_GUEST_PLAYING && n[i].restart.phase==LR_R_DONE &&
+                hero>=0 && n[i].core.owners.owner[hero]==3 && n[i].core.owners.revision==n[0].core.owners.revision;
+        }
+#ifdef _WIN32
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+    if(!done)for(int i=0;i<4;i++)printf("restart node %d: phase=%d state=%d player=%d starts=%d ready=%u joined=%u error=%s\n",i,n[i].restart.phase,n[i].core.state,n[i].core.player,n[i].restart_starts,n[i].restart.ready,n[i].restart.joined,n[i].core.error);
+    CHECK(done && lr_core_guest_count(&n[0].core)==3);
+    for(int i=0;i<4;i++)CHECK(n[i].restart_closes==1 && n[i].restart_starts==1 && n[i].core.relay.epoch==91);
+    for(int i=1;i<4;i++) {
+        char dir[LR_PATH_MAX],file[LR_PATH_MAX];lr_join(dir,sizeof dir,n[i].core.cfg.remote_dir,"profile_2");lr_join(file,sizeof file,dir,"persist.part00.json");
+        CHECK(same_file(hostfile,file) && n[i].core.player==i);
+        int hero=lr_owners_find(&n[i].core.owners,8);CHECK(hero>=0 && n[i].core.owners.owner[hero]==3);
+    }
+    for(int i=0;i<4;i++)lr_core_free(&n[i].core);
+    drop_queue();backpressure=0;
+    puts("Automatic restart transfer: 4 real cores, delayed modeled close/recovery, reverse joins preserve Player1..4 and ownership; fresh host checkpoint transferred byte-identically to all guests");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(4242);
     lr_sock_startup();
     test_pending_close();
     test_checkpoint_resync();
+    test_restart_stream_epoch();
 #ifdef _WIN32
     snprintf(root, sizeof root, "build/lrtest-%lu-%llu", GetCurrentProcessId(), (unsigned long long)now_ms());
     CHECK(!lr_dir_exists(root) && lr_make_dirs(root));
@@ -581,6 +692,7 @@ int main(void) {
     host.core.cfg.max_guests = 0;
 
     /* 6. the games: the host's runtime listens only after 1.5 s of "loading" */
+    CHECK(lr_relay_set_epoch(&host.core.relay,91) && lr_relay_set_epoch(&guest.core.relay,91));
     host_game hg = {LR_NOSOCK, LR_NOSOCK, host.core.game_port, now_ms() + 1500, 0, 0};
     guest_game gg = {lr_connect_local_nb(guest.core.game_port), 0, 0, 0, 0};
     CHECK(gg.s != LR_NOSOCK);
@@ -894,6 +1006,7 @@ int main(void) {
     lr_core_free(&guest.core);
     lr_core_free(&guest2.core);
     drop_queue();
+    test_automatic_transfer_restart();
     printf(failures ? "test_lr_core: %d FAILURES\n" : "test_lr_core: all passed\n", failures);
     return failures != 0;
 }

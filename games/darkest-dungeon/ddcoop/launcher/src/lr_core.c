@@ -128,8 +128,9 @@ static void send_hello(lr_core *c, uint64_t now_ms) {
     m.a = LR_ROLE_GUEST;
     m.b = c->cfg.build;
     m.id = c->cfg.kit;
-    send_msg(c, &m);
+    int sent=send_msg(c, &m);
     c->hello_at = now_ms;
+    c->hello_next=now_ms+(sent>0?LR_HELLO_REPEAT_MS:50u);
 }
 
 static int relay_send(void *ctx, uint64_t peer, int channel, const uint8_t *buf, size_t len) {
@@ -566,6 +567,7 @@ void lr_core_host_spent(lr_core *c) {
 int lr_core_host_start(lr_core *c, uint64_t now_ms) {
     lr_core_free(c);
     c->host_spent = 0;
+    memset(c->restart_peers,0,sizeof c->restart_peers);
     c->resync_requested = 0; c->resync_sent_at = 0;
     c->role = LR_ROLE_HOST;
     c->peer = 0;
@@ -665,8 +667,10 @@ static void host_accept(lr_core *c, uint64_t peer, const lr_msg *hello, uint64_t
     }
     if (!g) {
         int limit = c->cfg.max_guests >= 1 && c->cfg.max_guests <= LR_MAX_GUESTS ? c->cfg.max_guests : LR_MAX_GUESTS;
+        int reserved=0;
+        for(int i=0;i<LR_MAX_GUESTS;i++)reserved |= c->restart_peers[i]!=0;
         for (int i = 0; i < limit && !g; i++)
-            if (!c->guests[i].peer) g = &c->guests[i];
+            if (!c->guests[i].peer && (!reserved || c->restart_peers[i]==peer)) g = &c->guests[i];
         if (!g) {
             logf_(c, "friend refused: the session has its %d friend(s) already", limit);
             send_simple_to(c, peer, LR_BYE, LR_BYE_FULL);
@@ -1053,6 +1057,25 @@ void lr_core_peer_left(lr_core *c, uint64_t peer) {
     }
 }
 
+void lr_core_pause_restart(lr_core *c) {
+    /* Keep Steam membership/control transport alive. The restart coordinator
+     * owns its exact peer list; the old game relay/snapshot must not survive. */
+    if(c->cfg.ini_path[0])lr_write_ini(c->cfg.ini_path,"off",LR_DEFAULT_GAME_PORT,"unused-until-ddcoop-starts",c->cfg.coop_slot);
+    lr_core_free(c);memset(c->guests,0,sizeof c->guests);c->peer=0;
+    c->state=LR_ST_IDLE;c->password[0]=0;c->resend_len=0;c->claim_count=0;
+    c->resync_requested=0;c->resync_sent_at=0;lr_owners_init(&c->owners);
+    set_status(c,"Resync: waiting for normal game close and guest recovery...");
+}
+int lr_core_reserve_restart(lr_core *c,const uint64_t peers[LR_MAX_GUESTS]) {
+    if(c->role!=LR_ROLE_HOST || c->state!=LR_ST_HOST_WAITING || lr_core_guest_count(c))return 0;
+    int limit=c->cfg.max_guests>=1 && c->cfg.max_guests<=LR_MAX_GUESTS?c->cfg.max_guests:LR_MAX_GUESTS;
+    for(int i=0;i<LR_MAX_GUESTS;i++)if(peers[i]) {
+        if(i>=limit)return 0;
+        for(int j=0;j<i;j++)if(peers[j]==peers[i])return 0;
+    }
+    memcpy(c->restart_peers,peers,sizeof c->restart_peers);return 1;
+}
+
 int lr_core_request_resync(lr_core *c) {
     if (c->role != LR_ROLE_HOST || c->resync_requested ||
         (c->state != LR_ST_HOST_WAITING && c->state != LR_ST_HOST_SENDING && c->state != LR_ST_HOST_PLAYING)) return 0;
@@ -1072,8 +1095,7 @@ void lr_core_tick(lr_core *c, uint64_t now_ms) {
             c->resync_sent_at=now_ms;
         }
     }
-    if (c->state == LR_ST_GUEST_HELLO && !c->password[0] && now_ms >= c->hello_at &&
-        now_ms - c->hello_at >= LR_HELLO_REPEAT_MS)
+    if (c->state == LR_ST_GUEST_HELLO && !c->password[0] && now_ms >= c->hello_next)
         send_hello(c, now_ms);
     if (c->role == LR_ROLE_HOST) {
         for (int i = 0; i < LR_MAX_GUESTS; i++) {

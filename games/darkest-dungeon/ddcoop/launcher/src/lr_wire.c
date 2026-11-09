@@ -69,8 +69,7 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
     switch (m->type) {
     case LR_STREAM_OPEN:
     case LR_STREAM_CLOSE:
-        put32(p, m->id);
-        p += 4;
+        put32(p,m->id);put32(p+4,m->b);p+=8;
         break;
     case LR_STREAM_DATA:
     case LR_SAVE_CHUNK:
@@ -78,6 +77,7 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
         if (m->len == 0 || m->len > LR_CHUNK || !m->data) return 0;
         put32(p, m->id);
         p += 4;
+        if(m->type==LR_STREAM_DATA){put32(p,m->b);p+=4;}
         if (m->type == LR_SAVE_CHUNK) {
             put32(p, m->a);
             p += 4;
@@ -112,6 +112,9 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
         put32(p, m->a);
         p += 4;
         break;
+    case LR_RESTART:
+        if (!m->id || !m->b || m->a<1 || m->a>5) return 0;
+        put32(p,m->id);put32(p+4,m->a);put32(p+8,m->b);p+=12;break;
     case LR_CLAIM:
         if (m->a > 1) return 0;
         put32(p, m->id);
@@ -151,10 +154,11 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
     switch (t) {
     case LR_STREAM_OPEN:
     case LR_STREAM_CLOSE:
-        if (n != 4) return 0;
-        out->id = get32(p);
-        break;
+        if(n!=8)return 0;
+        out->id=get32(p);out->b=get32(p+4);break;
     case LR_STREAM_DATA:
+        if(n<9 || n>8+LR_CHUNK)return 0;
+        out->id=get32(p);out->b=get32(p+4);out->data=p+8;out->len=n-8;break;
     case LR_ROSTER:
         if (n < 5 || n > 4 + LR_CHUNK) return 0;
         out->id = get32(p);
@@ -195,6 +199,11 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
     case LR_SAVE_RESULT:
         if (n != 4) return 0;
         out->a = get32(p);
+        break;
+    case LR_RESTART:
+        if(n!=12)return 0;
+        out->id=get32(p);out->a=get32(p+4);out->b=get32(p+8);
+        if(!out->id || !out->b || out->a<1 || out->a>5)return 0;
         break;
     case LR_CLAIM:
         if (n != 8) return 0;
