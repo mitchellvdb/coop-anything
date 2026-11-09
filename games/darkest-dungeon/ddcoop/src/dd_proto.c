@@ -129,7 +129,7 @@ int dd_action_valid(const dd_action *a) {
     case DD_ACT_DEPARTURE: {
         unsigned ids=0;for(unsigned i=0;i<4;i++)ids|=a->u.departure.heroes[i];
         return a->u.departure.seed && a->u.departure.seed<=0x7fffffffu &&
-            a->u.departure.rules && a->u.departure.rules<=0x7fffffffu && a->u.departure.owners<16 && ids;
+            a->u.departure.rules && a->u.departure.rules<=0x7fffffffu && ids; /* owners: two bits per rank, any value */
     }
     case DD_ACT_TRAVEL: return a->u.travel.dest[1]<4096 && a->u.travel.has_from<=1 && a->u.travel.flip<=1 && a->u.travel.extra<=1 &&
         (a->u.travel.has_from || !a->u.travel.from_area);
@@ -141,7 +141,7 @@ int dd_action_valid(const dd_action *a) {
         a->u.battle.side<=1 && a->u.battle.place<16 && a->u.battle.value>=-1 && a->u.battle.value<16;
     case DD_ACT_EMBARK:
     case DD_ACT_PREPARE: return a->u.prepare.index<4096 && a->u.prepare.key;
-    case DD_ACT_OWNERS: return a->u.owners.mask<16 && party_ids_valid(a->u.owners.heroes) &&
+    case DD_ACT_OWNERS: return party_ids_valid(a->u.owners.heroes) &&
         (a->u.owners.heroes[0] || a->u.owners.heroes[1] || a->u.owners.heroes[2] || a->u.owners.heroes[3]);
     case DD_ACT_ITEM: return a->u.item.op<=DD_ITEM_OP_BAG_CHECK && (a->u.item.hero<4 || a->u.item.hero==255) && a->u.item.inv<=1 && a->u.item.flag<=1 &&
         (a->u.item.op!=DD_ITEM_OP_BAG_CHECK || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.inv)) &&
@@ -290,6 +290,7 @@ static size_t body_size(const dd_msg *m) {
     case DD_MSG_WALK_INTENT: return 4;
     case DD_MSG_SYNC_STOP:
     case DD_MSG_LOAD: return 4;
+    case DD_MSG_BUSY: return 4;
     default: return 0;
     }
 }
@@ -332,6 +333,9 @@ size_t dd_encode(const dd_msg *m, uint8_t *buf, size_t cap) {
     case DD_MSG_LOAD:
         w_u32(&w, m->u.load.slot);
         break;
+    case DD_MSG_BUSY:
+        w_u32(&w, m->u.busy.busy);
+        break;
     default:
         w_u64(&w, m->u.ping.time_ms);
     }
@@ -347,7 +351,7 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
     m->type = r_u16(&h);
     m->seq = r_u32(&h);
     uint32_t body = r_u32(&h);
-    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_SYNC_STOP) return DD_DECODE_BAD_TYPE;
+    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_BUSY) return DD_DECODE_BAD_TYPE;
     if (body == 0 || body > DD_PROTO_MAX_BODY) return DD_DECODE_BAD_LENGTH;
     if (len < DD_PROTO_HEADER + (size_t)body) return DD_DECODE_SHORT;
 
@@ -390,6 +394,10 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
     case DD_MSG_LOAD:
         m->u.load.slot = r_u32(&r);
         if (!r.bad && (m->u.load.slot < 1 || m->u.load.slot > 9)) return DD_DECODE_BAD_VALUE;
+        break;
+    case DD_MSG_BUSY:
+        m->u.busy.busy = r_u32(&r);
+        if (!r.bad && m->u.busy.busy > 1) return DD_DECODE_BAD_VALUE;
         break;
     default:
         m->u.ping.time_ms = r_u64(&r);

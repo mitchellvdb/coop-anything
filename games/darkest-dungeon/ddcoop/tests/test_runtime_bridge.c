@@ -65,7 +65,14 @@ static void reset(int role) {
     queue_clear(&g_outgoing);
     memset(&g_cfg, 0, sizeof g_cfg);
     g_cfg.role = (dd_role)role;
+    g_cfg.player = role == DD_ROLE_GUEST ? 1 : 0;
     strcpy(g_cfg.password, "test-only");
+    for (int i = 0; i < DD_MAX_GUESTS; i++) {
+        g_guests[i].ready = g_guests[i].used = role == DD_ROLE_HOST && !i;
+        g_guests[i].load_slot = 0;
+    }
+    g_guest_count = role == DD_ROLE_HOST;
+    g_guest_change_at = 0;
     g_initialized = g_campaign_active = g_session_ready = g_hooks_installed = 1;
     g_session_seen = 1; g_session_lost = g_session_loss_notified = 0;
     g_queue_failed = 0;
@@ -482,6 +489,7 @@ static void hook_machine_code(void) {
 
 #include "runtime_hamlet_fixture.inc"
 #include "runtime_supplies_fixture.inc"
+#include "runtime_supply_order_fixture.inc"
 #include "runtime_departure_fixture.inc"
 #include "runtime_prepare_fixture.inc"
 #include "runtime_embark_fixture.inc"
@@ -516,7 +524,11 @@ static void duo_checks(void) {
     CHECK(dd_duo_role("guest", DD_ROLE_HOST) == DD_ROLE_GUEST);
     CHECK(dd_duo_role("", DD_ROLE_HOST) == DD_ROLE_HOST && dd_duo_role(NULL, DD_ROLE_OFF) == DD_ROLE_OFF);
     CHECK(dd_duo_role("host", DD_ROLE_OFF) == DD_ROLE_OFF); /* Only the second window has a say; the rest comes from the launcher. */
-    CHECK(strcmp(dd_duo_title(DD_ROLE_GUEST), dd_duo_title(DD_ROLE_HOST)) && strcmp(dd_duo_title(DD_ROLE_HOST), "Darkest Dungeon"));
+    CHECK(strcmp(dd_duo_title(DD_ROLE_GUEST, 1), dd_duo_title(DD_ROLE_HOST, 0)) && strcmp(dd_duo_title(DD_ROLE_HOST, 0), "Darkest Dungeon"));
+    /* Up to three guest windows, each with its own title and number. */
+    CHECK(strcmp(dd_duo_title(DD_ROLE_GUEST, 2), dd_duo_title(DD_ROLE_GUEST, 1)) && strcmp(dd_duo_title(DD_ROLE_GUEST, 3), dd_duo_title(DD_ROLE_GUEST, 2)));
+    CHECK(dd_duo_player("2", DD_ROLE_GUEST) == 2 && dd_duo_player("3", DD_ROLE_GUEST) == 3 && dd_duo_player("", DD_ROLE_GUEST) == 1);
+    CHECK(dd_duo_player("4", DD_ROLE_GUEST) == 1 && dd_duo_player(NULL, DD_ROLE_GUEST) == 1 && dd_duo_player("2", DD_ROLE_HOST) == 0);
     /* A real window, off screen but marked visible, under a title of its own: the real game may be running on this PC.
      * The search the second copy does must not find the old title any more. */
     {
@@ -524,13 +536,13 @@ static void duo_checks(void) {
         HWND shown = CreateWindowExA(WS_EX_TOOLWINDOW, "STATIC", "DDCoop test window", WS_POPUP | WS_VISIBLE, -32000, -32000, 1, 1, NULL, NULL, NULL, NULL);
         HWND hidden = CreateWindowExA(WS_EX_TOOLWINDOW, "STATIC", "Hidden helper", WS_POPUP, 0, 0, 1, 1, NULL, NULL, NULL, NULL);
         CHECK(shown && hidden && FindWindowA(NULL, "DDCoop test window") == shown);
-        CHECK(dd_duo_rename(dd_duo_title(DD_ROLE_HOST)) == 1);
+        CHECK(dd_duo_rename(dd_duo_title(DD_ROLE_HOST, 0)) == 1);
         CHECK(!FindWindowA(NULL, "DDCoop test window"));
         GetWindowTextA(shown, now, sizeof now);
-        CHECK(!strcmp(now, dd_duo_title(DD_ROLE_HOST)));
+        CHECK(!strcmp(now, dd_duo_title(DD_ROLE_HOST, 0)));
         GetWindowTextA(hidden, now, sizeof now);
         CHECK(!strcmp(now, "Hidden helper"));
-        CHECK(dd_duo_rename(dd_duo_title(DD_ROLE_HOST)) == 0); /* Already right: nothing to do every half second. */
+        CHECK(dd_duo_rename(dd_duo_title(DD_ROLE_HOST, 0)) == 0); /* Already right: nothing to do every half second. */
         DestroyWindow(shown);
         DestroyWindow(hidden);
     }
@@ -674,12 +686,50 @@ int main(void) {
     CHECK(g_queue_failed);
     dd_runtime_poll();
     CHECK(g_town.needs_resync && alerts == 1);
+    /* Four players: the host sends to one guest or to all connected guests; player 1 keeps the old queue. */
+    {
+        dd_msg m = {0}, out;
+        queue_init(&g_guests[1].out); /* The runtime does this when it starts; this test never starts it. */
+        queue_init(&g_guests[2].out);
+        reset(DD_ROLE_HOST);
+        g_guests[1].ready = 1;
+        queue_clear(&g_outgoing);
+        queue_clear(&g_guests[1].out);
+        queue_clear(&g_guests[2].out);
+        m.type = DD_MSG_TOWN_REJECT;
+        m.u.reject.request_id = 0x02000005u;
+        CHECK(net_send(2, &m) && !queue_pop(&g_outgoing, &out) && queue_pop(&g_guests[1].out, &out) && out.u.reject.request_id == 0x02000005u);
+        m.type = DD_MSG_PING;
+        CHECK(net_send(DD_TOWN_ALL, &m) && queue_pop(&g_outgoing, &out) && queue_pop(&g_guests[1].out, &out) && !queue_pop(&g_guests[2].out, &out));
+        g_guests[1].ready = 0;
+        /* A guest numbers its requests with its player in the top byte. */
+        reset(DD_ROLE_GUEST);
+        g_cfg.player = 3;
+        runtime_town_init();
+        dd_action a = {0};
+        a.kind = DD_ACT_DISMISS;
+        a.u.hero.hero_id = 7;
+        CHECK((dd_town_guest_local(&g_town, &a) >> 24) == 3);
+        queue_clear(&g_outgoing);
+        reset(DD_ROLE_HOST);
+    }
+    /* One lost link must notify every still-connected guest, once. */
+    reset(DD_ROLE_HOST);
+    g_guests[1].ready=g_guests[2].ready=1;
+    queue_clear(&g_outgoing);queue_clear(&g_guests[1].out);queue_clear(&g_guests[2].out);
+    g_session_lost=1;
+    CHECK(runtime_shared_blocked() && g_town.needs_resync);
+    for(int i=0;i<3;i++) { dd_msg out; CHECK(queue_pop(guest_out(i),&out) && out.type==DD_MSG_SYNC_STOP);
+        CHECK(!queue_pop(guest_out(i),&out)); }
+    CHECK(runtime_shared_blocked() && !g_outgoing.count && !g_guests[1].out.count && !g_guests[2].out.count);
+    reset(DD_ROLE_HOST);
     recruit_transactions();
     sale_transactions();
     hook_machine_code();
     hook_targets_unique();
     hamlet_transactions();
     supplies_transactions();
+    supply_initial_order_checks();
     sw_drags();
     sw_stock_slot_drops();
     departure_transactions();

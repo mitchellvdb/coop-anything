@@ -25,6 +25,11 @@ static uintptr_t __fastcall dp_map(void *a, void *b, void *c) {
     dp_maps++;
     return 7;
 }
+static uintptr_t __fastcall dp_start_fixed(void *app) { /* A mission with a fixed map: RaidStart makes none. */
+    CHECK(app == dp_app);
+    dp_starts++;
+    return 7;
+}
 static uintptr_t __fastcall dp_start(void *app) {
     CHECK(app == dp_app);
     dp_starts++;
@@ -194,6 +199,19 @@ static void departure_transactions(void) {
             hook_raid_start(dp_app);
             CHECK(!dp_reseeds);
         }
+    }
+    /* A fixed-map mission (no map generated) on both copies: shared actions go on (9 Nov 20:06). */
+    for (int role = DD_ROLE_HOST; role <= DD_ROLE_GUEST; role++) {
+        dd_action fixed = order;
+        dp_reset(role);
+        if (role == DD_ROLE_GUEST) {
+            sw_push_apply(1, 0, &fixed);
+            dd_runtime_poll();
+            dd_runtime_poll();
+        }
+        g_raid_start = dp_start_fixed;
+        hook_raid_start(dp_app);
+        CHECK(dp_starts == 1 && !dp_maps && !g_town.needs_resync);
     }
     /* A Rules stream that was not recognised: the map seed still works, the stream is left alone. */
     dp_reset(DD_ROLE_HOST);

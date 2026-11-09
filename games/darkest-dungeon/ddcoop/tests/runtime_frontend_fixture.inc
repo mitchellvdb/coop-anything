@@ -4,6 +4,13 @@ static unsigned fe_starts, fe_loads, fe_news;
 static int32_t fe_loaded, fe_newed;
 static uint64_t fe_start_screen;
 static unsigned fe_transports;
+static int fe_expected_guests = -1;
+static int fe_expected_stub(void) { return fe_expected_guests; }
+/* What the other copies say: a guest hears the host's "now", the host hears guest 1 waiting at its save screen. */
+static void fe_peer(int slot) {
+    InterlockedExchange(&g_peer_load_slot, slot);
+    InterlockedExchange(&g_guests[0].load_slot, slot);
+}
 static unsigned fe_prepares;
 static int fe_prepare_ok, fe_seed_armed, fe_fast_resume;
 static int fe_prepare_stub(void) {
@@ -70,7 +77,9 @@ static void fe_reset(int role, const char *slots) {
     g_departure_load_armed = 0;
     fe_transports = 0;
     /* The other copy already stands at its save screen for this session's slot, unless a test says otherwise. */
-    InterlockedExchange(&g_peer_load_slot, slots[0] >= '1' && slots[0] <= '9' && !slots[1] ? slots[0] - '0' : 0);
+    fe_peer(slots[0] >= '1' && slots[0] <= '9' && !slots[1] ? slots[0] - '0' : 0);
+    g_fe_expected = fe_expected_stub;
+    fe_expected_guests = -1;
     fe_news = 0;
     fe_newed = -1;
     snprintf(g_cfg.coop_slots, sizeof g_cfg.coop_slots, "%s", slots);
@@ -292,7 +301,7 @@ static void frontend_transactions(void) {
         uint32_t last = 0;
         int before;
         fe_reset(DD_ROLE_HOST, "2");
-        InterlockedExchange(&g_peer_load_slot, 0);
+        fe_peer(0);
         fe_show(1);
         fe_mark(2, 1, 1);
         fe_state(7);
@@ -301,21 +310,83 @@ static void frontend_transactions(void) {
         fe_settle();
         before = alerts;
         frontend_poll();
-        CHECK(!fe_loads && !g_fe_done && alerts == before + 1 && fe_loads_sent(&last) == 1 && last == 2);
+        CHECK(!fe_loads && !g_fe_done && alerts == before + 1 && !fe_loads_sent(NULL)); /* The host says nothing until it loads. */
         /* Waiting is not the screen failing: each look moves the give-up time on. */
         CHECK(g_fe_give_up_at > GetTickCount64() + DD_FE_GIVE_UP_MS - 5000);
-        g_fe_load_sent_at = 1; /* A second later: said again. */
         frontend_poll();
-        CHECK(!fe_loads && !g_fe_done && fe_loads_sent(NULL) == 1);
-        /* The other copy arrives: this one loads, once, and says so once more for the other one. */
-        InterlockedExchange(&g_peer_load_slot, 2);
+        CHECK(!fe_loads && !g_fe_done && !fe_loads_sent(NULL));
+        /* The guest arrives: the host says "now" to all, once, and loads. */
+        fe_peer(2);
         frontend_poll();
         CHECK(fe_loads == 1 && fe_loaded == 1 && g_fe_done && fe_loads_sent(&last) == 1 && last == 2);
+        /* A guest says it is ready every second, and loads on the host's "now". */
+        fe_reset(DD_ROLE_GUEST, "2");
+        fe_peer(0);
+        fe_show(1);
+        fe_mark(2, 1, 1);
+        fe_state(7);
+        frontend_poll();
+        fe_settle();
+        frontend_poll();
+        CHECK(!fe_loads && fe_loads_sent(&last) == 1 && last == 2);
+        g_fe_load_sent_at = 1; /* A second later: said again. */
+        frontend_poll();
+        CHECK(!fe_loads && fe_loads_sent(NULL) == 1);
+        fe_peer(2);
+        frontend_poll();
+        CHECK(fe_loads == 1 && g_fe_done);
         frontend_poll();
         CHECK(fe_loads == 1);
+        /* Three guests at the host: it loads once all of them stand at their save screen, and says "now" to all. */
+        fe_reset(DD_ROLE_HOST, "2");
+        for (int i = 0; i < 3; i++) { g_guests[i].ready = 1; g_guests[i].load_slot = i ? 0 : 2; }
+        g_guest_count = 3;
+        fe_show(1);
+        fe_mark(2, 1, 1);
+        fe_state(7);
+        frontend_poll();
+        fe_settle();
+        frontend_poll();
+        CHECK(!fe_loads && !fe_loads_sent(NULL)); /* Two of them are not there yet. */
+        g_guests[1].load_slot = g_guests[2].load_slot = 2;
+        frontend_poll();
+        CHECK(fe_loads == 1 && fe_loads_sent(&last) == 1 && last == 2);
+        /* The launcher says three guests: two at the save screen are not enough, however long it is quiet. */
+        fe_reset(DD_ROLE_HOST, "2");
+        fe_expected_guests = 3;
+        g_guests[1].ready = 1;
+        g_guests[1].load_slot = 2;
+        g_guest_count = 2;
+        fe_show(1);
+        fe_mark(2, 1, 1);
+        fe_state(7);
+        frontend_poll();
+        fe_settle();
+        frontend_poll();
+        CHECK(!fe_loads);
+        g_guests[2].ready = 1;
+        g_guests[2].load_slot = 2;
+        g_guest_count = 3;
+        frontend_poll();
+        CHECK(fe_loads == 1);
+        /* Without a number from the launcher: not while a guest just arrived. */
+        fe_reset(DD_ROLE_HOST, "2");
+        g_guest_change_at = (LONG64)GetTickCount64();
+        fe_show(1);
+        fe_mark(2, 1, 1);
+        fe_state(7);
+        frontend_poll();
+        fe_settle();
+        frontend_poll();
+        CHECK(!fe_loads);
+        g_guest_change_at = 0;
+        frontend_poll();
+        CHECK(fe_loads == 1);
+        for (int i = 1; i < 3; i++) g_guests[i].ready = g_guests[i].load_slot = 0;
+        g_guest_count = 1;
         /* No connection yet: nothing sent, nothing loaded. */
         fe_reset(DD_ROLE_GUEST, "2");
-        InterlockedExchange(&g_peer_load_slot, 0);
+        fe_peer(0);
         InterlockedExchange(&g_session_ready, 0);
         fe_show(1);
         fe_mark(2, 1, 1);
@@ -325,12 +396,12 @@ static void frontend_transactions(void) {
         frontend_poll();
         CHECK(!fe_loads && !g_fe_done && !fe_loads_sent(NULL));
         InterlockedExchange(&g_session_ready, 1);
-        InterlockedExchange(&g_peer_load_slot, 2);
+        fe_peer(2);
         frontend_poll();
         CHECK(fe_loads == 1 && fe_loads_sent(NULL) >= 1);
         /* The other copy waits for another slot: neither loads; left to the players. */
         fe_reset(DD_ROLE_HOST, "2");
-        InterlockedExchange(&g_peer_load_slot, 5);
+        fe_peer(5);
         fe_show(1);
         fe_mark(2, 1, 1);
         fe_state(7);
@@ -340,7 +411,7 @@ static void frontend_transactions(void) {
         CHECK(!fe_loads && g_fe_done);
         /* The player clicks a slot while waiting: that wins, and the waiting ends. */
         fe_reset(DD_ROLE_HOST, "2");
-        InterlockedExchange(&g_peer_load_slot, 0);
+        fe_peer(0);
         fe_show(1);
         fe_mark(2, 1, 1);
         fe_state(7);
@@ -362,7 +433,7 @@ static void frontend_transactions(void) {
         frontend_poll();
         CHECK(fe_news == 1 && !fe_transports && !fe_loads_sent(NULL));
         g_fe_new_slot = 0;
-        InterlockedExchange(&g_peer_load_slot, 0);
+        fe_peer(0);
     }
     /* It runs from the game's frame, before anything of a campaign, and the two functions are in the table. */
     fe_reset(DD_ROLE_GUEST, "2");

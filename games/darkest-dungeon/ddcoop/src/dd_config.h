@@ -9,6 +9,7 @@ typedef struct {
     int port;            /* [net] port                        (default 27360) */
     char host[64];       /* [net] host = address a guest connects to */
     char password[128];  /* [net] password (never logged) */
+    int player;          /* [net] player = 1..3 for a guest (default 1); always 0 for the host and off */
     char coop_slots[64]; /* [coop] coop_slots = 3   or   3,7   (campaign menu positions 1..9) */
     int verbose;         /* [log] verbose = 0 | 1 */
 } dd_config;

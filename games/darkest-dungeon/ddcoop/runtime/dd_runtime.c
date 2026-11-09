@@ -86,6 +86,13 @@ typedef struct {
 } dd_msg_queue;
 
 static dd_config g_cfg;
+typedef struct {
+    volatile LONG used, ready, load_slot;
+    volatile LONG busy;                /* the guest says a raid window keeps it from walking (DD_MSG_BUSY) */
+    volatile LONG64 busy_at, busy_since; /* when it last said so, and since when it has been busy */
+    dd_msg_queue out;
+} guest_link;
+static guest_link g_guests[3];
 static uint8_t g_build_id[8];
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
@@ -122,6 +129,12 @@ static volatile LONG g_session_seen, g_session_lost;
 static volatile LONG64 g_transport_started_at; /* GetTickCount64 when the network thread started; 0 before */
 static volatile LONG g_peer_load_slot; /* The menu slot the other copy waits to load at its save screen (DD_MSG_LOAD); 0 = not seen */
 static void runtime_transport_start(void);
+/* The host's guests, index = player - 1 (protocol 29: up to three). Each has its own connection thread and outgoing queue;
+ * what the host decides goes to all of them, a refusal only to the one who asked. A guest has one link: the host (g_outgoing). */
+#define DD_MAX_GUESTS 3
+static volatile LONG g_guest_count;      /* host: guests connected now */
+static volatile LONG64 g_guest_change_at; /* host: GetTickCount64 of the last guest arriving, leaving or reaching its save screen */
+static int g_request_player;              /* host: the player whose request is being decided now (1..3), 0 otherwise */
 static int g_session_loss_notified;
 static volatile LONG g_unknown_activity_logged;
 static HANDLE g_network_thread;
@@ -279,12 +292,12 @@ static int runtime_shared_blocked(void) {
                 !InterlockedCompareExchange(&g_session_ready, 0, 0));
     if (!lost && !g_town.needs_resync) return hamlet_dismiss_busy() || hamlet_party_busy() || provisions_busy() || bag_repair_busy() || formation_busy();
     if (lost) {
-        g_town.needs_resync = 1;
         if (!g_session_loss_notified) {
             g_session_loss_notified = 1;
+            runtime_sync_stop(1); /* All remaining guests must stop as well. */
+            dd_overlay_session(DD_OVERLAY_LOST);
             dd_log("shared actions stopped after live session loss; restart both games for a fresh snapshot");
-            shop_notice("The connection to the other player was lost. Shared actions have stopped. "
-                        "Close both games and start a new co-op session through the launcher.");
+
         }
     }
     return 1;
@@ -779,9 +792,18 @@ static void hook_restore(dd_hook *h) {
     }
 }
 
+/* to: DD_TOWN_ALL, or a player (1..3; 0 = the host, for a guest). A guest always sends to the host. */
+static dd_msg_queue *guest_out(int index) { return index ? &g_guests[index].out : &g_outgoing; } /* Player 1: as with two players. */
+static int net_send(int to, const dd_msg *m) {
+    int ok = 1;
+    if (g_cfg.role != DD_ROLE_HOST) return queue_push(&g_outgoing, m);
+    for (int i = 0; i < DD_MAX_GUESTS; i++)
+        if (InterlockedCompareExchange(&g_guests[i].ready, 0, 0) && (to == DD_TOWN_ALL || to == 0 || to == i + 1) && !queue_push(guest_out(i), m)) ok = 0; /* 0: "the other side", as with two players */
+    return ok;
+}
 static void outgoing_send(void *unused, int to, const dd_msg *m) {
-    (void)unused; (void)to;
-    if (!queue_push(&g_outgoing, m)) {
+    (void)unused;
+    if (!net_send(to, m)) {
         InterlockedExchange(&g_queue_failed,1);dd_log("town outbound queue full; rejoin required");
     }
 }
@@ -792,7 +814,7 @@ static void runtime_stop_shared(uint32_t reason, int notify) {
     dd_log("Sync stop: reason=%u role=%s peer=%d", reason, dd_role_name(g_cfg.role), !notify);
     if (!g_sync_stop_sent) {
         g_sync_stop_sent = 1;
-        if (notify) { dd_msg m = {0}; m.type = DD_MSG_SYNC_STOP; m.u.load.slot = reason; outgoing_send(NULL, 0, &m); }
+        if (notify) { dd_msg m = {0}; m.type = DD_MSG_SYNC_STOP; m.u.load.slot = reason; outgoing_send(NULL, DD_TOWN_ALL, &m); }
         shop_notice("The games are no longer in sync. Shared actions have stopped for both players. Close both games and start a new session; send the logs.");
     }
 }
@@ -1049,7 +1071,7 @@ static void hello_message(dd_msg *m, const char *name) {
     memset(m, 0, sizeof *m);
     m->type = DD_MSG_HELLO;
     m->u.hello.protocol = DD_PROTO_VERSION;
-    memcpy(m->u.hello.mod_version, "0.5.0-test59", sizeof "0.5.0-test59");
+    memcpy(m->u.hello.mod_version, "0.5.0-test65", sizeof "0.5.0-test65");
     memcpy(m->u.hello.build, g_build_id, sizeof g_build_id);
     size_t n = strlen(name);
     if (n >= sizeof m->u.hello.name) n = sizeof m->u.hello.name - 1;
@@ -1069,25 +1091,36 @@ static int receive_hello(dd_conn *c, dd_msg *hello) {
     return 0;
 }
 
-static int exchange_hello(dd_conn *c, int host) {
+/* A guest says which player it is in its hello: "Guest1".."Guest3". The host answers "Host". *player: the guest's number, on the host. */
+static int exchange_hello(dd_conn *c, int host, int *player) {
     dd_msg local, remote;
-    hello_message(&local, host ? "Host" : "Guest");
+    char name[16];
+    snprintf(name, sizeof name, host ? "Host" : "Guest%d", g_cfg.player);
+    hello_message(&local, name);
     if (!host) {
         if (!dd_conn_send(c, &local)) return 0;
         return receive_hello(c, &remote);
     }
     if (!receive_hello(c, &remote)) return 0;
+    if (strncmp(remote.u.hello.name, "Guest", 5) || remote.u.hello.name[5] < '1' || remote.u.hello.name[5] > '3' || remote.u.hello.name[6]) {
+        dd_log("guest refused: no player number in its hello");
+        return 0;
+    }
+    *player = remote.u.hello.name[5] - '0';
     return dd_conn_send(c, &local);
 }
 
-static int session_loop(dd_conn *c, int host) {
+/* One connection: the guest's link to the host, or on the host one guest's (player 1..3). */
+static int session_loop(dd_conn *c, int host, int player) {
+    dd_msg_queue *out = host ? guest_out(player - 1) : &g_outgoing;
     InterlockedExchange(&g_host_refused_count, 0);
     InterlockedExchange(&g_session_ready, 1);
     InterlockedExchange(&g_session_seen, 1);
-    dd_log("direct TCP session ready (role=%s)", dd_role_name(g_cfg.role));
+    if (host) dd_log("direct TCP session ready (role=host, guest player %d, %ld connected)", player, (long)InterlockedCompareExchange(&g_guest_count, 0, 0));
+    else dd_log("direct TCP session ready (role=guest, player %d)", g_cfg.player);
     for (;;) {
         dd_msg m;
-        while (queue_pop(&g_outgoing, &m))
+        while (queue_pop(out, &m))
             if (!dd_conn_send(c, &m)) return 0;
         dd_poll_result p = dd_conn_poll(c, 20, &m);
         if (p == DD_POLL_CLOSED) return 0;
@@ -1101,11 +1134,29 @@ static int session_loop(dd_conn *c, int host) {
             walk_intent_receive(&m);
             continue;
         }
-        if (m.type == DD_MSG_LOAD) {
-            if (InterlockedExchange(&g_peer_load_slot, (LONG)m.u.load.slot) != (LONG)m.u.load.slot)
-                dd_log("Start screen: the other copy waits at its save screen for slot %u", m.u.load.slot);
+        if (host && m.type == DD_MSG_BUSY) {
+            guest_link *g = &g_guests[player - 1];
+            LONG64 now = (LONG64)GetTickCount64();
+            if (InterlockedExchange(&g->busy, (LONG)m.u.busy.busy) != (LONG)m.u.busy.busy) {
+                if (m.u.busy.busy) InterlockedExchange64(&g->busy_since, now);
+                dd_log("Walk: guest player %d %s", player, m.u.busy.busy ? "has a window open; the host waits before walking on" : "is free to walk again");
+            }
+            InterlockedExchange64(&g->busy_at, now);
             continue;
         }
+        if (m.type == DD_MSG_LOAD) {
+            volatile LONG *seen = host ? &g_guests[player - 1].load_slot : &g_peer_load_slot;
+            if (InterlockedExchange(seen, (LONG)m.u.load.slot) != (LONG)m.u.load.slot) {
+                if (host) InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());
+                dd_log(host ? "Start screen: guest player %d waits at its save screen for slot %u" : "Start screen: the host loads slot %u now",
+                       host ? player : (int)m.u.load.slot, m.u.load.slot);
+            }
+            continue;
+        }
+        /* The host stamps a request with the player it came from (top byte): refusals go back to that guest only, and every guest
+         * recognises its own requests in what the host decides. A guest numbers its requests the same way. */
+        if (host && m.type == DD_MSG_TOWN_REQUEST)
+            m.u.town.request_id = ((uint32_t)player << 24) | (m.u.town.request_id & 0xffffffu);
         if ((host && m.type == DD_MSG_TOWN_REQUEST) ||
             (!host && (m.type == DD_MSG_TOWN_APPLY || m.type == DD_MSG_TOWN_REJECT))) {
             if (!queue_push(&g_incoming, &m)) {
@@ -1115,29 +1166,73 @@ static int session_loop(dd_conn *c, int host) {
     }
 }
 
+/* The host, one thread per guest connection. */
+static DWORD WINAPI guest_main(void *socket) {
+    dd_socket s = (dd_socket)(uintptr_t)socket;
+    dd_conn c;
+    int player = 0;
+    if (!dd_conn_init(&c, s)) { dd_net_close(s); return 0; }
+    if (!dd_conn_handshake_host(&c, g_cfg.password, DD_HELLO_TIMEOUT_MS) || !exchange_hello(&c, 1, &player)) {
+        dd_log("guest rejected or protocol/build mismatch");
+        dd_conn_free(&c);
+        return 0;
+    }
+    guest_link *g = &g_guests[player - 1];
+    if (InterlockedCompareExchange(&g->used, 1, 0)) {
+        dd_log("guest refused: player %d is connected already", player);
+        dd_conn_free(&c);
+        return 0;
+    }
+    queue_clear(guest_out(player - 1));
+    InterlockedExchange(&g->load_slot, 0);
+    InterlockedExchange(&g->busy, 0);
+    InterlockedExchange(&g->ready, 1);
+    InterlockedIncrement(&g_guest_count);
+    InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());
+    if (!session_loop(&c, 1, player)) dd_log("guest disconnected (player %d)", player);
+    InterlockedExchange(&g->ready, 0);
+    InterlockedExchange(&g->load_slot, 0);
+    queue_clear(guest_out(player - 1));
+    InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());
+    if (InterlockedDecrement(&g_guest_count) <= 0) InterlockedExchange(&g_session_ready, 0);
+    /* One guest gone stops shared actions for everyone, as with two players: the others would part from it. */
+    InterlockedExchange(&g_session_lost, 1);
+    queue_clear(&g_incoming);
+    dd_conn_free(&c);
+    InterlockedExchange(&g->used, 0);
+    return 0;
+}
+
 static DWORD WINAPI network_main(void *unused) {
     (void)unused;
     if (!dd_net_startup()) { dd_log("network startup failed"); return 0; }
     if (g_cfg.role == DD_ROLE_HOST) {
-        /* DDCoop's launcher relays this stream over Steam on the same PC. Never expose a game port. */
+        /* DDCoop's launcher relays these streams over Steam on the same PC. Never expose a game port. */
         dd_socket listener = dd_net_listen(g_cfg.port ? g_cfg.port : DD_TOWN_PORT_DEFAULT, 0);
         if (listener == DD_NO_SOCKET) { dd_log("could not listen on configured TCP port"); return 0; }
-        dd_log("waiting for one relayed guest on loopback port %d", g_cfg.port ? g_cfg.port : DD_TOWN_PORT_DEFAULT);
+        dd_log("waiting for up to %d relayed guests on loopback port %d", DD_MAX_GUESTS, g_cfg.port ? g_cfg.port : DD_TOWN_PORT_DEFAULT);
         for (;;) {
             dd_socket s = dd_net_accept(listener, 1000);
+            if (InterlockedCompareExchange(&g_session_lost, 0, 0)) {
+                if (s != DD_NO_SOCKET) dd_net_close(s);
+                dd_net_close(listener);
+                return 0;
+            }
             if (s == DD_NO_SOCKET) continue;
-            dd_conn c;
-            if (!dd_conn_init(&c, s)) { dd_net_close(s); continue; }
-            if (dd_conn_handshake_host(&c, g_cfg.password, DD_HELLO_TIMEOUT_MS) && exchange_hello(&c, 1)) {
-                if (!session_loop(&c, 1)) dd_log("guest disconnected");
-                InterlockedExchange(&g_session_lost, 1);
-            } else dd_log("guest rejected or protocol/build mismatch");
-            InterlockedExchange(&g_session_ready, 0);
-            InterlockedExchange(&g_peer_load_slot, 0);
-            queue_clear(&g_incoming);
-            queue_clear(&g_outgoing);
-            dd_conn_free(&c);
-            if (InterlockedCompareExchange(&g_session_lost, 0, 0)) { dd_net_close(listener); return 0; }
+            /* A guest that comes once the campaign is loaded would start behind the others: everyone loads together or not at all. */
+            if (InterlockedCompareExchange(&g_campaign_active, 0, 0) && InterlockedCompareExchange(&g_guest_count, 0, 0)) {
+                static uint64_t told_at;
+                uint64_t now = GetTickCount64();
+                if (!told_at || now - told_at > 60000) {
+                    told_at = now;
+                    dd_log("guest refused: the campaign is loaded already; everyone joins before it loads (said once a minute)");
+                }
+                dd_net_close(s);
+                continue;
+            }
+            HANDLE t = CreateThread(NULL, 0, guest_main, (void *)(uintptr_t)s, 0, NULL);
+            if (t) CloseHandle(t);
+            else { dd_log("could not start a guest thread"); dd_net_close(s); }
         }
     }
     if (g_cfg.role == DD_ROLE_GUEST) {
@@ -1146,8 +1241,8 @@ static DWORD WINAPI network_main(void *unused) {
             if (s == DD_NO_SOCKET) { Sleep(1000); continue; }
             dd_conn c;
             if (!dd_conn_init(&c, s)) { dd_net_close(s); Sleep(1000); continue; }
-            if (dd_conn_handshake_guest(&c, g_cfg.password, DD_HELLO_TIMEOUT_MS) && exchange_hello(&c, 0)) {
-                if (!session_loop(&c, 0)) dd_log("host disconnected");
+            if (dd_conn_handshake_guest(&c, g_cfg.password, DD_HELLO_TIMEOUT_MS) && exchange_hello(&c, 0, NULL)) {
+                if (!session_loop(&c, 0, g_cfg.player)) dd_log("host disconnected");
                 InterlockedExchange(&g_session_lost, 1);
             } else {
                 dd_log("host rejected or protocol/build mismatch");
@@ -1162,6 +1257,12 @@ static DWORD WINAPI network_main(void *unused) {
         }
     }
     return 0;
+}
+
+/* A guest numbers its requests with its player in the top byte, as the host stamps them. */
+static void runtime_town_init(void) {
+    dd_town_init(&g_town, NULL, runtime_apply, NULL, outgoing_send);
+    if (g_cfg.role == DD_ROLE_GUEST) g_town.next_request = ((uint32_t)g_cfg.player << 24) | 1u;
 }
 
 int dd_runtime_init(const dd_config *cfg, const uint8_t build_id[8], uint64_t assign_hero_va,
@@ -1185,7 +1286,8 @@ int dd_runtime_init(const dd_config *cfg, const uint8_t build_id[8], uint64_t as
     g_sell_va=(uintptr_t)sell_va;
     queue_init(&g_incoming);
     queue_init(&g_outgoing);
-    dd_town_init(&g_town, NULL, runtime_apply, NULL, outgoing_send);
+    for (int i = 0; i < DD_MAX_GUESTS; i++) queue_init(&g_guests[i].out);
+    runtime_town_init();
     return 1;
 }
 
@@ -1284,7 +1386,7 @@ void dd_runtime_poll(void) {
 static void runtime_poll_once(void) {
     if (!InterlockedCompareExchange(&g_initialized, 0, 0)) return;
     LONG peer_stop = InterlockedExchange(&g_peer_sync_stop, 0);
-    if (peer_stop) runtime_stop_shared((uint32_t)peer_stop, 0);
+    if (peer_stop) runtime_stop_shared((uint32_t)peer_stop, g_cfg.role == DD_ROLE_HOST); /* The host tells the other guests. */
     frontend_poll();
     runtime_publish_state();
     alone_town_poll();
@@ -1348,7 +1450,10 @@ static void runtime_poll_once(void) {
             uint32_t accepted_before = g_town.accepted;
             uint32_t rejected_before = g_town.rejected;
             log_town_action("host received guest town request", &m.u.town.action, m.u.town.request_id, 0);
-            dd_town_host_request(&g_town, 0, &m);
+            g_request_player = (int)(m.u.town.request_id >> 24);
+            if (g_request_player < 1 || g_request_player > DD_MAX_GUESTS) g_request_player = 1;
+            dd_town_host_request(&g_town, g_request_player, &m);
+            g_request_player = 0;
             if (g_town.accepted != accepted_before)
                 log_town_action("host accepted guest town request", &m.u.town.action, m.u.town.request_id,
                                 g_town.applied_seq);

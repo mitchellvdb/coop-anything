@@ -15,7 +15,7 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 28 /* prop open and obstacle confirmation are distinct ordered actions */
+#define DD_PROTO_VERSION 30 /* a guest tells the host while a raid window keeps it from walking */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -30,6 +30,7 @@ typedef enum {
     DD_MSG_WALK_INTENT = 8,  /* guest -> host: the direction its keys ask for; no order, no answer */
     DD_MSG_SYNC_STOP = 10, /* either peer: shared gameplay must stop; u.load.slot is bounded reason1..3 */
     DD_MSG_LOAD = 9,         /* both directions: this copy waits at the save screen to load menu slot u.load.slot */
+    DD_MSG_BUSY = 11,        /* guest -> host: 1 while a window in the raid (curio, loot, menu) keeps it from walking, 0 when free */
 } dd_msg_type;
 
 typedef enum {
@@ -116,6 +117,7 @@ typedef struct {
         struct { uint32_t area, pos; } walk;                      /* pos: the bits of a float */
         struct { int32_t direction; } intent;                     /* -1, 0 or +1 */
         struct { uint32_t slot; } load;                           /* 1..9 */
+        struct { uint32_t busy; } busy;                           /* 0 or 1 */
     } u;
 } dd_msg;
 

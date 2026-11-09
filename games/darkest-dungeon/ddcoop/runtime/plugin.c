@@ -17,7 +17,7 @@
 #include "dd_duo.h"
 #endif
 
-#define DD_FW_VERSION "0.5.0-test59"
+#define DD_FW_VERSION "0.5.0-test65"
 /* Save storage (runtime test 8): global StorageManager*; the loaded campaign is the device mounted in
  * device slot 5 (manager + 0x10 + slot * 8, StorageManager::IO_MountDevice 0x14024a820); a device's name
  * is at device + 0x20 (StorageDevice constructor). Valid for the known build only. */
@@ -159,22 +159,29 @@ static DWORD WINAPI startup(void *unused) {
         char duo[16] = "";
         GetEnvironmentVariableA("DDCOOP_DUO_ROLE", duo, sizeof duo);
         g_cfg.role = dd_duo_role(duo, g_cfg.role);
+        duo[0] = 0;
+        GetEnvironmentVariableA("DDCOOP_DUO_PLAYER", duo, sizeof duo);
+        g_cfg.player = dd_duo_player(duo, g_cfg.role);
     }
 #endif
+    if (g_cfg.role != DD_ROLE_GUEST) g_cfg.player = 0;
+    else if (g_cfg.player < 1 || g_cfg.player > 3) g_cfg.player = 1;
+    /* Each guest its own log: on one PC (the test with several windows) they would otherwise write into one file. */
     path_next_to_module(path, sizeof path, g_cfg.role == DD_ROLE_OFF ? "ddcoop-fw.log" :
-                     g_cfg.role == DD_ROLE_HOST ? "ddcoop-fw-host.log" : "ddcoop-fw-guest.log");
+                     g_cfg.role == DD_ROLE_HOST ? "ddcoop-fw-host.log" : g_cfg.player == 3 ? "ddcoop-fw-guest3.log" :
+                     g_cfg.player == 2 ? "ddcoop-fw-guest2.log" : "ddcoop-fw-guest.log");
     dd_log_open(path);
     dd_log("=== Darkest Dungeon co-op framework %s starting ===", DD_FW_VERSION);
 #ifdef DD_DUO
     dd_log("TWO WINDOWS TEST BUILD: this copy is the %s", dd_role_name(g_cfg.role));
     dd_log("DUO graphics pacing: minimum 16 ms per frame (about 60 FPS per window)");
     {
-        HANDLE title = CreateThread(NULL, 0, duo_title_watch, (void *)dd_duo_title(g_cfg.role), 0, NULL);
+        HANDLE title = CreateThread(NULL, 0, duo_title_watch, (void *)dd_duo_title(g_cfg.role, g_cfg.player), 0, NULL);
         if (title) CloseHandle(title);
     }
 #endif
-    dd_log("settings: %s; role=%s port=%d host=%s password=%s verbose=%d", have_ini ? "ddcoop.ini" : "defaults (no ddcoop.ini)",
-           dd_role_name(g_cfg.role), g_cfg.port, g_cfg.host[0] ? g_cfg.host : "-",
+    dd_log("settings: %s; role=%s player=%d port=%d host=%s password=%s verbose=%d", have_ini ? "ddcoop.ini" : "defaults (no ddcoop.ini)",
+           dd_role_name(g_cfg.role), g_cfg.player, g_cfg.port, g_cfg.host[0] ? g_cfg.host : "-",
            g_cfg.password[0] ? "(set)" : "(empty)", g_cfg.verbose);
 
     char exe[MAX_PATH], hex[65] = "";

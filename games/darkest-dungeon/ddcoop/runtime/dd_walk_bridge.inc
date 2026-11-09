@@ -38,6 +38,18 @@ static uint64_t g_town_check_at;
 static void town_check_poll(void);
 static uint32_t g_walk_asked_prop, g_walk_asked_door;
 static int g_walk_selected = -1; /* The hero this copy last knew as selected, outside fights. */
+/* After a shared curio or loot the host walked on while a guest still had the window open; the guest walked those tiles later,
+ * with Rules numbers the host had already used (owner's run of 9 Nov 18:53-18:54: stress and torch differed at the next door,
+ * then a fight parted). The game calls 75b530 (hook_raid_move) every frame while the player may walk, never in a window. So a
+ * guest that is in a raid, not in a fight, and has not had that call for a moment is busy; it tells the host, which waits. */
+#define DD_WALK_BUSY_AFTER_MS 400u
+#define DD_WALK_BUSY_FRESH_MS 3000u
+#define DD_WALK_BUSY_GIVE_UP_MS 60000u
+static uint64_t g_walk_free_at;   /* guest: the last frame its own walking was asked for */
+static int g_walk_busy_sent = -1; /* guest: what it last told the host */
+static uint64_t g_walk_busy_sent_at;
+static int g_walk_wait_told;      /* host: the waiting notice is up */
+static const char g_walk_wait_text[] = "Waiting for the other player to close their window (curio, loot or menu) before walking on.";
 static uint64_t g_walk_asked_at, g_walk_door_until;
 #define DD_WALK_NEAR 8.0f /* Game units; a tile is 720 wide. */
 #define DD_WALK_USE_NEAR 24.0f
@@ -58,6 +70,11 @@ static void battle_reset_hook(void);
 static void formation_reset(void);
 static void walk_reset(void) {
     formation_reset();
+    g_walk_free_at = 0;
+    g_walk_busy_sent = -1;
+    g_walk_busy_sent_at = 0;
+    if (g_walk_wait_told) shop_notice_clear(g_walk_wait_text);
+    g_walk_wait_told = 0;
     InterlockedExchange64(&g_walk_target, 0);
     InterlockedExchange(&g_walk_intent, 0);
     InterlockedExchange64(&g_walk_intent_at, 0);
@@ -116,9 +133,55 @@ static void walk_send_intent(int direction) {
     memset(&m, 0, sizeof m);
     m.type = DD_MSG_WALK_INTENT;
     m.u.intent.direction = direction;
-    if (!queue_push(&g_outgoing, &m)) return;
+    if (!net_send(0, &m)) return;
     g_walk_intent_sent = direction;
     g_walk_intent_send_at = now + 100;
+}
+/* Host: wait as long as a guest reports a window. Missing busy heartbeats
+ * stop the session; they never authorize walking beyond that guest. */
+static int walk_guest_busy(void) {
+    uint64_t now = GetTickCount64();
+    int who = 0;
+    for (int i = 0; i < DD_MAX_GUESTS && !who; i++) {
+        guest_link *g = &g_guests[i];
+        if (!InterlockedCompareExchange(&g->ready, 0, 0) || !InterlockedCompareExchange(&g->busy, 0, 0)) continue;
+        uint64_t at = (uint64_t)InterlockedCompareExchange64(&g->busy_at, 0, 0), since = (uint64_t)InterlockedCompareExchange64(&g->busy_since, 0, 0);
+        (void)since;
+        who = i + 1;
+        if (now < at || now - at > DD_WALK_BUSY_FRESH_MS) {
+            dd_log("Walk: guest player %d busy heartbeat missing; stopping shared actions", who);
+            runtime_sync_stop(1);
+        }
+    }
+    if (who && !g_walk_wait_told) {
+        g_walk_wait_told = 1;
+        dd_log("Walk: the host waits for guest player %d to close its window", who);
+        shop_notice(g_walk_wait_text);
+    } else if (!who && g_walk_wait_told) {
+        g_walk_wait_told = 0;
+        shop_notice_clear(g_walk_wait_text);
+    }
+    return who;
+}
+/* Guest, every frame: busy when in a raid, not in a fight, and its walking was not asked for a moment. Said on a change and
+ * every second while busy. Outside a raid it is free. */
+static void walk_busy_poll(const walk_view *v) {
+    uint64_t now = GetTickCount64();
+    int busy;
+    if (g_cfg.role != DD_ROLE_GUEST || !walk_shared()) return;
+    if (!v || v->battle) g_walk_free_at = 0;
+    else if (!g_walk_free_at) g_walk_free_at = now; /* Includes a raid first seen inside an open panel. */
+    busy = v && !v->battle && now - g_walk_free_at > DD_WALK_BUSY_AFTER_MS;
+    if (!busy && g_walk_busy_sent <= 0) return; /* Never busy, or said free already: nothing to say. */
+    if (busy && g_walk_busy_sent == 1 && now - g_walk_busy_sent_at < 1000) return;
+    dd_msg m;
+    memset(&m, 0, sizeof m);
+    m.type = DD_MSG_BUSY;
+    m.u.busy.busy = (uint32_t)busy;
+    if (!net_send(0, &m)) return;
+    if (busy != g_walk_busy_sent) dd_log("Walk: this copy %s", busy ? "has a window open; the host waits" : "is free to walk again");
+    g_walk_busy_sent = busy;
+    g_walk_busy_sent_at = now;
 }
 /* 75b530 reads the keys and moves the party; 7657a0 only calls it while the player may act, so not in a dialog or fight.
  * Only this is replaced: the rest of 7657a0 also makes the other three heroes follow the first, and must keep running. */
@@ -127,6 +190,7 @@ static void __fastcall hook_raid_move(void *display, float *out) {
     if (!g_raid_move) return;
     if (!g_game_apply_depth && walk_shared() && formation_busy()) { memset(out,0,3*sizeof *out); return; }
     if (walk_following()) {
+        g_walk_free_at = GetTickCount64();
         g_walk_capture = 1;
         g_walk_captured = 0;
         g_raid_move(display, out);
@@ -148,6 +212,7 @@ static void __fastcall hook_raid_move(void *display, float *out) {
         uint64_t at = (uint64_t)InterlockedCompareExchange64(&g_walk_intent_at, 0, 0);
         if (GetTickCount64() - at > 300) wish = 0;
         int chosen = mine && wish && mine != wish ? 0 : mine ? mine : (int)wish;
+        if (chosen && walk_guest_busy()) chosen = 0; /* A guest still has a window open: the tiles would part. */
         float direction[3] = {(float)chosen, 0, 0};
         memcpy(out, direction, sizeof direction);
         if (chosen) g_party_move((void *)(uintptr_t)(v.raid + 8), direction);
@@ -848,7 +913,7 @@ static void party_marks_show(const walk_view *v) {
     if (walk_shared() && walk_party_read(v->raid, heroes, ids, hp, stress, trinkets))
         for (int i = 0; i < 4 && heroes[i]; i++, count++) {
             int who = hero_owner(heroes[i]);
-            owner[i] = who < 0 ? DD_OVERLAY_TURN_NONE : who == (g_cfg.role == DD_ROLE_GUEST ? 1 : 0) ? DD_OVERLAY_TURN_MINE : DD_OVERLAY_TURN_OTHER;
+            owner[i] = who < 0 ? DD_OVERLAY_TURN_NONE : who == (g_cfg.role == DD_ROLE_GUEST ? g_cfg.player : 0) ? DD_OVERLAY_TURN_MINE : DD_OVERLAY_TURN_OTHER;
             memcpy(&level[i], &stress[i], 4);
         }
     dd_overlay_party(count, owner, level);
@@ -857,7 +922,10 @@ static void party_marks_show(const walk_view *v) {
 static void walk_poll(void) {
     walk_view v;
     uint32_t bits;
-    if (!g_walk_view(&v)) {
+    int in_raid = g_walk_view(&v);
+    walk_busy_poll(in_raid ? &v : NULL);
+    if (!in_raid) {
+        g_walk_free_at = 0;
         party_publish(NULL);
         /* No raid (any more): nothing to show, and the next raid starts afresh. */
         dd_overlay_turn(DD_OVERLAY_TURN_NONE);
@@ -894,7 +962,7 @@ static void walk_poll(void) {
     m.type = DD_MSG_WALK;
     m.u.walk.area = v.area;
     m.u.walk.pos = bits;
-    if (!queue_push(&g_outgoing, &m)) return; /* The next frame tries again; nothing is lost but a step of the view. */
+    if (!net_send(DD_TOWN_ALL, &m)) return; /* The next frame tries again; nothing is lost but a step of the view. */
     g_walk_sent_any = 1;
     g_walk_sent_area = v.area;
     g_walk_sent_pos = bits;

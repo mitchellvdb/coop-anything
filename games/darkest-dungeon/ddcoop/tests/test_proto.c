@@ -155,6 +155,15 @@ static void test_roundtrip(void) {
             walk_len = dd_encode(&w, buf, sizeof buf);
             CHECK(walk_len && dd_decode(buf, walk_len, &back, &walk_used) == DD_DECODE_BAD_VALUE, "load slot %u refused", bad);
         }
+        /* A guest's busy state: 0 or 1. */
+        memset(&w, 0, sizeof w);
+        w.type = DD_MSG_BUSY;
+        w.u.busy.busy = 1;
+        walk_len = dd_encode(&w, buf, sizeof buf);
+        CHECK(walk_len && dd_decode(buf, walk_len, &back, &walk_used) == DD_DECODE_OK && back.type == DD_MSG_BUSY && back.u.busy.busy == 1, "busy round trip");
+        w.u.busy.busy = 2;
+        walk_len = dd_encode(&w, buf, sizeof buf);
+        CHECK(walk_len && dd_decode(buf, walk_len, &back, &walk_used) == DD_DECODE_BAD_VALUE, "busy is 0 or 1");
     }
     p.type = DD_MSG_PING;
     p.u.ping.time_ms = 0x0102030405060708ULL;

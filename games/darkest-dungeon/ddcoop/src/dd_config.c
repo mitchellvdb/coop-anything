@@ -16,6 +16,9 @@ int dd_config_load(const char *path, dd_config *cfg) {
     if (cfg->port < 1 || cfg->port > 65535) cfg->port = 27360;
     GetPrivateProfileStringA("net", "host", "", cfg->host, sizeof cfg->host, path);
     GetPrivateProfileStringA("net", "password", "", cfg->password, sizeof cfg->password, path);
+    cfg->player = (int)GetPrivateProfileIntA("net", "player", 1, path);
+    if (cfg->player < 1 || cfg->player > 3) cfg->player = 1;
+    if (cfg->role != DD_ROLE_GUEST) cfg->player = 0;
     GetPrivateProfileStringA("coop", "coop_slots", "", cfg->coop_slots, sizeof cfg->coop_slots, path);
     cfg->verbose = (int)GetPrivateProfileIntA("log", "verbose", 0, path) != 0;
     return exists;

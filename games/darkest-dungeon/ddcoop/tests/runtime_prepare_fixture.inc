@@ -37,6 +37,9 @@ static void __fastcall pp_open(void *capture) {
     memcpy(&town, (uint8_t *)capture + 8, 8);
     CHECK(town == (uintptr_t)pp_town && g_game_apply_depth);
     pp_opens++;
+    uint64_t quest=0; CHECK(supply_quest_read((uintptr_t)pp_campaign,&quest));
+    hook_supply_fill_free(pp_campaign+0x15b0,(void *)(uintptr_t)quest);
+    hook_supply_fill_stock(pp_campaign+0x15b0,(void *)(uintptr_t)quest);
     putint(pp_town + 0x37c8, 1); /* Native transition; subsequent buys wait for its views. */
 }
 static void pp_reset(int role, unsigned mission) {
@@ -69,11 +72,11 @@ static void prepare_transactions(void) {
     hook_prepare_open(capture);
     CHECK(!pp_opens && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
     dd_msg request = last_message;
-    /* The other player clicked: the shop fills here, for that mission, and this screen stays what it is. */
+    /* A guest click follows the full native opener on the host, with the same mission. */
     pp_reset(DD_ROLE_HOST, 0);
     CHECK(queue_push(&g_incoming, &request));
     dd_runtime_poll();
-    CHECK(!pp_opens && pp_fills == 1 && pp_stock_fills == 1 && g_supply_bg && g_town.accepted == 1 && last_message.type == DD_MSG_TOWN_APPLY);
+    CHECK(pp_opens == 1 && pp_fills == 1 && pp_stock_fills == 1 && !g_supply_bg && g_town.accepted == 1 && last_message.type == DD_MSG_TOWN_APPLY);
     { uint32_t chosen = 0; memcpy(&chosen, pp_campaign + 0x1248, 4); CHECK(chosen == 1); }
     CHECK(g_supply_quest_known && g_supply_quest_index == 1 && g_supply_quest_key == 8);
     dd_msg apply = last_message;
@@ -86,26 +89,30 @@ static void prepare_transactions(void) {
     CHECK(!pp_opens && g_incoming.count == 1 && g_town.applied_seq == 0);
     pp_ready = 1;
     dd_runtime_poll();
-    CHECK(pp_opens == 1 && !pp_fills && !g_supply_bg && g_town.applied_seq == 1 && !g_town.needs_resync && !g_prepare_own_until);
+    CHECK(pp_opens == 1 && pp_fills == 1 && !g_supply_bg && g_town.applied_seq == 1 && !g_town.needs_resync && !g_prepare_own_until);
     apply.seq = 2;
     CHECK(queue_push(&g_incoming, &apply));
     dd_runtime_poll();
-    CHECK(pp_opens == 1 && !pp_fills && g_town.applied_seq == 2); /* Already showing: never refill twice. */
-    /* A click that was refused long ago does not open anything later. */
+    CHECK(pp_opens == 1 && pp_fills == 1 && g_town.applied_seq == 2); /* Already showing: never refill twice. */
+    for(int player=1;player<=3;player++) {
+        pp_reset(DD_ROLE_GUEST,0);g_cfg.player=player;apply.seq=1;
+        CHECK(queue_push(&g_incoming,&apply));dd_runtime_poll();
+        CHECK(pp_opens==1 && pp_fills==1 && pp_stock_fills==1 && !g_supply_bg && !g_town.needs_resync);
+    }
+    /* A shared open follows even when this guest did not initiate it. */
     pp_reset(DD_ROLE_GUEST, 0);
     g_prepare_own_until = GetTickCount64() - 1;
     apply.seq = 1;
     CHECK(queue_push(&g_incoming, &apply));
     dd_runtime_poll();
-    CHECK(!pp_opens && pp_fills == 1 && g_supply_bg && !g_town.needs_resync);
+    CHECK(pp_opens == 1 && pp_fills == 1 && !g_supply_bg && !g_town.needs_resync);
     /* That guest clicks after all: it joins that shop, whatever it has selected meanwhile; the panel then does not fill again. */
-    putint(pp_campaign + 0x1248, 0);
     hook_prepare_open(capture);
     CHECK(sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST && last_message.u.town.action.u.prepare.index == 1 && last_message.u.town.action.u.prepare.key == 8);
     apply.seq = 2;
     CHECK(queue_push(&g_incoming, &apply));
     dd_runtime_poll();
-    CHECK(pp_opens == 1 && pp_fills == 1 && g_supply_bg);
+    CHECK(pp_opens == 1 && pp_fills == 1 && !g_supply_bg);
     { uint32_t chosen = 0; memcpy(&chosen, pp_campaign + 0x1248, 4); CHECK(chosen == 1); }
     /* The shop's mission decides what it is filled with, not what this player has selected. */
     {
@@ -120,15 +127,15 @@ static void prepare_transactions(void) {
     /* The host's click opens its own screen. */
     pp_reset(DD_ROLE_HOST, 1);
     hook_prepare_open(capture);
-    CHECK(pp_opens == 1 && !pp_fills && sent == 1 && last_message.type == DD_MSG_TOWN_APPLY && !g_prepare_host_click);
+    CHECK(pp_opens == 1 && pp_fills == 1 && sent == 1 && last_message.type == DD_MSG_TOWN_APPLY && !g_prepare_host_click);
     /* The fill cannot be done: a stale request is refused; on the guest that stops. */
     pp_reset(DD_ROLE_HOST, 0);
-    g_supply_fill[0] = NULL;
+    g_prepare_open = NULL;
     CHECK(queue_push(&g_incoming, &request));
     dd_runtime_poll();
     CHECK(!pp_opens && g_town.rejected == 1 && !g_town.needs_resync);
     pp_reset(DD_ROLE_GUEST, 0);
-    g_supply_fill[1] = NULL;
+    g_prepare_open = NULL;
     apply.seq = 1;
     CHECK(queue_push(&g_incoming, &apply));
     dd_runtime_poll();
@@ -152,7 +159,7 @@ static void prepare_transactions(void) {
     g_prepare_read = prepare_read;
     g_prepare_open = NULL;
     g_supply_open = supply_open;
-    g_supply_fill[0] = g_supply_fill[1] = NULL;
+    g_supply_fill[0] = g_prepare_open = NULL;
     provisions_reset();
-    puts("Prepare: a click opens that player's screen and the shop on both copies, shares the mission, waits for town, refuses stale missions and never refills an open panel");
+    puts("Prepare: a click opens the full native shop on every copy, shares the mission, waits for town, refuses stale missions and never refills an open panel");
 }

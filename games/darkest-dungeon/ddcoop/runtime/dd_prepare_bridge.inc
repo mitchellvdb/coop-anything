@@ -1,7 +1,7 @@
 /* Normal provisions button, audited in exact build28385 at 6e7a70.
  * It reads a local functor's +8 TownDisplay, opens its embedded ProvisionSelect
  * through 7f6a50, then selects app state 0x0a. No Circus function is used.
- * Only the copy that clicked opens its screen. The order opens the shop on the other copy, in its model: see dd_supplies_bridge.inc. */
+ * Every copy follows the same native opener; no partial background-only fill. */
 typedef void(__fastcall *prepare_open_fn)(void *);
 static prepare_open_fn g_prepare_open;
 static uint64_t g_prepare_wait_until;
@@ -36,11 +36,13 @@ static int prepare_apply(const dd_action *a) {
     g_supply_quest_known = 1;
     g_supply_quest_index = a->u.prepare.index;
     g_supply_quest_key = a->u.prepare.key;
-    dd_log("Prepare: shop for mission %u key=%08x (role=%s, %s)", a->u.prepare.index, a->u.prepare.key, dd_role_name(g_cfg.role), own ? "opening here" : "in the background");
-    if (!own) return supply_bg_begin();
+    dd_log("Prepare: shop for mission %u key=%08x (role=%s, %s)", a->u.prepare.index, a->u.prepare.key, dd_role_name(g_cfg.role), own ? "opening here" : "following the other player");
+    /* All copies use the complete normal opener, including native quest/party
+     * setup and UI. A partial background fill diverged at the first buy. */
     uint64_t functor[2] = {0, v.town};
     g_prepare_open(functor);
-    return 1;
+    if (!safe_read((uintptr_t)v.town + 0x37c8, &state, 4) || state < 1 || state > 4) return 0;
+    return !g_town.needs_resync;
 }
 static void __fastcall hook_prepare_open(void *functor) {
     depart_view v;

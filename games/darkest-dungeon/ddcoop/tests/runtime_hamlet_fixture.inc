@@ -1251,6 +1251,15 @@ static void hm_secret_room_trinkets(void) {
     hm_loot_window(2);
     dd_runtime_poll();
     CHECK(!g_incoming.count && !hm_raid_loot[2][0] && hm_gear[0][1][0x88] == 101 && g_town.applied_seq == 1);
+    /* The trinket landed in another loot slot on this copy (9 Nov 18:27): the same trinket there is used. */
+    hm_raid_reset(DD_ROLE_GUEST);
+    memcpy(hm_raid_loot[1], hm_raid_loot[2], 0x5a8);
+    memset(hm_raid_loot[2], 0, 0x5a8);
+    CHECK(queue_push(&g_incoming, &apply));
+    dd_runtime_poll();
+    CHECK(!g_incoming.count);
+    CHECK(!hm_raid_loot[1][0] && hm_gear[0][1][0x88] == 101 && hm_raid_loot[0][0x88] == 102);
+    CHECK(g_town.applied_seq == 1 && !g_town.needs_resync && !hm_item_alive);
     /* It never comes, or holds something else: told, and the expedition goes on. */
     hm_raid_reset(DD_ROLE_GUEST);
     memset(hm_raid_loot, 0, sizeof hm_raid_loot);

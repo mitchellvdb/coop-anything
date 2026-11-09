@@ -49,7 +49,7 @@ static int hero_owner_line(const char *line, uint32_t *id, uint32_t *owner) {
     if (end == line + 5 || *end != '=') return -1;
     line = end + 1;
     b = strtoul(line, &end, 10);
-    if (end == line || (*end && *end != '\r' && *end != '\n') || b > 1 || a > 0xffffffffUL) return -1;
+    if (end == line || (*end && *end != '\r' && *end != '\n') || b > 3 || a > 0xffffffffUL) return -1;
     *id = (uint32_t)a;
     *owner = (uint32_t)b;
     return 1;
@@ -80,7 +80,7 @@ static int hero_owners_read(const uint32_t ids[4], uint8_t *mask, uint32_t *revi
     if (failed) return -1;
     int result = dd_dng_owners_parse(text, n, ids, owners, revision);
     if (result != 1) return result;
-    for (unsigned i = 0; i < 4; i++) *mask |= (uint8_t)(owners[i] << i);
+    for (unsigned i = 0; i < 4; i++) *mask |= (uint8_t)((owners[i] & 3u) << (2 * i)); /* Two bits per rank: player 0..3. */
     return 1;
 }
 static uint8_t hero_owners_load(const uint32_t ids[4], uint32_t *revision) {
@@ -96,7 +96,7 @@ static uint8_t hero_owners_load(const uint32_t ids[4], uint32_t *revision) {
 static void hero_owners_set(const uint32_t ids[4], uint8_t mask) {
     memcpy(g_hero_owner_ids, ids, sizeof g_hero_owner_ids);
     g_hero_owner_mask = mask;
-    dd_log("Heroes: guest owns%s%s%s%s of %u,%u,%u,%u", mask & 1 ? " 1st" : "", mask & 2 ? " 2nd" : "", mask & 4 ? " 3rd" : "", mask & 8 ? " 4th" : "", ids[0], ids[1], ids[2], ids[3]);
+    dd_log("Heroes: players %u,%u,%u,%u own %u,%u,%u,%u", mask & 3u, (mask >> 2) & 3u, (mask >> 4) & 3u, (mask >> 6) & 3u, ids[0], ids[1], ids[2], ids[3]);
 }
 static int hero_owners_known(void) {
     return g_hero_owner_ids[0] || g_hero_owner_ids[1] || g_hero_owner_ids[2] || g_hero_owner_ids[3];
@@ -190,16 +190,16 @@ static int hero_owners_apply(const dd_action *a) {
     dd_log("Heroes: live ownership revision=%u mask=%u applied", g_hero_owner_revision, g_hero_owner_mask);
     return 1;
 }
-/* -1 while the initial table is unknown, 0 the host, 1 the guest. The roster id is at hero+137c. */
+/* -1 while the initial table is unknown, else the player: 0 the host, 1..3 a guest. The roster id is at hero+137c. */
 static int hero_owner(uint64_t hero) {
     uint32_t id = 0;
     if (!hero_owners_known()) return -1; /* Neither player chooses before the first agreed table. */
     if (!hero || !safe_read((uintptr_t)hero + 0x137c, &id, 4)) return 0;
     for (unsigned i = 0; i < 4; i++)
-        if (id && g_hero_owner_ids[i] == id) return (g_hero_owner_mask >> i) & 1;
+        if (id && g_hero_owner_ids[i] == id) return (g_hero_owner_mask >> (2 * i)) & 3;
     return 0;
 }
-static int hero_is_mine(uint64_t hero) { return hero_owner(hero) == (g_cfg.role == DD_ROLE_GUEST ? 1 : 0); }
+static int hero_is_mine(uint64_t hero) { return hero_owner(hero) == (g_cfg.role == DD_ROLE_GUEST ? g_cfg.player : 0); }
 static int battle_read(const walk_view *v, battle_view *b) {
     uint64_t battle = v->raid + 0x4898, begin = 0, end = 0;
     memset(b, 0, sizeof *b);
@@ -410,8 +410,8 @@ static int battle_apply(const dd_action *a) {
         return refused;
     }
     hero = b.actor;
-    if (g_cfg.role == DD_ROLE_HOST && hero_owner(hero) != 1) {
-        dd_log("Battle: the guest asked for a hero that is not theirs");
+    if (g_cfg.role == DD_ROLE_HOST && hero_owner(hero) != (g_request_player ? g_request_player : 1)) {
+        dd_log("Battle: guest player %d asked for a hero that is not theirs", g_request_player);
         return 0;
     }
     uint32_t rules = battle_rules();

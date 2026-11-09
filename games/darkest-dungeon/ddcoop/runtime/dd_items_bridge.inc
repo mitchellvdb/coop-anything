@@ -1252,8 +1252,8 @@ static int item_apply(const dd_action *a) {
         dd_log("Item: cannot use it here");
         return refused;
     }
-    if (g_cfg.role == DD_ROLE_HOST && a->u.item.state && hero_owner(hero) != 1) {
-        dd_log("Item: the guest asked for a hero that is not theirs");
+    if (g_cfg.role == DD_ROLE_HOST && a->u.item.state && hero_owner(hero) != (g_request_player ? g_request_player : 1)) {
+        dd_log("Item: guest player %d asked for a hero that is not theirs", g_request_player);
         return 0;
     }
     if (g_cfg.role == DD_ROLE_HOST) walk_rules_send(&v);

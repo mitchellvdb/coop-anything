@@ -82,8 +82,27 @@ static void frontend_send_load(int slot, uint64_t now) {
     memset(&m, 0, sizeof m);
     m.type = DD_MSG_LOAD;
     m.u.load.slot = (uint32_t)slot;
-    if (queue_push(&g_outgoing, &m)) g_fe_load_sent_at = now;
+    if (net_send(g_cfg.role == DD_ROLE_HOST ? DD_TOWN_ALL : 0, &m)) g_fe_load_sent_at = now;
 }
+/* How many guests the host's launcher has in this session (ddcoop-guests.txt next to this DLL, one number), or -1 if it
+ * does not say: then the host loads once no guest has arrived for DD_FE_QUIET_MS. */
+#define DD_FE_QUIET_MS 8000u
+static int frontend_expected_file(void) {
+    char path[MAX_PATH], text[8] = "";
+    HMODULE self = NULL;
+    char *slash;
+    FILE *f;
+    int n = -1;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)frontend_expected_file, &self) ||
+        !GetModuleFileNameA(self, path, sizeof path) || !(slash = strrchr(path, '\\')) || (size_t)(slash + 1 - path) + 18 >= sizeof path)
+        return -1;
+    strcpy(slash + 1, "ddcoop-guests.txt");
+    if (!(f = fopen(path, "rb"))) return -1;
+    if (fgets(text, sizeof text, f) && text[0] >= '1' && text[0] <= '3' && (!text[1] || text[1] == '\r' || text[1] == '\n')) n = text[0] - '0';
+    fclose(f);
+    return n;
+}
+static int (*g_fe_expected)(void) = frontend_expected_file;
 /* In a session: 1 once both copies stand at the row of saves for the same slot. Until then this copy says it is there, every second. */
 static int frontend_together(int slot, uint64_t now) {
     LONG peer;
@@ -94,18 +113,43 @@ static int frontend_together(int slot, uint64_t now) {
         shop_notice(g_fe_wait_text);
     }
     if (!InterlockedCompareExchange(&g_session_ready, 0, 0)) return 0;
-    if (!g_fe_load_sent_at || now - g_fe_load_sent_at >= 1000) frontend_send_load(slot, now);
-    peer = InterlockedCompareExchange(&g_peer_load_slot, 0, 0);
-    if (!peer) return 0;
-    if (peer != slot) {
-        dd_log("Start screen: the other copy waits for slot %ld, this one for slot %d", (long)peer, slot);
-        frontend_stop("not the same slot; left to the player");
-        return 0;
+    if (g_cfg.role != DD_ROLE_HOST) {
+        /* A guest says it is ready, every second, and loads when the host says it loads now. */
+        if (!g_fe_load_sent_at || now - g_fe_load_sent_at >= 1000) frontend_send_load(slot, now);
+        peer = InterlockedCompareExchange(&g_peer_load_slot, 0, 0);
+        if (!peer) return 0;
+        if (peer != slot) {
+            dd_log("Start screen: the host loads slot %ld, this copy waits for slot %d", (long)peer, slot);
+            frontend_stop("not the same slot; left to the player");
+            return 0;
+        }
+        shop_notice_clear(g_fe_wait_text);
+        dd_log("Start screen: the host loads now; loading together");
+        return 1;
     }
-    frontend_send_load(slot, now); /* Once more, so that the other copy has surely seen this one as well; a repeat changes nothing. */
-    shop_notice_clear(g_fe_wait_text);
-    dd_log("Start screen: both copies are at the save screen; loading together");
-    return 1;
+    /* The host: once every connected guest stands at its save screen for this slot, and either the launcher's number of guests
+     * is there or nobody new came for a while, it says "now" to all and loads. */
+    {
+        int count = 0, at_saves = 0, expected = g_fe_expected();
+        uint64_t changed = (uint64_t)InterlockedCompareExchange64(&g_guest_change_at, 0, 0);
+        for (int i = 0; i < DD_MAX_GUESTS; i++) {
+            if (!InterlockedCompareExchange(&g_guests[i].ready, 0, 0)) continue;
+            count++;
+            peer = InterlockedCompareExchange(&g_guests[i].load_slot, 0, 0);
+            if (peer == slot) at_saves++;
+            else if (peer) {
+                dd_log("Start screen: guest player %d waits for slot %ld, the host for slot %d", i + 1, (long)peer, slot);
+                frontend_stop("not the same slot; left to the player");
+                return 0;
+            }
+        }
+        if (!count || at_saves < count) return 0;
+        if (expected > 0 ? count < expected : now < changed + DD_FE_QUIET_MS) return 0;
+        frontend_send_load(slot, now);
+        shop_notice_clear(g_fe_wait_text);
+        dd_log("Start screen: %d guest(s) at the save screen; loading together", count);
+        return 1;
+    }
 }
 /* Before the screen exists: it starts at the title. */
 static void frontend_try_mode(uintptr_t base, int slot) {

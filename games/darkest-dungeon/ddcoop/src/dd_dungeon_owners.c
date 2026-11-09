@@ -74,7 +74,7 @@ int dd_dng_owners_parse(const char *text, size_t len, const uint32_t party[4], u
             if (++revisions > 1 || !number(value, &rev)) return -1;
         } else if (key.n >= 5 && !memcmp(key.p, "hero.", 5)) {
             uint32_t id = 0;
-            if (!number((span){key.p + 5, key.n - 5}, &id) || !id || !number(value, &n) || n > 1 ||
+            if (!number((span){key.p + 5, key.n - 5}, &id) || !id || !number(value, &n) || n > 3 ||
                 count == 64)
                 return -1;
             for (unsigned i = 0; i < count; i++)

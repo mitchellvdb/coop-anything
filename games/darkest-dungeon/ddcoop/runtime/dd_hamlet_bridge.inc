@@ -509,7 +509,7 @@ static void hamlet_party_show_poll(void) {
     }
 }
 static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
-    uint64_t inv[2] = {0}, items[2] = {0};
+    uint64_t inv[2] = {0}, items[2] = {0}, base[2] = {0};
     unsigned sizes[2] = {0};
     uint32_t type[2] = {0}, id[2] = {0}, q[2] = {0}, normal = 0;
     uint32_t owners[2] = {a->u.move.src_hero, a->u.move.dst_hero};
@@ -524,8 +524,33 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
             !dd_hamlet_item(s, inv[i], slots[i], &type[i], &id[i], &q[i]) || (q[i] && type[i] != normal) ||
             !hamlet_read(s, inv[i] + 8, &items[i], 8))
             return hamlet_fail("trinket inventory or endpoint unavailable", 0);
+        base[i] = items[i];
         items[i] += (uint64_t)slots[i] * 0x5a8;
     }
+    /* The guest, for the raid's bag or loot: the host's slot may hold something else here, because a loot item landed in
+     * another slot on this copy. In the owner's test59 run (9 Nov 18:27) the trinket was at bag slot 13 on the host and 14
+     * on the guest; the host's move to its hero failed here, the trinket stayed in this bag, and the door's bag repair
+     * then dropped it, so the guest's hero had no trinket. The same trinket (type and ID) elsewhere in that inventory, or
+     * for a move into it an empty slot, is just as good: those items are alike. Heroes keep their exact slots. */
+    if (g_cfg.role == DD_ROLE_GUEST)
+        for (unsigned i = 0; i < 2; i++) {
+            uint32_t want_type = i ? a->u.move.dst_type : a->u.move.src_type, want_id = i ? a->u.move.dst_id : a->u.move.src_id;
+            if (DD_TRINKET_IS_HERO(owners[i]) || (type[i] == want_type && id[i] == want_id && (i || q[i] == 1))) continue;
+            for (unsigned k = 0; k < sizes[i] && k < DD_TRINKET_SLOTS(owners[i]); k++) {
+                uint32_t t = 0, d = 0, n = 0;
+                if (owners[0] == owners[1] && k == slots[1 - i]) continue;
+                if (!dd_hamlet_item(s, inv[i], k, &t, &d, &n)) break;
+                if (t != want_type || d != want_id || (want_type ? n != 1 : n != 0) || (n && t != normal)) continue;
+                dd_log("Trinket: the host's raid slot %u holds something else here; the same %s is at slot %u", slots[i],
+                       i ? "place" : "trinket", k);
+                slots[i] = k;
+                type[i] = t;
+                id[i] = d;
+                q[i] = n;
+                items[i] = base[i] + (uint64_t)k * 0x5a8;
+                break;
+            }
+        }
     if (q[0] != 1 || type[0] != a->u.move.src_type || id[0] != a->u.move.src_id ||
         type[1] != a->u.move.dst_type || id[1] != a->u.move.dst_id ||
         !dd_hamlet_can_equip(s, owners[1], slots[1], id[0], owners[0] == owners[1] ? slots[0] : UINT32_MAX) ||

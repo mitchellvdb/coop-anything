@@ -310,10 +310,11 @@ static uintptr_t __fastcall hook_raid_start(void *app) {
         dd_log("Departure: Rules seed %u set", g_departure_rules);
     }
     uintptr_t result = g_raid_start(app);
-    if (g_departure_fresh && !g_departure_fresh_maps) {
-        dd_log("Departure: approved fresh mission did not generate a map; shared actions stop");
-        runtime_sync_stop(1);
-    }
+    /* Some missions have a fixed map (quest e976ed62 never generates one: 8 Nov 18:23, 9 Nov 15:28 and 20:06). Every copy
+     * loads the same one, and the disk checkpoint was not resumed (hook_raid_restore), so this is no reason to stop; it
+     * stopped a three-player session at embark on 9 Nov 20:06 with equal Rules numbers and the same first area on all copies. */
+    if (g_departure_fresh && !g_departure_fresh_maps)
+        dd_log("Departure: this mission's map is fixed, not generated; every copy loads the same one");
     g_departure_fresh=0;
     /* One seed makes one map. Another expedition gets a new one. */
     g_departure_seed = g_departure_rules = 0;

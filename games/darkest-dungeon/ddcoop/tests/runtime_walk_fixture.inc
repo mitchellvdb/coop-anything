@@ -254,6 +254,58 @@ static void use_transactions(void) {
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 3);
     }
+    /* A guest with a window open (curio, loot, menu): the host does not walk on, with a notice, until it is closed; a guest
+     * not heard from for a while stops the session; a long but live window keeps waiting. (Owner's run of 9 Nov 18:53.) */
+    wk_reset(DD_ROLE_HOST);
+    {
+        uint64_t now = GetTickCount64();
+        int before = alerts;
+        g_raid_move = wk_native_keys; /* The host's own key: right. */
+        g_guests[0].busy = 1;
+        g_guests[0].busy_at = (LONG64)now;
+        g_guests[0].busy_since = (LONG64)now;
+        way[0] = 0;
+        hook_raid_move(wk_display, way);
+        CHECK(!wk_moves && way[0] == 0 && alerts == before + 1 && g_walk_wait_told);
+        g_guests[0].busy = 0;
+        hook_raid_move(wk_display, way);
+        CHECK(wk_moves == 1 && way[0] == 1.0f && !g_walk_wait_told);
+        g_guests[0].busy = 1;
+        g_guests[0].busy_at = (LONG64)GetTickCount64();
+        g_guests[0].busy_since = (LONG64)(now - DD_WALK_BUSY_GIVE_UP_MS - 1000);
+        hook_raid_move(wk_display, way);
+        CHECK(wk_moves == 1 && !g_town.needs_resync); /* Still reporting busy after a minute: still wait. */
+        g_guests[0].busy_at = (LONG64)(now - DD_WALK_BUSY_FRESH_MS - 1000);
+        hook_raid_move(wk_display, way);
+        CHECK(wk_moves == 1 && g_town.needs_resync); /* Missing heartbeat: stop instead of splitting the party. */
+        g_guests[0].busy = 0;
+    }
+    /* The guest says it is busy once its own walking was not asked for a moment, and free again when it is. */
+    wk_reset(DD_ROLE_GUEST);
+    {
+        dd_msg out;
+        queue_clear(&g_outgoing);
+        g_walk_busy_sent = -1;
+        g_walk_free_at = 0; /* First raid frame may already have a panel open. */
+        walk_busy_poll(&wk_view);
+        CHECK(g_walk_free_at != 0);
+        CHECK(!queue_pop(&g_outgoing, &out)); /* Free and never busy: nothing to say. */
+        g_walk_free_at = GetTickCount64() - DD_WALK_BUSY_AFTER_MS - 100;
+        walk_busy_poll(&wk_view);
+        CHECK(queue_pop(&g_outgoing, &out) && out.type == DD_MSG_BUSY && out.u.busy.busy == 1);
+        walk_busy_poll(&wk_view);
+        CHECK(!queue_pop(&g_outgoing, &out)); /* Said once; again after a second. */
+        g_walk_free_at = GetTickCount64();
+        walk_busy_poll(&wk_view);
+        CHECK(queue_pop(&g_outgoing, &out) && out.u.busy.busy == 0);
+        /* In a fight it is not busy: there is no walking to wait for. */
+        g_walk_free_at = GetTickCount64() - DD_WALK_BUSY_AFTER_MS - 100;
+        wk_view.battle = 1;
+        walk_busy_poll(&wk_view);
+        CHECK(!queue_pop(&g_outgoing, &out));
+        wk_view.battle = 0;
+        queue_clear(&g_outgoing);
+    }
     /* A prop without a choice, on the host: the game does it, the order goes out. */
     wk_reset(DD_ROLE_HOST);
     CHECK(hook_raid_use(wk_display, wk_props[1], 3, 1) == 1 && wk_uses == 1 && sent == 1);
@@ -681,13 +733,18 @@ static void walk_party_door(void) {
     g_hero_owner_ids[1] = 12;
     g_hero_owner_ids[2] = 13;
     g_hero_owner_ids[3] = 14;
-    g_hero_owner_mask = 2; /* hero 12 is the guest's */
+    g_hero_owner_mask = 1 << 2; /* hero 12 is the guest's (two bits per rank) */
     party_marks_show(&wk_view);
     CHECK(overlay_party_count == 4 && overlay_party_owner[0] == DD_OVERLAY_TURN_MINE && overlay_party_owner[1] == DD_OVERLAY_TURN_OTHER &&
           overlay_party_stress[1] == 40.0f && overlay_party_stress[3] == 99.0f);
     g_cfg.role = DD_ROLE_GUEST;
+    g_cfg.player = 1;
     party_marks_show(&wk_view);
     CHECK(overlay_party_owner[0] == DD_OVERLAY_TURN_OTHER && overlay_party_owner[1] == DD_OVERLAY_TURN_MINE);
+    g_cfg.player = 2; /* Another guest: hero 12 is not theirs either. */
+    party_marks_show(&wk_view);
+    CHECK(overlay_party_owner[0] == DD_OVERLAY_TURN_OTHER && overlay_party_owner[1] == DD_OVERLAY_TURN_OTHER);
+    g_cfg.player = 1;
     /* Two heroes: two blocks. No raid: none. */
     memset(wk_heroes[2], 0, sizeof wk_heroes[2]);
     wk_party[2] = wk_party[3] = 0;

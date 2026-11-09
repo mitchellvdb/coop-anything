@@ -150,6 +150,12 @@ static void supply_log_state(const char *why,const dd_provisions_snapshot *s) {
     for(unsigned i=0;i<s->currencies && at<sizeof line-40;i++)
         at+=(size_t)snprintf(line+at,sizeof line-at," money%u:%d",i,(int)s->wallet[i].quantity);
     dd_log("%s",line);
+    uint8_t digest[32]; char hex[65];
+    if(dd_supplies_digest(s,digest)) {
+        for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);
+        dd_log("Supplies %s: context=%08x slots=%u/%u currencies=%u digest=%s",why,
+            s->context_1838,s->stock_slots,s->bag_slots,s->currencies,hex);
+    }
 }
 /* The game's own lookup, as in the panel's opening (694df0): the mission list at +1230, or the one at +12c0 when the index equals +1220. */
 static int supply_quest_at(uint64_t campaign,int32_t index,uint64_t *quest) {
@@ -166,6 +172,42 @@ static int supply_quest_read(uint64_t campaign,uint64_t *quest) {
     return supply_quest_at(campaign,index,quest);
 }
 static int (*g_supply_quest)(uint64_t,uint64_t *)=supply_quest_read;
+/* Free provisions are assembled through the native hero/quest item collections.
+ * Normalize their physical insertion order on every copy at initialization.
+ * Give every new shop one deterministic physical bag order, before views are
+ * built. Preserve the actual C++ Item and its free-item metadata via native swaps. */
+static int supply_initial_order(void) {
+    supply_model m;dd_provisions_snapshot before,expected,after;
+    if(!g_supply_open(&m,&before))return 0;
+    supply_log_state("initial native",&before);
+    if(before.bag_occupied<2)return 1;
+    if(!g_hamlet_copy || !g_hamlet_clear || !g_hamlet_swap || !g_hamlet_destroy)return 0;
+    uint64_t begin=0,end=0;
+    if(!safe_read((uintptr_t)m.bag+8,&begin,8) || !safe_read((uintptr_t)m.bag+0x10,&end,8) ||
+       !begin || end<begin || end-begin!=(uint64_t)before.bag_slots*0x5a8)return 0;
+    expected=before;
+    for(unsigned i=0;i<expected.bag_slots;i++) {
+        unsigned best=i;
+        for(unsigned j=i+1;j<expected.bag_slots;j++) {
+            const dd_provisions_item *a=&expected.bag[j],*b=&expected.bag[best];
+            if(a->quantity && (!b->quantity || a->type<b->type || (a->type==b->type &&
+               (a->id<b->id || (a->id==b->id && a->quantity<b->quantity)))))best=j;
+        }
+        if(best==i)continue;
+        __declspec(align(16)) uint8_t temporary[0x5a8];
+        g_hamlet_copy(temporary,(void *)(uintptr_t)(begin+(uint64_t)i*0x5a8));
+        g_hamlet_clear(temporary);
+        g_hamlet_swap((void *)(uintptr_t)m.bag,i,temporary);
+        g_hamlet_swap((void *)(uintptr_t)m.bag,best,temporary);
+        g_hamlet_swap((void *)(uintptr_t)m.bag,i,temporary);
+        g_hamlet_destroy(temporary);
+        dd_provisions_item item=expected.bag[i];expected.bag[i]=expected.bag[best];expected.bag[best]=item;
+    }
+    supply_model current;
+    if(!g_supply_open(&current,&after) || current.campaign!=m.campaign || !dd_supplies_equal(&expected,&after))return 0;
+    supply_log_state("initial ordered",&after);
+    return 1;
+}
 /* What the panel's opening does to the model (694ec6, 694eda), without the panel. Stock in place means this was done. */
 static int supply_bg_begin(void) {
     supply_model m;dd_provisions_snapshot s;uint64_t quest=0;
@@ -176,6 +218,7 @@ static int supply_bg_begin(void) {
         g_game_apply_depth++;
         g_supply_fill[0]((void *)(uintptr_t)m.bag,(void *)(uintptr_t)quest);
         g_supply_fill[1]((void *)(uintptr_t)m.bag,(void *)(uintptr_t)quest);
+        if(!supply_initial_order()){g_game_apply_depth--;runtime_sync_stop(3);return 0;}
         g_game_apply_depth--;
         dd_log("Supplies: shop filled without the panel");
     }
@@ -185,7 +228,10 @@ static void __fastcall hook_supply_fill_free(void *bag,void *quest) {
     if(!g_supply_bg && g_supply_fill[0])g_supply_fill[0](bag,quest);
 }
 static void __fastcall hook_supply_fill_stock(void *bag,void *quest) {
-    if(!g_supply_bg && g_supply_fill[1])g_supply_fill[1](bag,quest);
+    if(!g_supply_bg && g_supply_fill[1]) {
+        g_supply_fill[1](bag,quest);
+        if(supply_active() && !supply_initial_order())runtime_sync_stop(3);
+    }
 }
 static int provisions_apply(const dd_action *a) {
     supply_model m;dd_provisions_snapshot before,after;uint32_t gold=0,shards=0;

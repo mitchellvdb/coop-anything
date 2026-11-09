@@ -53,7 +53,7 @@ static void bt_reset(int role) {
         uint32_t ids[4] = {11, 12, 13, 14};
         for (unsigned i = 0; i < 4; i++) memcpy(bt_heroes[i] + 0x137c, &ids[i], 4);
         memcpy(g_hero_owner_ids, ids, sizeof ids);
-        g_hero_owner_mask = role == DD_ROLE_GUEST ? 15 : 0;
+        g_hero_owner_mask = role == DD_ROLE_GUEST ? 0x55 : 0; /* Player 1 on every rank. */
     }
     for (unsigned i = 0; i < 4; i++) {
         bt_party[i] = (uintptr_t)bt_heroes[i];
@@ -105,12 +105,14 @@ static void owner_file_checks(void) {
     uint32_t ids[4] = {1, 18, 2, 8}, revision = 99;
     g_hero_owner_open = bt_owner_open;
     bt_owner_text = "; a comment\r\nversion=1\r\nwritten_by=host\r\nrevision=2\r\n; Reynauldo\r\nhero.1=1\r\nhero.2=1\r\nhero.7=0\r\nhero.8=0\r\nhero.18=0\r\nunknown=3\r\n";
-    CHECK(hero_owners_load(ids, &revision) == 5 && revision == 2); /* The first and third of the party. */
+    CHECK(hero_owners_load(ids, &revision) == 0x11 && revision == 2); /* Player 1 has the first and third of the party (two bits per rank). */
     bt_owner_text = "version=1\nwritten_by=host\nhero.1=0\nhero.8=1\n";
-    CHECK(hero_owners_load(ids, &revision) == 8); /* A hero not listed is the host's. */
+    CHECK(hero_owners_load(ids, &revision) == 0x40); /* A hero not listed is the host's. */
+    bt_owner_text = "version=1\nwritten_by=host\nhero.1=3\nhero.18=2\nhero.2=1\nhero.8=0\n";
+    CHECK(hero_owners_load(ids, &revision) == (3 | 2 << 2 | 1 << 4)); /* Four players: each rank its own. */
     bt_owner_text = "version=1\nwritten_by=host\nhero.8=1\nhero.8=0\n";
     CHECK(!hero_owners_load(ids, &revision)); /* Duplicate hero keys are rejected by the agreed parser. */
-    bt_owner_text = "version=1\nwritten_by=host\nhero.1=2\nhero.8=1\n";
+    bt_owner_text = "version=1\nwritten_by=host\nhero.1=4\nhero.8=1\n";
     alerts = 0;
     g_shop_notice[0] = 0;
     CHECK(!hero_owners_load(ids, &revision)); /* Broken: nobody's guess, and said out loud. */
@@ -133,8 +135,8 @@ static void owner_file_checks(void) {
         a.u.departure.owners = 5;
         a.u.departure.revision = 2;
         CHECK(dd_action_valid(&a));
-        a.u.departure.owners = 16;
-        CHECK(!dd_action_valid(&a));
+        a.u.departure.owners = 0xe4; /* Four players: two bits per rank, every value is a player 0..3. */
+        CHECK(dd_action_valid(&a));
         a.u.departure.owners = 5;
         (void)b, (void)wire;
     }
@@ -1148,7 +1150,7 @@ static void item_transactions(void) {
     CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && !sent);
     it_reset(DD_ROLE_HOST);
     bt_at(2, 1, DD_BATTLE_CHOOSE_TARGET_STATE);
-    g_hero_owner_mask = 2;
+    g_hero_owner_mask = 1 << 2;
     CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && !sent);
     it_reset(DD_ROLE_HOST);
     bt_at(2, 1, DD_BATTLE_CHOOSE_TARGET_STATE);
@@ -1468,7 +1470,7 @@ static void restored_owner_checks(void) {
     CHECK(!sent && !g_hero_owner_ids[0]); /* Finish the running attack first. */
     bt_at(2, 1, DD_BATTLE_CHOOSE_SKILL_STATE);
     hero_owners_poll(&wk_view);
-    CHECK(sent == 1 && g_hero_owner_mask == 3 && g_hero_owner_revision == 8);
+    CHECK(sent == 1 && g_hero_owner_mask == 5 && g_hero_owner_revision == 8);
     CHECK(!hero_is_mine(bt_party[0]) && hero_is_mine(bt_party[2]));
     dd_msg table = last_message;
     CHECK(table.type == DD_MSG_TOWN_APPLY && table.u.town.action.kind == DD_ACT_OWNERS);
@@ -1498,7 +1500,7 @@ static void restored_owner_checks(void) {
     bt_owner_text = "version=1\nwritten_by=guest\nhero.14=1\n"; /* Never read for authority. */
     dd_runtime_poll();
     CHECK(!g_incoming.count && !g_town.needs_resync && g_town.applied_seq == 1);
-    CHECK(g_hero_owner_mask == 3 && hero_is_mine((uintptr_t)bt_heroes[0]) && !hero_is_mine((uintptr_t)bt_heroes[3]));
+    CHECK(g_hero_owner_mask == 5 && hero_is_mine((uintptr_t)bt_heroes[0]) && !hero_is_mine((uintptr_t)bt_heroes[3]));
     CHECK(battle_order(DD_BATTLE_OP_SKILL, (uintptr_t)bt_heroes[0], &choice) == 1 && choice.u.battle.hero == 3);
     party_marks_show(&wk_view);
     CHECK(overlay_party_owner[0] == DD_OVERLAY_TURN_OTHER && overlay_party_owner[3] == DD_OVERLAY_TURN_MINE);
@@ -1529,7 +1531,7 @@ static void restored_owner_checks(void) {
     dd_msg request = last_message;
     CHECK(request.type == DD_MSG_TOWN_REQUEST && request.u.town.action.u.battle.hero == 3);
     bt_reset(DD_ROLE_HOST);
-    hero_owners_set(table.u.town.action.u.owners.heroes, 3);
+    hero_owners_set(table.u.town.action.u.owners.heroes, 5); /* ranks 1 and 2: player 1 */
     g_hero_owner_revision = 8;
     g_town.applied_seq = 1;
     g_town.next_apply_seq = 2;
@@ -1541,7 +1543,7 @@ static void restored_owner_checks(void) {
     CHECK(bt_picks == 1 && g_town.applied_seq == 2 && !g_town.needs_resync && sent == 1);
     dd_msg accepted = last_message;
     bt_reset(DD_ROLE_GUEST);
-    hero_owners_set(table.u.town.action.u.owners.heroes, 3);
+    hero_owners_set(table.u.town.action.u.owners.heroes, 5);
     g_town.applied_seq = 1;
     saved = bt_party[0]; bt_party[0] = bt_party[3]; bt_party[3] = saved;
     bt_at(2, 0, DD_BATTLE_CHOOSE_SKILL_STATE);
@@ -1584,21 +1586,21 @@ static void live_owner_checks(void) {
     CHECK(!sent && hero_is_mine(bt_party[2]));
     bt_at(2, 1, DD_BATTLE_CHOOSE_SKILL_STATE);
     hero_owners_poll(&wk_view);
-    CHECK(sent == 1 && g_hero_owner_mask == 4 && !hero_is_mine(bt_party[2]));
+    CHECK(sent == 1 && g_hero_owner_mask == 16 && !hero_is_mine(bt_party[2]));
     dd_msg apply = last_message;
     CHECK(apply.u.town.action.kind == DD_ACT_OWNERS && apply.u.town.action.u.owners.revision == 8);
     g_hero_owner_poll_at = 0;
     bt_owner_text = "version=1\nwritten_by=host\nhero.13=7\n";
     hero_owners_poll(&wk_view);
-    CHECK(sent == 1 && g_hero_owner_mask == 4);
+    CHECK(sent == 1 && g_hero_owner_mask == 16);
     g_hero_owner_poll_at = 0;
     bt_owner_text = "version=1\nwritten_by=guest\nhero.13=0\n";
     hero_owners_poll(&wk_view);
-    CHECK(sent == 1 && g_hero_owner_mask == 4);
+    CHECK(sent == 1 && g_hero_owner_mask == 16);
     bt_reset(DD_ROLE_GUEST);
     CHECK(queue_push(&g_incoming, &apply));
     dd_runtime_poll();
-    CHECK(g_town.applied_seq == 1 && g_hero_owner_revision == 8 && g_hero_owner_mask == 4);
+    CHECK(g_town.applied_seq == 1 && g_hero_owner_revision == 8 && g_hero_owner_mask == 16);
     CHECK(hero_is_mine(bt_party[2]) && !hero_is_mine(bt_party[0]));
     bt_reset(DD_ROLE_HOST);
     g_hero_owner_open = bt_owner_none;
@@ -1740,13 +1742,13 @@ static void battle_transactions(void) {
     CHECK(bt_moves == 1 && bt_move_rank == 1 && bt_last_hero == (void *)(uintptr_t)bt_party[2] && bt_last_battle == battle);
     /* Each player only for their own heroes. The third hero is at turn 1. */
     bt_reset(DD_ROLE_GUEST);
-    g_hero_owner_mask = 11; /* Not the third. */
+    g_hero_owner_mask = 1 | 1 << 2 | 1 << 6; /* Not the third. */
     hook_battle_skill_button(functor);
     CHECK(!bt_picks && !sent);
     CHECK(!hook_battle_enemy(battle, bt_skill, (void *)(uintptr_t)bt_party[2], (void *)(uintptr_t)bt_foes[1]) && !bt_enemies && !sent);
     CHECK(!hook_battle_move(battle, (void *)(uintptr_t)bt_party[2], 1, 0, 0) && !bt_moves && !sent);
     bt_reset(DD_ROLE_HOST);
-    g_hero_owner_mask = 4; /* The third is the guest's. */
+    g_hero_owner_mask = 1 << 4; /* The third is the guest's (two bits per rank). */
     hook_battle_skill_button(functor);
     CHECK(!bt_picks && !sent);
     CHECK(!hook_battle_friend(battle, bt_skill, (void *)(uintptr_t)bt_party[2], (void *)(uintptr_t)bt_party[0]) && !bt_friends && !sent);
@@ -1762,7 +1764,7 @@ static void battle_transactions(void) {
         dd_runtime_poll();
         CHECK(!bt_enemies && sent == 1 && last_message.type == DD_MSG_TOWN_REJECT);
         bt_reset(DD_ROLE_HOST);
-        g_hero_owner_mask = 4;
+        g_hero_owner_mask = 1 << 4;
         CHECK(queue_push(&g_incoming, &m));
         dd_runtime_poll();
         CHECK(bt_enemies == 1 && sent == 1 && last_message.type == DD_MSG_TOWN_APPLY);
@@ -1781,7 +1783,7 @@ static void battle_transactions(void) {
     {
         dd_msg m;
         bt_reset(DD_ROLE_HOST);
-        g_hero_owner_mask = 15;
+        g_hero_owner_mask = 0x55;
         bt_at(2, 1, 0x1c);
         memset(&m, 0, sizeof m);
         m.type = DD_MSG_TOWN_REQUEST;
@@ -1795,7 +1797,7 @@ static void battle_transactions(void) {
         CHECK(bt_enemies == 1 && sent == 1 && last_message.type == DD_MSG_TOWN_APPLY && last_message.u.town.action.u.battle.place == 3);
         /* Too late, the host has gone on: it says no, and nothing runs. */
         bt_reset(DD_ROLE_HOST);
-        g_hero_owner_mask = 15;
+        g_hero_owner_mask = 0x55;
         bt_at(2, 2, DD_BATTLE_CHOOSE_TARGET_STATE);
         CHECK(queue_push(&g_incoming, &m));
         dd_runtime_poll();

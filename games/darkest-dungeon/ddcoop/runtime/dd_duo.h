@@ -16,8 +16,14 @@
 static dd_role dd_duo_role(const char *value, dd_role from_ini) {
     return value && !strcmp(value, "guest") ? DD_ROLE_GUEST : from_ini;
 }
-static const char *dd_duo_title(dd_role role) {
-    return role == DD_ROLE_GUEST ? "Darkest Dungeon - DDCoop GAST" : "Darkest Dungeon - DDCoop HOST";
+/* DDCOOP_DUO_PLAYER=2 or 3 for a second or third guest window; anything else is the first guest. */
+static int dd_duo_player(const char *value, dd_role role) {
+    if (role != DD_ROLE_GUEST) return 0;
+    return value && (value[0] == '2' || value[0] == '3') && !value[1] ? value[0] - '0' : 1;
+}
+static const char *dd_duo_title(dd_role role, int player) {
+    if (role != DD_ROLE_GUEST) return "Darkest Dungeon - DDCoop HOST";
+    return player == 3 ? "Darkest Dungeon - DDCoop GAST 3" : player == 2 ? "Darkest Dungeon - DDCoop GAST 2" : "Darkest Dungeon - DDCoop GAST";
 }
 /* Roughly 60 FPS per process instead of two uncapped renderers. Keep existing
  * slower/vsync pacing, never busy-spin or catch up after loading pauses. */
