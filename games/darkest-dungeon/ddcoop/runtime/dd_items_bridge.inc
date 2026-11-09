@@ -549,6 +549,10 @@ static unsigned g_bag_seen_count[2];
 static int g_bag_moved, g_bag_seen_valid;
 static int g_bag_repairing;
 static uint32_t g_bag_repair_hash;
+static unsigned g_bag_templates_count;
+static bag_slot g_bag_templates_keys[DD_BAG_SLOTS*2];
+__declspec(align(16)) static uint8_t g_bag_templates[DD_BAG_SLOTS*2][DD_ITEM_SIZE];
+static void bag_templates_clear(void);
 static int bag_repair_busy(void) { return g_bag_repairing; }
 /* These three inventory callbacks are the SAME functions as the trinket
  * drop/finish/cancel callbacks. Their single installed hook dispatches both
@@ -689,6 +693,7 @@ static void item_take_one(const walk_view *v, uint64_t item) {
     dd_log("Item: one taken from the bag for the curio, %d left (role=%s)", count, dd_role_name(g_cfg.role));
 }
 static void bag_state_reset(void) {
+    bag_templates_clear();
     g_bag_repairing = 0; g_bag_repair_hash = 0;
     g_bag_moved = g_bag_seen_valid = 0;
     g_bag_seen_count[0] = g_bag_seen_count[1] = 0;
@@ -699,6 +704,7 @@ static int bag_span(uint64_t raid, uint8_t inv, uint64_t *begin, unsigned *count
     *begin = 0;
     *count = 0;
     if (!safe_read((uintptr_t)bag_base(raid, inv) + 8, begin, 8) || !safe_read((uintptr_t)bag_base(raid, inv) + 0x10, &end, 8) || end < *begin) return 0;
+    if((end-*begin)%DD_ITEM_SIZE)return 0;
     uint64_t slots = (end - *begin) / DD_ITEM_SIZE;
     if (slots > DD_BAG_SLOTS) return 0;
     *count = (unsigned)slots;
@@ -713,6 +719,60 @@ static int bag_read_slot(uint64_t p, bag_slot *s) {
         return 1;
     }
     return safe_read((uintptr_t)p + 0x44, &s->type, 4) && safe_read((uintptr_t)p + 0x88, &s->id, 4);
+}
+/* Keep one constructed native template per local identity throughout a full
+ * repair. Later duplicate stacks must not steal an already finalized slot or
+ * destroy the only exemplar of another kind that a future slot still needs. */
+static void bag_templates_clear(void) {
+    while(g_bag_templates_count) {
+        unsigned i=--g_bag_templates_count;
+        if(g_hamlet_destroy)g_hamlet_destroy(g_bag_templates[i]);
+    }
+}
+static int bag_templates_begin(const walk_view *v) {
+    bag_templates_clear();
+    if(!g_hamlet_copy || !g_hamlet_swap || !g_hamlet_destroy)return 0;
+    for(uint8_t inv=0;inv<2;inv++) {
+        uint64_t begin=0;unsigned n=0;
+        if(!bag_span(v->raid,inv,&begin,&n))goto fail;
+        for(unsigned i=0;i<n;i++) {
+            bag_slot item;
+            if(!bag_read_slot(begin+(uint64_t)i*DD_ITEM_SIZE,&item))goto fail;
+            if(item.count<=0)continue;
+            unsigned k=0;for(;k<g_bag_templates_count;k++)
+                if(g_bag_templates_keys[k].type==item.type && g_bag_templates_keys[k].id==item.id)break;
+            if(k<g_bag_templates_count)continue;
+            if(k>=DD_BAG_SLOTS*2)goto fail;
+            g_hamlet_copy(g_bag_templates[k],(const void *)(uintptr_t)(begin+(uint64_t)i*DD_ITEM_SIZE));
+            g_bag_templates_keys[k]=item;g_bag_templates_count++;
+        }
+    }
+    return 1;
+fail:bag_templates_clear();return 0;
+}
+static int bag_repair_slot(const walk_view *v,const dd_action *a) {
+    uint64_t begin=0;unsigned n=0;bag_slot here;
+    int32_t want=(int32_t)a->u.item.amount;
+    if(a->u.item.inv || !bag_span(v->raid,0,&begin,&n) || (unsigned)a->u.item.slot>=n)return 0;
+    uint64_t p=begin+(uint64_t)(unsigned)a->u.item.slot*DD_ITEM_SIZE;
+    if(!bag_read_slot(p,&here))return 0;
+    if(want<=0) {
+        if(here.count>0) {int32_t zero=0;memcpy((void *)(uintptr_t)p,&zero,4);if(g_item_clear)g_item_clear((void *)(uintptr_t)p);}
+    } else {
+        if(here.count<=0 || here.type!=a->u.item.type || here.id!=a->u.item.id) {
+            unsigned k=0;for(;k<g_bag_templates_count;k++)
+                if(g_bag_templates_keys[k].type==a->u.item.type && g_bag_templates_keys[k].id==a->u.item.id)break;
+            if(k==g_bag_templates_count) {dd_log("Bag repair missing native template %08x/%08x",a->u.item.type,a->u.item.id);bag_templates_clear();return 0;}
+            __declspec(align(16)) uint8_t temporary[DD_ITEM_SIZE];
+            g_hamlet_copy(temporary,g_bag_templates[k]);
+            g_hamlet_swap((void *)(uintptr_t)bag_base(v->raid,0),(uint32_t)a->u.item.slot,temporary);
+            g_hamlet_destroy(temporary);
+        }
+        memcpy((void *)(uintptr_t)p,&want,4);
+    }
+    bag_recount(v->raid,0);
+    dd_log("Bag repair slot %d = %d of %08x/%08x",a->u.item.slot,want,a->u.item.type,a->u.item.id);
+    return 1;
 }
 /* src: 1 + the slot its item came from (0: not known), in inventory src_inv; copy: that slot keeps its own (a split). */
 static void bag_send_slot_from(const walk_view *v, uint8_t inv, unsigned slot, const bag_slot *s, uint8_t src_inv, uint32_t src, uint8_t copy) {
@@ -813,6 +873,7 @@ static void bag_recount(uint64_t raid, uint8_t inv) {
     memcpy((void *)(uintptr_t)(bag_base(raid, inv) + 0x24), &filled, 4);
 }
 static int bag_apply(const walk_view *v, const dd_action *a) {
+    if(g_bag_repairing)return bag_repair_slot(v,a);
     uint64_t begin = 0, p;
     unsigned count = 0;
     bag_slot here;
@@ -873,12 +934,23 @@ static int bag_apply(const walk_view *v, const dd_action *a) {
             dd_log("Item: no item of kind %08x %08x here for bag slot %d", a->u.item.type, a->u.item.id, a->u.item.slot);
             return 1;
         }
-        {
-            static uint8_t held[DD_ITEM_SIZE];
-            memcpy(held, (void *)(uintptr_t)p, DD_ITEM_SIZE);
-            memcpy((void *)(uintptr_t)p, (void *)(uintptr_t)found, DD_ITEM_SIZE);
-            memcpy((void *)(uintptr_t)found, held, DD_ITEM_SIZE);
+        /* Item owns containers: move through native Inventory swaps so internal
+         * references and lifetime follow the item, including the displaced one. */
+        if(!g_hamlet_copy || !g_hamlet_clear || !g_hamlet_swap || !g_hamlet_destroy)return 0;
+        uint8_t source_inv=0;unsigned source_slot=0;int source_ok=0;
+        for(uint8_t inv=0;inv<2 && !source_ok;inv++) {
+            uint64_t b=0;unsigned n=0;
+            if(bag_span(v->raid,inv,&b,&n) && found>=b && found-b<(uint64_t)n*DD_ITEM_SIZE && (found-b)%DD_ITEM_SIZE==0) {
+                source_inv=inv;source_slot=(unsigned)((found-b)/DD_ITEM_SIZE);source_ok=1;
+            }
         }
+        if(!source_ok)return 0;
+        __declspec(align(16)) uint8_t temporary[DD_ITEM_SIZE];
+        g_hamlet_copy(temporary,(const void *)(uintptr_t)p);g_hamlet_clear(temporary);
+        g_hamlet_swap((void *)(uintptr_t)bag_base(v->raid,a->u.item.inv),(uint32_t)a->u.item.slot,temporary);
+        g_hamlet_swap((void *)(uintptr_t)bag_base(v->raid,source_inv),source_slot,temporary);
+        g_hamlet_swap((void *)(uintptr_t)bag_base(v->raid,a->u.item.inv),(uint32_t)a->u.item.slot,temporary);
+        g_hamlet_destroy(temporary);
         memcpy((void *)(uintptr_t)p, &want, 4);
     }
     bag_recount(v->raid, 0);
@@ -1093,13 +1165,16 @@ static int item_apply(const dd_action *a) {
     }
     if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) {
         if (g_cfg.role != DD_ROLE_GUEST) return 0;
-        if (!a->u.item.flag) { g_bag_repairing = 1; g_bag_repair_hash = a->u.item.type; return 1; }
+        if (!a->u.item.flag) {
+            if(!bag_templates_begin(&v)){runtime_sync_stop(2);return 0;}
+            g_bag_repairing = 1; g_bag_repair_hash = a->u.item.type; return 1;
+        }
         uint32_t actual = walk_bag_hash(v.raid);
         if (!g_bag_repairing || a->u.item.type != g_bag_repair_hash || actual != a->u.item.type) {
             dd_log("Bag repair failed: expected=%08x actual=%08x", a->u.item.type, actual);
-            runtime_sync_stop(2); return 0;
+            bag_templates_clear();runtime_sync_stop(2); return 0;
         }
-        g_bag_repairing = 0; g_bag_repair_hash = 0;
+        bag_templates_clear();g_bag_repairing = 0; g_bag_repair_hash = 0;
         dd_log("Bag repair verified: %08x", actual);
         return 1;
     }

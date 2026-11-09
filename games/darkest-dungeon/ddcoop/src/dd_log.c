@@ -41,3 +41,12 @@ void dd_log_close(void) {
     if (g_file != INVALID_HANDLE_VALUE) CloseHandle(g_file);
     g_file = INVALID_HANDLE_VALUE;
 }
+
+void dd_log_fault(const char *line) {
+    if(!line || g_file==INVALID_HANDLE_VALUE)return;
+    char buf[800];SYSTEMTIME t;GetLocalTime(&t);
+    int n=snprintf(buf,sizeof buf,"%04d-%02d-%02d %02d:%02d:%02d.%03d Fault trace: %.640s\r\n",
+        t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,t.wMilliseconds,line);
+    if(n<=0)return;if(n>=(int)sizeof buf)n=(int)sizeof buf-1;
+    DWORD written;WriteFile(g_file,buf,(DWORD)n,&written,NULL);
+}

@@ -184,6 +184,7 @@ static void it_reset(int role) {
     wk_view.battle = 0;
     /* The game's Item copy, swap and destroy, as the Hamlet fixture fakes them (the supplies fixture leaves its own behind). */
     g_hamlet_copy = hm_copy;
+    g_hamlet_clear = hm_clear;
     g_hamlet_swap = hm_swap;
     g_hamlet_destroy = hm_destroy;
     hm_item_alive = 0;

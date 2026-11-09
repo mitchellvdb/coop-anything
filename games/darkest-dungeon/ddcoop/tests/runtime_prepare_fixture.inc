@@ -159,7 +159,7 @@ static void prepare_transactions(void) {
     g_prepare_read = prepare_read;
     g_prepare_open = NULL;
     g_supply_open = supply_open;
-    g_supply_fill[0] = g_prepare_open = NULL;
+    g_supply_fill[0] = g_supply_fill[1] = NULL;
     provisions_reset();
     puts("Prepare: a click opens the full native shop on every copy, shares the mission, waits for town, refuses stale missions and never refills an open panel");
 }

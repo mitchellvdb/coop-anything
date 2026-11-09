@@ -15,18 +15,18 @@ static unsigned hm_index(void *hero);
 static uint8_t hm_estate[4][0x5a8], hm_gear[3][2][0x5a8], hm_definitions[2][0x488], hm_class[0x100];
 static int hm_item_alive, hm_refresh, hm_broken_swap;
 static uintptr_t __fastcall hm_copy(void *to, const void *from) {
-    CHECK(!hm_item_alive);
+    CHECK(hm_item_alive>=0 && hm_item_alive<129);
     hm_item_alive++;
     memcpy(to, from, 0x5a8);
     return (uintptr_t)to;
 }
 static void __fastcall hm_clear(void *item) {
-    CHECK(hm_item_alive == 1);
+    CHECK(hm_item_alive >= 1);
     memset(item, 0, 0x5a8);
 }
 static void __fastcall hm_destroy(void *item) {
     (void)item;
-    CHECK(hm_item_alive == 1);
+    CHECK(hm_item_alive >= 1);
     hm_item_alive--;
 }
 static void __fastcall hm_swap(void *inventory, uint32_t slot, void *item) {

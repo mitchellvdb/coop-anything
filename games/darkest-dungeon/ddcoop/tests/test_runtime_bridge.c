@@ -498,6 +498,7 @@ static void hook_machine_code(void) {
 #include "runtime_party_fixture.inc"
 #include "runtime_battle_fixture.inc"
 #include "runtime_desync_fixture.inc"
+#include "runtime_bag_repair_fixture.inc"
 #include "runtime_formation_fixture.inc"
 #include "runtime_fresh_raid_fixture.inc"
 #include "runtime_prop_fixture.inc"
@@ -740,6 +741,7 @@ int main(void) {
     party_publication_checks();
     battle_transactions();
     desync_regressions();
+    bag_duplicate_repair_checks();
     formation_checks();
     fresh_raid_checks();
     prop_lifecycle_checks();

@@ -24,6 +24,7 @@ static volatile LONG g_peer_sync_stop;
 static int g_sync_stop_sent;
 static void runtime_sync_stop(uint32_t reason);
 static int bag_repair_busy(void);
+static void bag_templates_clear(void);
 static int formation_busy(void);
 static int formation_apply(const dd_action *a);
 static int hamlet_apply(const dd_action *a);
@@ -808,6 +809,7 @@ static void outgoing_send(void *unused, int to, const dd_msg *m) {
     }
 }
 static void runtime_stop_shared(uint32_t reason, int notify) {
+    bag_templates_clear();
     g_town.needs_resync = 1;
     dd_overlay_turn(DD_OVERLAY_TURN_NONE);
     dd_overlay_session(DD_OVERLAY_REFUSED);
@@ -1071,7 +1073,7 @@ static void hello_message(dd_msg *m, const char *name) {
     memset(m, 0, sizeof *m);
     m->type = DD_MSG_HELLO;
     m->u.hello.protocol = DD_PROTO_VERSION;
-    memcpy(m->u.hello.mod_version, "0.5.0-test65", sizeof "0.5.0-test65");
+    memcpy(m->u.hello.mod_version, "0.5.0-test66", sizeof "0.5.0-test66");
     memcpy(m->u.hello.build, g_build_id, sizeof g_build_id);
     size_t n = strlen(name);
     if (n >= sizeof m->u.hello.name) n = sizeof m->u.hello.name - 1;

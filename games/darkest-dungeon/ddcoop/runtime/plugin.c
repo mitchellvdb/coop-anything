@@ -13,11 +13,12 @@
 #include "dd_overlay.h"
 #include "dd_saves.h"
 #include "dd_focus.h"
+#include "dd_fault.inc"
 #ifdef DD_DUO
 #include "dd_duo.h"
 #endif
 
-#define DD_FW_VERSION "0.5.0-test65"
+#define DD_FW_VERSION "0.5.0-test66"
 /* Save storage (runtime test 8): global StorageManager*; the loaded campaign is the device mounted in
  * device slot 5 (manager + 0x10 + slot * 8, StorageManager::IO_MountDevice 0x14024a820); a device's name
  * is at device + 0x20 (StorageDevice constructor). Valid for the known build only. */
@@ -253,6 +254,7 @@ static DWORD WINAPI startup(void *unused) {
         return 0;
     }
     g_state = DD_STATE_READY;
+    if(g_cfg.role!=DD_ROLE_OFF)fault_trace_install(g_self);
     dd_log("framework READY (town placement sync is gated to a loaded configured co-op campaign)");
 
     /* Co-op campaigns. A malformed setting switches co-op off everywhere instead of guessing. */
@@ -300,6 +302,7 @@ __declspec(dllexport) int ddcoop_event(const void *event){
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
     (void)reserved;
+    if(reason==DLL_PROCESS_DETACH){fault_trace_remove();return TRUE;}
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     g_self = inst;
     DisableThreadLibraryCalls(inst);

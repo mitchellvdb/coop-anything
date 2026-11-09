@@ -10,6 +10,10 @@ cl /nologo /std:c11 /O2 /MT /W4 /D_CRT_SECURE_NO_WARNINGS /Isrc /Iruntime /Fobui
 if errorlevel 1 goto failed
 build\win\runtime-tests\test_runtime_bridge.exe
 if errorlevel 1 goto failed
+cl /nologo /std:c11 /O2 /MT /W4 /D_CRT_SECURE_NO_WARNINGS /Fobuild\win\runtime-tests\ /Febuild\win\runtime-tests\test_fault.exe tests\test_fault.c
+if errorlevel 1 goto failed
+build\win\runtime-tests\test_fault.exe
+if errorlevel 1 goto failed
 popd
 exit /b 0
 :test
