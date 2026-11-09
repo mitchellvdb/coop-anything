@@ -1,6 +1,15 @@
 /* Regressions: duplicate Iron Maiden OPEN, no-shovel obstacle confirmation,
  * and an overlay that left the guest's item/walking input behind the host. */
 static unsigned pcx_opens,pcx_confirms,pcx_asserts;
+static unsigned pcx_cancels;
+static void __fastcall pcx_cancel(void *functor) {
+    uint64_t panel = 0; uint32_t mode = 0;
+    memcpy(&panel, (uint8_t *)functor + 8, 8);
+    CHECK(panel == (uintptr_t)wk_display + DD_WALK_OVERLAY);
+    memcpy(&mode, (void *)(uintptr_t)(panel + 0xd88), 4); CHECK(mode == 2);
+    pcx_cancels++; mode = 3;
+    memcpy((void *)(uintptr_t)(panel + 0xd88), &mode, 4); /* Native fade, no result/RNG/inventory mutation. */
+}
 static void pcx_panel(uint32_t mode,int curio) {
     uint64_t prop=(uintptr_t)wk_props[1],panel=(uintptr_t)wk_display+DD_WALK_OVERLAY;
     memcpy((void *)(uintptr_t)(panel+0xd88),&mode,4);
@@ -24,7 +33,62 @@ static void pcx_reset(int role) {
     {uint64_t selected=bt_party[2];memcpy(wk_raid_lists+0x438,&selected,8);}
     memset(wk_display+DD_WALK_OVERLAY,0,0xd90);
     g_raid_use=pcx_open;g_overlay_use=pcx_confirm;
+    g_prop_cancel=g_curio_cancel=pcx_cancel;pcx_cancels=0;
     pcx_opens=pcx_confirms=pcx_asserts=0;
+}
+static void prop_cancel_checks(void) {
+    dd_action cancel; dd_msg request;
+    uint64_t panel = (uintptr_t)wk_display + DD_WALK_OVERLAY, functor[2] = {0, panel};
+    /* Every player may cancel; guests wait for the ordered native close. */
+    for (unsigned initiator = 0; initiator < 4; initiator++) {
+        pcx_reset(initiator ? DD_ROLE_GUEST : DD_ROLE_HOST); g_cfg.player = initiator;
+        pcx_panel(2, 1); hook_curio_cancel(functor); cancel = last_message.u.town.action; request = last_message;
+        CHECK(cancel.kind == DD_ACT_USE && cancel.u.use.door == 6 && !pcx_confirms && !pcx_opens && !pcx_asserts);
+        CHECK(pcx_cancels == (initiator ? 0u : 1u));
+        if (initiator) {
+            pcx_reset(DD_ROLE_HOST); pcx_panel(2, 1);
+            CHECK(queue_push(&g_incoming, &request)); dd_runtime_poll();
+            cancel = last_message.u.town.action;
+            CHECK(pcx_cancels == 1 && g_town.accepted == 1);
+            /* A concurrent cancellation after native close has reset the event
+             * is acknowledged without a second native call or prop result. */
+            pcx_panel(0, 1); request.u.town.request_id++;
+            CHECK(queue_push(&g_incoming, &request)); dd_runtime_poll();
+            CHECK(pcx_cancels == 1 && g_town.accepted == 2 && !pcx_confirms);
+        }
+        for (unsigned player = 1; player < 4; player++) {
+            pcx_reset(DD_ROLE_GUEST); g_cfg.player = player; pcx_panel(2, 1);
+            wk_push(1, &cancel); dd_runtime_poll();
+            CHECK(pcx_cancels == 1 && g_town.applied_seq == 1 && !g_town.needs_resync && !pcx_confirms && !pcx_opens);
+            pcx_panel(0, 1); wk_push(2, &cancel); dd_runtime_poll();
+            CHECK(pcx_cancels == 1 && g_town.applied_seq == 2);
+        }
+    }
+    pcx_reset(DD_ROLE_GUEST); pcx_panel(1, 1);
+    wk_push(1, &cancel); dd_runtime_poll();
+    CHECK(!pcx_cancels && g_incoming.count == 1);
+    pcx_panel(2, 1); dd_runtime_poll();
+    CHECK(pcx_cancels == 1 && g_town.applied_seq == 1);
+    /* Reopening clears the completion record. A different panel and an unseen
+     * closed prop cannot consume this order silently; timeout stops the FIFO. */
+    pcx_panel(0, 1);
+    {dd_action open = cancel; open.u.use.door = 0; CHECK(walk_use_apply(&open)); CHECK(!g_prop_cancelled);}
+    pcx_reset(DD_ROLE_GUEST); pcx_panel(2, 1);
+    {uint64_t wrong = (uintptr_t)wk_props[0]; memcpy((void *)(uintptr_t)(panel + 0x6a0), &wrong, 8);}
+    wk_push(1, &cancel); dd_runtime_poll(); CHECK(!pcx_cancels && g_incoming.count == 1);
+    g_walk_use_wait_until = GetTickCount64() - 16000; dd_runtime_poll();
+    CHECK(g_town.needs_resync && !pcx_cancels && !g_town.applied_seq);
+    pcx_reset(DD_ROLE_GUEST); CHECK(!walk_use_apply(&cancel) && !pcx_cancels);
+    /* Obstacle X uses its own native callback and +d70 field, even when a
+     * previous curio remains in +6a0. It must never confirm the rubble. */
+    pcx_reset(DD_ROLE_HOST); pcx_panel(2, 0);
+    {uint64_t stale = (uintptr_t)wk_props[0]; memcpy((void *)(uintptr_t)(panel + 0x6a0), &stale, 8);}
+    hook_prop_cancel(functor); cancel = last_message.u.town.action;
+    CHECK(pcx_cancels == 1 && cancel.u.use.option == 1 && !pcx_confirms);
+    pcx_reset(DD_ROLE_GUEST); pcx_panel(2, 0); wk_push(1, &cancel); dd_runtime_poll();
+    CHECK(pcx_cancels == 1 && g_town.applied_seq == 1 && !pcx_confirms);
+    g_prop_cancel = g_curio_cancel = NULL; wk_reset(DD_ROLE_HOST);
+    puts("Shared curio cancel: any of four players, three guests, delayed readiness, crossed/closed duplicates, reopen, wrong prop/timeout; native close once without interaction verified");
 }
 static void prop_lifecycle_checks(void) {
     uint64_t panel=(uintptr_t)wk_display+DD_WALK_OVERLAY,functor[2]={0,panel};

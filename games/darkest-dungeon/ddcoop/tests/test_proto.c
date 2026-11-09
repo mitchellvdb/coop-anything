@@ -327,6 +327,19 @@ static void test_desync_wire(void) {
     n=dd_encode(&m,wire,sizeof wire);
     CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.u.use.door==5,"obstacle confirm round trip");
     m.u.town.action.u.use.door=6;
+    m.u.town.action.u.use.option=m.u.town.action.u.use.hero=0;
+    n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.u.use.door==6,"prop cancel round trip");
+    m.u.town.action.u.use.option=1;
+    CHECK(dd_encode(&m,wire,sizeof wire),"obstacle cancel allowed");
+    m.u.town.action.u.use.option=2;
+    CHECK(!dd_encode(&m,wire,sizeof wire),"cancel panel kind bounded");
+    m.u.town.action.u.use.option=0;m.u.town.action.u.use.item_id=1;
+    CHECK(!dd_encode(&m,wire,sizeof wire),"cancel cannot carry an interaction item");
+    m.u.town.action.u.use.item_id=0;m.u.town.action.u.use.hero=1;
+    CHECK(!dd_encode(&m,wire,sizeof wire),"cancel has no hero choice");
+    m.u.town.action.u.use.hero=0;
+    m.u.town.action.u.use.door=7;
     CHECK(!dd_encode(&m,wire,sizeof wire),"unknown prop operation refused");
 }
 int main(void) {

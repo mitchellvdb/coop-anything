@@ -122,6 +122,8 @@ FUNCTIONS = [
     ("game_assert", 0x1402357e0, "The game's assert report (expression, function, file, line, format, ...): reached from 1025 places"),
     ("curio_tool", 0x14070ff50, "Curio overlay: use a tool on it (shovel on rubble). Capture: overlay at +0, a copy of the item at +8"),
     ("curio_button", 0x140714360, "Curio overlay button: runs the curio with the picked item (functor with the overlay at +8)"),
+    ("prop_cancel", 0x140714540, "Normal prop overlay X: native fade/close without Interact (functor with overlay at +8)"),
+    ("curio_cancel", 0x140714270, "Normal curio overlay X: fade/close without Interact (functor with overlay at +8)"),
     ("overlay_use", 0x140714770, "Curio overlay button: interacts with the open prop and closes (functor with the overlay at +8)"),
     ("formation_reset", 0x14076f060, "RaidDisplay restores default party order; normal button and keyboard, display only"),
     ("formation_default", 0x140614cb0, "Raid::GetDefaultPartyOrder (raid, array of four Hero pointers), true means already default"),

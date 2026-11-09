@@ -370,7 +370,16 @@ static int battle_place_compare(const battle_view *b, uint32_t round, uint32_t t
     if (b->state != state) return b->state < state ? -1 : 1;
     return 0;
 }
-static int battle_compare(const battle_view *b, const dd_action *a) { return battle_place_compare(b, a->u.battle.round, a->u.battle.turn, a->u.battle.state); }
+static int battle_compare(const battle_view *b, const dd_action *a) {
+    /* A SELECT creates/removes hero+8e0. The native update then moves between
+     * skill29 and target30. Requiring the sender's local substate before
+     * applying SELECT can wait forever for the very selection in this FIFO.
+     * Only SELECT spans those two input states; execution/turn/actor gates stay. */
+    if (a->u.battle.op == DD_BATTLE_OP_SKILL && b->round == a->u.battle.round && b->turn == a->u.battle.turn &&
+        (b->state == DD_BATTLE_CHOOSE_SKILL_STATE || b->state == DD_BATTLE_CHOOSE_TARGET_STATE) &&
+        (a->u.battle.state == DD_BATTLE_CHOOSE_SKILL_STATE || a->u.battle.state == DD_BATTLE_CHOOSE_TARGET_STATE)) return 0;
+    return battle_place_compare(b, a->u.battle.round, a->u.battle.turn, a->u.battle.state);
+}
 /* Both copies wait for the same point: presentation takes its own time on each. The host waits as well, for a choice the guest made ahead of it. */
 static int battle_gate(const dd_msg *m) {
     walk_view v = {0};

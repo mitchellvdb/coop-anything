@@ -1667,8 +1667,8 @@ static void battle_transactions(void) {
     }
     /* Not there yet: it waits, and the queue behind it too. Each earlier point is tried. */
     {
-        static const uint32_t early[][3] = {{1, 1, DD_BATTLE_CHOOSE_TARGET_STATE}, {2, 0, DD_BATTLE_CHOOSE_TARGET_STATE}, {2, 1, 0x1c}, {2, 1, DD_BATTLE_CHOOSE_SKILL_STATE}};
-        for (unsigned i = 0; i < 4; i++) {
+        static const uint32_t early[][3] = {{1, 1, DD_BATTLE_CHOOSE_TARGET_STATE}, {2, 0, DD_BATTLE_CHOOSE_TARGET_STATE}, {2, 1, 0x1c}};
+        for (unsigned i = 0; i < sizeof early / sizeof *early; i++) {
             bt_reset(DD_ROLE_GUEST);
             bt_at(early[i][0], early[i][1], early[i][2]);
             wk_push(1, &skill_order);
