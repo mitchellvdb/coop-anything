@@ -1,0 +1,29 @@
+DDCoop test66 - inventory stacks and automatic resync
+==================================================
+
+1. Close all old game windows and let guest recovery finish. Install test66 on
+   EVERY PC. The launcher protocol changed: do not mix test65 and test66.
+2. Select Players 4, Host, and let all three guests join before loading. Check
+   Player1..4 assignments. Keep every DDCoop launcher open throughout the test.
+3. Buy supplies from all players. Take at least two food stacks if practical.
+   Compare counts, gold and stock. Provision-stack returns remain unsupported.
+4. Embark, play a fight/loot, move and split ordinary inventory stacks, eat food,
+   then change rooms. Compare both stacks on all four copies. A repair must not
+   alter an already repaired stack or stop at its final hash.
+5. In a safe room, have the host click Resync... and confirm. Finish any normal
+   game exit confirmation. Leave every launcher open and wait: games close,
+   guest saves recover, the fresh host save transfers, then all games reopen
+   and load together automatically. Do NOT click Host/Join or start Steam games.
+6. Compare the restored room/checkpoint, party, inventory and hero owners. The
+   exact unsaved moment is not guaranteed. Player numbers must remain unchanged.
+7. If successful, test Resync a second time and continue to another room/fight.
+8. Copy logs from EVERY PC, also after success. If a game crashes, collect its
+   launcher/runtime/app logs before more sessions overwrite them. New Fault trace
+   entries help locate the earlier provisions crash; no memory dump is collected.
+
+Automatic resync needs every selected player's launcher still connected. If one
+has left or recovery fails, DDCoop stops; let recovery finish and start a fresh
+manual Host/Join session. It never force-kills a game or ignores a failed restore.
+Solo .bat guests have no launcher; their restart remains manual.
+Guests always use -nosave. The host keeps its save-progress preference.
+New behavior has automated coverage; live four-PC testing is still required.

@@ -41,12 +41,11 @@ DLL, and build the launcher with DDC_VERSION set to the matching duo version. Se
 runtime/DUNGEON.md and the runtime build source list. No binary/game file is in git.
 
 
-Test65/duo48 retains120 native signatures and protocol30. Verify read-only:
-
-    python -I tests/test_supply_init_layout.py "%DD_GAME_EXE%"
-
-Run all ordinary runtime/ASan/overlay and launcher suites. The fixtures simulate
-native effects; they do not launch the game or a real Steam account. Optional GIF
-embedding uses DDC_MASCOT_GIF; artwork is excluded from source. The supplied solo
-variant has guest .bat windows without a separate launcher, so close those
-manually before checkpoint recovery. The MinGW alternate build was not run here.
+Test66/duo49 retains runtime protocol30 and120 native addresses; launcher wire/
+lobby3. Launcher recipes include launcher/src/lr_restart.c. The Windows runtime
+suite also tests the non-handling fault observer. No new external library needed.
+For the alternate MinGW launcher recipe, set DDC_VERSION=0.5.0-test66 explicitly.
+Run native/runtime, ASan, overlay, full launcher, exact layout proofs and read-only
+DLC checks. Native effects and game close/recovery in fixtures are simulated.
+No game/installer/live Steam storage or MinGW build was run during validation.
+Optional embedded GIF artwork is excluded from source; see launcher/MASCOT.md.

@@ -1,6 +1,6 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test65**, runtime protocol30. The project owner
+Development snapshot **0.5.0-test66**, runtime protocol30. The project owner
 selected this repository for per-kit source commits. Work is isolated on
 `game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
 
@@ -29,9 +29,11 @@ Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
 Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
 
 
-Test65 integrates Claude Code test60-64 (up to four players, protocol30 busy
-signals, fixed-map departures and trinket identity fallback). It adds full native
-provisions initialization on every copy, initial Item-slot normalization,
-multiplayer stop/wait safety, host Player1..4 assignment and a coordinated
-checkpoint restart. See runtime/MULTIPLAYER-RECOVERY.md. Live four-PC validation
-is still required. Resync does not repair a live fight or preserve unsaved progress.
+Test66 adds duplicate-stack inventory repair with immutable native Item templates
+and automatic checkpoint restart for connected multi-PC launchers. Host Resync
+closes games normally, recovers guest backups, reloads the new host snapshot and
+automatically reconnects/prepares/opens each game with its original player slot.
+Exact unsaved progress is not guaranteed. Launcher wire/lobby3 requires all PCs
+updated. Solo guest .bat windows still restart manually. An earlier provisions
+access violation remains unresolved; bounded non-handling fault traces help the
+next live test. See runtime/AUTOMATIC-RESYNC.md.

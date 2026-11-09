@@ -1,6 +1,17 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
+New in test66 / duo49
+- Inventory repair handles repeated stacks without moving an earlier repaired one.
+- Host Resync automatically closes connected launcher games, restores guest saves,
+  reconnects, transfers the fresh host checkpoint and opens the games again.
+- Player numbers and hero ownership remain the same, even if rejoin order changes.
+- Keep ALL launchers open. Native save rules decide the checkpoint; unsaved
+  progress may be lost. A disconnected launcher and solo .bat guests need manual
+  restart. This is not an in-memory combat repair.
+- Limited fault traces help investigate the earlier provisions crash; that crash
+  has not been established as fixed.
+
 New in test65 / duo48
 - Every player follows provisions through the same normal game opener. Initial
   free-item order is normalized, with inventory/currency checks retained.
@@ -61,12 +72,13 @@ Rejoining the old running host is intentionally refused to prevent loading an
 outdated snapshot. Do not delete saves or manually copy a different campaign.
 
 Test plan
-See TESTSTAPPEN-test65.txt. Start with four-player provisions and direct hero
-assignment, then embark, a fight/loot and the host Resync checkpoint restart.
-Collect logs on every PC, including successful runs.
+See TESTSTAPPEN-test66.txt. Test two stacks of one kind, inventory rearrangement,
+room travel and automatic host Resync with all four launchers still connected.
+Everyone should reopen automatically from the same host checkpoint without a
+manual Host/Join. Compare room, party, inventory and owners. Send every log bundle.
 
 Scope and limits
-Two to four players; supported Steam Windows x64 build28385. No live combat repair; Resync performs a coordinated checkpoint restart.
+Two to four players; supported Steam Windows x64 build28385. No live combat repair; Resync performs an automatic coordinated checkpoint restart.
 Use the same kit on both PCs. Arbitrary manual dungeon formation drags are not
 newly synchronized; the default-order button and shortcut are synchronized.
 DLC groundwork remains, but full Color of Madness/shards/waves support and DLC
