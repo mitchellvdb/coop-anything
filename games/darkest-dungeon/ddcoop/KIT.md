@@ -1,48 +1,38 @@
-# 0.5.0-test59
+# Test65 / duo48
 
-Battle actions carry persistent actor/friendly-target IDs. Door/loading blocks
-outside-combat item use; inventory use has no walking-pixel delay. Bag repairs
-verify their final hash. Apply failure sends a peer stop outside the FIFO.
-See runtime/DESYNC.md; this stops divergence, not an automatic combat repair.
+Based on Claude Code a48f117/test64 and previously published Codex59. Protocol30,
+four-player routing and120 native signatures retained. Changes and limits:
+[multiplayer recovery](runtime/MULTIPLAYER-RECOVERY.md).
 
-Validation performed locally on Windows x64: native protocol/fuzz/town/runtime
-bridge tests, isolated OpenGL overlay, MSVC ASan runtime bridge, launcher tests
-including live-party IPC and fake-Steam preparation/restore. All120 game address
-patterns match the pinned executable. Prior native ABI/read-only DLC checks pass.
-No real game, installer, owner save or Steam account was launched by these tests.
+The reported four-player run stopped at its first food purchase. The exact host
+pre-state was not logged, so the original differing field/order remains unproven.
+Every copy now uses the full native provisions opener and initial free-item
+slots are normalized via native Item lifetime/swaps. Strong inventory/currency
+guards remain. New initial digests support the next live report.
 
-New behavior has not yet been validated in a live two-PC run. Reports from the
-previous kit are evidence for the regression fixtures, not proof of this repair.
-Private raw logs are deliberately excluded. Host save preference is retained;
-guest always-nosave. Both players must use the same runtime kit. Builds use /MT.
+Host direct Player1..4 assignment uses persistent hero IDs and the existing
+revision/table/file route. Selection survives row refresh. Players no longer
+overlaps Restore. The log collector includes all three guest runtime files.
 
-Per-kit GitHub source commits are now part of delivery. Source and test evidence
-are published; player ZIPs/binaries remain outside git.
+Resync is an acknowledged launcher checkpoint restart: normal game close,
+journaled guest recovery, then fresh Host/Join. Unsaved progress may be lost.
+No live combat repair, desync reset, forced termination or save replacement while
+running. Solo guest .bat windows close manually; they have no guest launcher.
+One lost runtime link stops every surviving guest. Fresh busy reports continue
+to block host walking after a minute; missing busy heartbeats stop shared play.
 
-Companion build: **0.5.0-duo42** uses the same gameplay source with DD_DUO,
-its separate runtime pin and launcher version. RELEASES.json records both
-kits and their exact binary/ZIP hashes; binaries remain outside git.
+PASS baseline64 and final native/fuzz/FIFO, four supply permutations and native
+metadata/lifetime/partial-swap refusal, prepare for all three guest numbers,
+owner broadcast to three guests, resync ACK/retry/backpressure/authority, runtime
+disconnect fanout and wait guards, MSVC ASan, OpenGL overlay, both launcher suites
+including fake-Steam preparation/recovery, eight exact native ABI proofs,120
+regenerated signatures, English/GIF native layout and read-only DLC fixture/data.
 
-Test57 adds the shared dungeon default-order button and keyboard shortcut. Either
-player may initiate it; actual native reset, default and post-state are checked on
-both copies. Repeated/crossed clicks and animation delays are covered by bridge
-fixtures. A formation difference stops before new travel. See runtime/FORMATION.md
-and tests/test_formation_layout.py for the exact native ABI proof. Manual dungeon
-formation drags are not newly synchronized. Real two-PC validation remains pending.
+NOT RUN: live game/installer/four-PC repair, real Steam save writes or MinGW build.
+Native effects are simulated. Full DLC waves/shards/live hero validation,
+arbitrary manual dungeon drags and unrelated loot-result fallback remain.
+Guest always-nosave; host save preference preserved. Source only: no binaries,
+game assets, saves, artwork or private logs. RELEASES.json records exact normal
+and solo binary/kit hashes; the solo runtime pin is a build variant.
 
-Test59/duo42 uses protocol28: OPEN0 never confirms an existing prop overlay;
-obstacle CONFIRM5 only runs against the matching ready panel. Duplicate same-prop
-opens are idempotent. Curio/tool confirms wait too; timeout stops both peers before
-later orders rather than silently skipping a required effect. Trap/door overlaps
-are guarded while a prop event is active. No native event is manually reset.
-
-Exact selected Item addresses in bounded raid bag/loot vectors are used for direct
-trinket drags; presentation inventory/index mismatch and foreign/unaligned pointer
-refusal are covered. Actual live pointer mismatch remains unproven. Native Item
-lifetime/swaps retained. Source diagnostics support the next owner's live test.
-
-PASS pre-change baseline and final native/fuzz/FIFO, new prop and loot fixtures,
-MSVC ASan, overlay, launcher/IPC/relay/fake-Steam preparation/recovery, exact prop
-ABI and120 address patterns, English/GIF preview. Native effects are simulated.
-No live two-PC validation, game/installer or MinGW build was run. English UI,
-embedded mascot and fresh later raids remain. Both games restart after disconnect.
+Written by Codex; previous Claude Code contributions retained.

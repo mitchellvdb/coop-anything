@@ -1,0 +1,29 @@
+DDCoop test65 - four-player provisions and checkpoint resync
+==========================================================
+
+1. Close ALL game windows and let guest recovery finish. Install test65 on EVERY
+   PC. Select Players (2, 3 or 4) before Host; all guests join before loading.
+2. Select a hero row in the host launcher, choose Player 1..4 and click Assign.
+   Verify every guest sees the owner. Assign each player's combat heroes.
+3. With other players still in the Hamlet, open provisions from either host or
+   guest. Every copy should follow automatically. Compare initial free items.
+4. Buy food, torches and other supplies from each player, first one at a time,
+   then alternating quickly. Compare bag, stock and gold on all copies.
+5. Use Back once, compare refunds/return to Hamlet, then open again and embark.
+   Retest the fixed-map mission that stopped in test62. Compare room and party.
+6. Test one fight, loot and equipping a trinket directly from loot. Leave a guest
+   curio/loot window open: the host must wait before walking ahead. Close it and
+   continue together. Verify owners still match after hero positions change.
+7. Test Resync... from the host at a safe checkpoint. The confirmation explains
+   unsaved progress may be lost. All connected launcher games close normally;
+   wait for guest backup recovery. Then click Host and have everyone Join again.
+   Compare week, party, bag and room at the host's last saved checkpoint.
+8. Copy logs on EVERY PC, also on success. The collector includes guest2/guest3
+   logs now. If anything differs, stop testing and send all bundles plus the
+   first action that differed. Do not continue through a sync-stop warning.
+
+Resync does not repair a running fight or rejoin an old session. If a game waits
+for a normal exit confirmation, finish that confirmation. Never force-kill it
+while saving. Solo guest .bat windows must be closed manually before restarting.
+Guests always use -nosave; the host keeps its save-progress preference.
+New code has automated coverage; this is the first live test of these changes.

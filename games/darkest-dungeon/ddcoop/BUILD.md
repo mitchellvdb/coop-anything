@@ -40,11 +40,13 @@ For the optional two-window build, compile the runtime with DD_DUO, pin that sep
 DLL, and build the launcher with DDC_VERSION set to the matching duo version. See
 runtime/DUNGEON.md and the runtime build source list. No binary/game file is in git.
 
-Test59 checks120 native signatures and uses runtime protocol28. Read-only proof:
 
-    python -I tests/test_prop_layout.py "%DD_GAME_EXE%"
+Test65/duo48 retains120 native signatures and protocol30. Verify read-only:
 
-Run the normal runtime/ASan/overlay and launcher suites. Regression native game
-effects are simulated; real two-PC validation is still required. Optional local
-GIF artwork uses DDC_MASCOT_GIF and Windows GDI+. See launcher/MASCOT.md; artwork
-is deliberately excluded from source. Existing MinGW recipe was not tested here.
+    python -I tests/test_supply_init_layout.py "%DD_GAME_EXE%"
+
+Run all ordinary runtime/ASan/overlay and launcher suites. The fixtures simulate
+native effects; they do not launch the game or a real Steam account. Optional GIF
+embedding uses DDC_MASCOT_GIF; artwork is excluded from source. The supplied solo
+variant has guest .bat windows without a separate launcher, so close those
+manually before checkpoint recovery. The MinGW alternate build was not run here.

@@ -1,6 +1,6 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test59**, runtime protocol28. The project owner
+Development snapshot **0.5.0-test65**, runtime protocol30. The project owner
 selected this repository for per-kit source commits. Work is isolated on
 `game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
 
@@ -28,6 +28,10 @@ Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
 
 Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
 
-Test59 separates prop OPEN from obstacle confirmation, guards duplicate active
-events and resolves raid trinket drag sources by exact canonical Item address.
-See runtime/PROP-LIFECYCLE.md. Either player may initiate supported actions.
+
+Test65 integrates Claude Code test60-64 (up to four players, protocol30 busy
+signals, fixed-map departures and trinket identity fallback). It adds full native
+provisions initialization on every copy, initial Item-slot normalization,
+multiplayer stop/wait safety, host Player1..4 assignment and a coordinated
+checkpoint restart. See runtime/MULTIPLAYER-RECOVERY.md. Live four-PC validation
+is still required. Resync does not repair a live fight or preserve unsaved progress.

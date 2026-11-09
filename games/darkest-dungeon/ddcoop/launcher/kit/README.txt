@@ -1,6 +1,33 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
+New in test65 / duo48
+- Every player follows provisions through the same normal game opener. Initial
+  free-item order is normalized, with inventory/currency checks retained.
+- Select a hero row, choose Player 1..4 and Assign in the host launcher.
+- Players and Restore controls no longer overlap; logs include all guest windows.
+- Host Resync... closes connected launcher games normally for checkpoint recovery.
+  Wait for guest recovery, then Host/Join again. Unsaved progress may be lost.
+
+New in test64 / duo47
+- A trinket that lands in a different bag slot for a friend no longer disappears
+  when it is put on a hero.
+
+New in test63 / duo46
+- Missions with a fixed map no longer stop the session at embark.
+
+New in test62 / duo45
+- The host chooses the number of players (2, 3 or 4) before Host. The games load
+  only when that many friends are there; a friend who comes later is told so.
+
+New in test61 / duo44
+- After a shared curio or loot the host waits to walk on until every friend has
+  closed the window, so the corridor stays the same for everyone.
+
+New in test60 / duo43
+- Up to four players: one host and three friends. All games load together once
+  everyone is at the save screen; each hero has one of the four players as owner.
+
 New in test59 / duo42
 - Prop opening and obstacle confirmation are separate shared actions. Duplicate
   opens cannot confirm a panel or start a second active event.
@@ -28,21 +55,18 @@ Close both games after testing and let recovery finish. Repair DDCoop.bat is not
 needed for normal save recovery. Backups are in DDCoop-backups under your user folder.
 
 If a player disconnects
-This version cannot resume a running session. BOTH players close the game. The
+This version cannot resume a running session. ALL players close the game. The
 host clicks Host again to create a new session; the guest then joins that session.
 Rejoining the old running host is intentionally refused to prevent loading an
 outdated snapshot. Do not delete saves or manually copy a different campaign.
 
 Test plan
-See TESTSTAPPEN-test59.txt. Test direct loot-trinket equipment, no-shovel obstacle choices,
-curio double clicks, food afterwards and entering the next fight. Then also
-return to the Hamlet and start another expedition.
-Compare the map, room, party, supplies and first fight on both PCs.
-Use Copy logs on both launchers afterwards; send both bundles and the last action
-if anything differs. New changes have automated coverage but still need live tests.
+See TESTSTAPPEN-test65.txt. Start with four-player provisions and direct hero
+assignment, then embark, a fight/loot and the host Resync checkpoint restart.
+Collect logs on every PC, including successful runs.
 
 Scope and limits
-Two players; supported Steam Windows x64 build28385. No automatic combat resync.
+Two to four players; supported Steam Windows x64 build28385. No live combat repair; Resync performs a coordinated checkpoint restart.
 Use the same kit on both PCs. Arbitrary manual dungeon formation drags are not
 newly synchronized; the default-order button and shortcut are synchronized.
 DLC groundwork remains, but full Color of Madness/shards/waves support and DLC
