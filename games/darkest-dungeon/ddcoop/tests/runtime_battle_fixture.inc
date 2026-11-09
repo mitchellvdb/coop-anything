@@ -609,14 +609,14 @@ static void second_copy_checks(void) {
         memcpy(&i, it_tool_seen + 0x90, 4);
         CHECK(it_tools == 1 && seen == panel_at && k == type && i == id && g_town.applied_seq == 1);
     }
-    /* No such tool here: it says so, nothing runs, the queue goes on. */
+    /* No such tool here: do not silently claim an approved effect happened. */
     it_reset(DD_ROLE_GUEST);
     SC_BAG();
     memset(bag_items, 0, sizeof bag_items);
     SC_OPEN(mode);
     wk_push(1, &tool);
     dd_runtime_poll();
-    CHECK(!it_tools && g_town.applied_seq == 1 && !g_town.needs_resync);
+    CHECK(!it_tools && !g_town.applied_seq && g_town.needs_resync);
     /* The host asked by a guest without its overlay open: refused, not run. */
     it_reset(DD_ROLE_HOST);
     SC_BAG();

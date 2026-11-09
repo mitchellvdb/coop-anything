@@ -313,6 +313,12 @@ static void test_desync_wire(void) {
     m.u.town.action=act(DD_ACT_FORMATION_RESET);
     m.u.town.action.u.formation.after[1]=2;
     CHECK(!dd_encode(&m,wire,sizeof wire),"duplicate formation ID refused");
+    m=town(DD_MSG_TOWN_APPLY,act(DD_ACT_USE));
+    m.u.town.action.u.use.door=5;
+    n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.u.use.door==5,"obstacle confirm round trip");
+    m.u.town.action.u.use.door=6;
+    CHECK(!dd_encode(&m,wire,sizeof wire),"unknown prop operation refused");
 }
 int main(void) {
     test_desync_wire();

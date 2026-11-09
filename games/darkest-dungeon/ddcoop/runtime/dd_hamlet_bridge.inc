@@ -837,6 +837,22 @@ static void __fastcall hook_hamlet_location(void *roster, void *entry, int32_t l
     g_hamlet_location(roster, entry, location);
 }
 
+/* Loot widgets may expose a presentation inventory/index instead of the actual
+ * raid inventory. Native pickup7ee320 copies the Item at widget+30. Resolve that
+ * exact address in the bounded canonical bag/loot vectors, never by trinket ID:
+ * two identical trinkets must remain distinguishable. */
+static int hamlet_raid_drag_source(const dd_hamlet *s, uint64_t selected, uint64_t *inventory, uint32_t *owner, uint32_t *slot) {
+    if (!selected) return 0;
+    for (unsigned i=0;i<2;i++) {
+        uint32_t candidate=i?DD_TRINKET_LOOT:DD_TRINKET_BAG;
+        uint64_t inv=0,begin=0;unsigned count=0;
+        if (!dd_hamlet_inventory(s,candidate,&inv,&count) || !hamlet_read(s,inv+8,&begin,8) ||
+            selected<begin || (selected-begin)%0x5a8 || (selected-begin)/0x5a8>=count) continue;
+        *inventory=inv;*owner=candidate;*slot=(uint32_t)((selected-begin)/0x5a8);
+        return 1;
+    }
+    return 0;
+}
 static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg3, void *data) {
     if (!g_trinket_pickup[kind]) return;
     supply_drag_pickup(ui);
@@ -845,8 +861,16 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
         dd_hamlet s;
         uint64_t inventory = 0;
         uint32_t owner = 0, slot = 0, type = 0, id = 0, q = 0, normal = 0;
-        if (g_hamlet_open_model(&s) && safe_read((uintptr_t)ui + 0x28, &inventory, 8) &&
-            dd_hamlet_inventory_owner(&s, inventory, &owner) && safe_read((uintptr_t)ui + 0xb8, &slot, 4) &&
+        uint64_t selected=0;
+        int model=g_hamlet_open_model(&s);
+        int endpoint=model && safe_read((uintptr_t)ui+0x28,&inventory,8) &&
+            dd_hamlet_inventory_owner(&s,inventory,&owner) && safe_read((uintptr_t)ui+0xb8,&slot,4);
+        if (model && safe_read((uintptr_t)ui+0x30,&selected,8) &&
+            hamlet_raid_drag_source(&s,selected,&inventory,&owner,&slot)) {
+            endpoint=1;
+            dd_log("Trinket: canonical raid source=%u slot=%u",owner,slot);
+        }
+        if (endpoint &&
             dd_hamlet_item(&s, inventory, slot, &type, &id, &q) && q == 1 &&
             hamlet_read(&s, s.image + 0x2a6f868, &normal, 4) && type == normal) {
             g_trinket_drag.ui = (uintptr_t)ui;
@@ -858,7 +882,7 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
             g_trinket_drag.valid = 1;
         }
         if (!g_trinket_drag.valid) {
-            uint64_t selected = 0;
+            selected = 0;
             uint32_t selected_type = 0;
             /* Known-build normal hash("trinket"). Unsupported trinket sources must not fall back to
              * an unsynchronized native drag. Unrelated provision/equipment types retain their own path. */

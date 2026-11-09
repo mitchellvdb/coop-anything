@@ -1210,13 +1210,22 @@ static void hm_secret_room_trinkets(void) {
     memset(hm_display, 0, sizeof hm_display);
     hm_loot_window(2);
     hm_raid_reset(DD_ROLE_GUEST);
-    putptr(source + 0x28, (uintptr_t)(hm_raid + 0x5240));
+    {
+        dd_hamlet model; uint64_t inventory=0;uint32_t owner=0,slot=0;
+        CHECK(g_hamlet_open_model(&model));
+        CHECK(hamlet_raid_drag_source(&model,(uintptr_t)hm_raid_loot[2],&inventory,&owner,&slot) && owner==DD_TRINKET_LOOT && slot==2);
+        CHECK(!hamlet_raid_drag_source(&model,(uintptr_t)hm_raid_loot[2]+1,&inventory,&owner,&slot));
+        CHECK(!hamlet_raid_drag_source(&model,(uintptr_t)hm_estate[0],&inventory,&owner,&slot)); /* Same ID is insufficient. */
+    }
+    /* Actual selected Item is canonical, while the loot widget exposes its
+     * presentation wrapper and a compacted display index. */
+    putptr(source + 0x28, (uintptr_t)(hm_raid + 0x5140));
     putptr(source + 0x30, (uintptr_t)hm_raid_loot[2]);
-    putint(source + 0xb8, 2);
+    putint(source + 0xb8, 0);
     putptr(target + 0x18, (uintptr_t)(hm_entries[0] + 8 + 0x1280));
     putint(target + 0xa8, 1);
     hook_trinket_pickup_inventory(source, NULL, NULL, drag);
-    CHECK(g_trinket_drag.valid == 1 && !g_shop_notice[0]);
+    CHECK(g_trinket_drag.valid == 1 && g_trinket_drag.slot==2 && !g_shop_notice[0]);
     CHECK(!hook_trinket_drop_hero(target, NULL, drag));
     CHECK(sent == 1 && last_message.u.town.action.u.move.src_hero == DD_TRINKET_LOOT && !hm_native);
     dd_msg request = last_message;

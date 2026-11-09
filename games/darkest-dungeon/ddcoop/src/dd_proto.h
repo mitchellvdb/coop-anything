@@ -15,7 +15,7 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 27 /* stable battle actors, checked bag repair and peer sync stop */
+#define DD_PROTO_VERSION 28 /* prop open and obstacle confirmation are distinct ordered actions */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 

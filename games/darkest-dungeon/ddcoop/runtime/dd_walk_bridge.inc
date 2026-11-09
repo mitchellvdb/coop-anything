@@ -242,6 +242,21 @@ static int walk_is_door(uint64_t prop) {
     uint64_t table = 0;
     return safe_read((uintptr_t)prop, &table, 8) && table == image_base() + DD_WALK_DOOR_TABLE;
 }
+/* Native InteractWithProp requires display+2e40 (overlay+d88) == 0.
+ * An OPEN is idempotent when that same prop already owns the overlay; it must
+ * never execute the obstacle's confirm button. Curio uses +6a0, obstacle +d70. */
+static int walk_overlay_state(const walk_view *v, uint32_t *mode) {
+    return safe_read((uintptr_t)v->display + DD_WALK_OVERLAY + 0xd88, mode, 4);
+}
+static int walk_overlay_matches(const walk_view *v, uint64_t prop, uint8_t operation) {
+    uint32_t mode = 0; uint64_t shown = 0;
+    uint64_t panel = v->display + DD_WALK_OVERLAY;
+    if (!walk_overlay_state(v,&mode) || !mode) return 0;
+    if (operation==3) return safe_read((uintptr_t)panel+0x6a0,&shown,8) && shown==prop;
+    if (operation==4 || operation==5) return safe_read((uintptr_t)panel+0xd70,&shown,8) && shown==prop;
+    return (safe_read((uintptr_t)panel+0x6a0,&shown,8) && shown==prop) ||
+           (safe_read((uintptr_t)panel+0xd70,&shown,8) && shown==prop);
+}
 /* 7747c0: clicking a prop. Without an overlay (+124) it interacts at once. With one, a curio without a choice runs on the overlay's next update
  * (712b70, 7107c0, 7111e0) with no further click, so the click itself is the moment to share. Owner's run on one PC: curios ran on one copy only. */
 static uint8_t __fastcall hook_raid_use(void *display, void *prop, int32_t option, uint8_t flag) {
@@ -252,6 +267,12 @@ static uint8_t __fastcall hook_raid_use(void *display, void *prop, int32_t optio
     if (!g_raid_use) return 0;
     if (!g_game_apply_depth && walk_shared() && formation_busy()) return 0;
     if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)prop + 0x124, &overlay, 1)) return g_raid_use(display, prop, option, flag);
+    uint32_t mode = 0;
+    if (!g_walk_view(&v) || !walk_overlay_state(&v,&mode)) return 0;
+    if (mode) {
+        dd_log("Walk: another open click ignored while prop overlay is active (mode=%u)",mode);
+        return 0;
+    }
     if (walk_is_door((uintptr_t)prop)) {
         if (g_cfg.role == DD_ROLE_HOST) {
             uint8_t opened = g_raid_use(display, prop, option, flag);
@@ -289,6 +310,8 @@ static uint8_t __fastcall hook_raid_trap(void *display, void *prop) {
     uint64_t hero = 0;
     if (!g_raid_trap) return 0;
     if (g_game_apply_depth || !walk_shared()) return g_raid_trap(display, prop);
+    uint32_t mode = 0;
+    if (!g_walk_view(&v) || !walk_overlay_state(&v,&mode) || mode) return 0;
     if (!g_walk_view(&v) || !safe_read((uintptr_t)v.raid + 0x438, &hero, 8) || !walk_use_order(&v, (uintptr_t)prop, hero, 0, 0, 1, &a)) {
         dd_log("Walk: trap not readable; not disarmed");
         return 0;
@@ -311,7 +334,7 @@ static void __fastcall hook_overlay_use(void *functor) {
     if (!g_overlay_use) return;
     if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)functor + 8, &panel, 8) || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 ||
         !safe_read((uintptr_t)panel + 0xd70, &prop, 8) || !safe_read((uintptr_t)panel + 0xd78, &hero, 8) || !g_walk_view(&v) ||
-        !walk_use_order(&v, prop, hero, 0, 0, 0, &a)) {
+        !walk_use_order(&v, prop, hero, 0, 0, 5, &a)) {
         g_overlay_use(functor);
         return;
     }
@@ -390,6 +413,13 @@ static int walk_use_apply(const dd_action *a) {
         dd_log("Walk: prop %u of area %08x is not here", a->u.use.prop, a->u.use.area);
         return 0;
     }
+    if (a->u.use.door==1 || a->u.use.door==2) {
+        uint32_t event=0;
+        if (!walk_overlay_state(&v,&event) || event) {
+            dd_log("Walk: trap/door refused while another prop event is active");
+            return 0;
+        }
+    }
     if (a->u.use.door != 2) walk_rules_send(&v); /* A guest's wish: the numbers go first, then the order itself. */
     if (a->u.use.door == 2) {
         if (g_cfg.role == DD_ROLE_GUEST) {
@@ -427,7 +457,7 @@ static int walk_use_apply(const dd_action *a) {
         uint64_t functor[2] = {0, panel};
         if (!safe_read((uintptr_t)panel + 0x6a0, &open_prop, 8) || open_prop != prop || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 || !g_curio_button) {
             dd_log("Walk: the curio overlay is not open here");
-            return g_cfg.role == DD_ROLE_HOST ? 0 : 1;
+            return 0;
         }
         memcpy((void *)(uintptr_t)(panel + 0x76c), &a->u.use.item_type, 4);
         memcpy((void *)(uintptr_t)(panel + 0x770), &a->u.use.item_id, 4);
@@ -440,7 +470,7 @@ static int walk_use_apply(const dd_action *a) {
         uint64_t item = item_in_bag(v.raid, a->u.use.item_type, a->u.use.item_id);
         if (!safe_read((uintptr_t)panel + 0xd70, &open_prop, 8) || open_prop != prop || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 || !item || !g_curio_tool) {
             dd_log("Walk: no overlay or tool for prop %u here (overlay prop %llx, mode %u, item %llx)", a->u.use.prop, (unsigned long long)open_prop, mode, (unsigned long long)item);
-            return g_cfg.role == DD_ROLE_HOST ? 0 : 1;
+            return 0;
         }
         memcpy(capture, &panel, 8);
         memcpy(capture + 8, (void *)(uintptr_t)item, 0x5a8);
@@ -449,16 +479,30 @@ static int walk_use_apply(const dd_action *a) {
         g_curio_tool(capture);
         return 1;
     }
-    if (safe_read((uintptr_t)panel + 0xd88, &mode, 4) && mode == 2 && safe_read((uintptr_t)panel + 0xd70, &open_prop, 8) && open_prop == prop && g_overlay_use) {
+    if (a->u.use.door == 5) {
+        if (!safe_read((uintptr_t)panel+0xd88,&mode,4) || mode!=2 ||
+            !walk_overlay_matches(&v,prop,5) || !g_overlay_use) {
+            dd_log("Walk: obstacle confirmation has no matching ready overlay");
+            return 0;
+        }
         uint64_t functor[2] = {0, panel};
         memcpy((void *)(uintptr_t)(panel + 0xd78), &hero, 8);
         g_overlay_use(functor); /* It interacts, runs the result and closes itself. */
         return 1;
     }
+    if (!walk_overlay_state(&v,&mode)) return 0;
+    if (mode) {
+        if (walk_overlay_matches(&v,prop,0)) {
+            dd_log("Walk: prop %u already open; duplicate OPEN has no effect",a->u.use.prop);
+            return 1;
+        }
+        dd_log("Walk: new prop refused while another overlay is active");
+        return 0;
+    }
     /* The game's own click, here too: it opens the same overlay or interacts, and decides by its own draws. */
     uint8_t done = g_raid_use ? g_raid_use((void *)(uintptr_t)v.display, (void *)(uintptr_t)prop, (int32_t)a->u.use.option, a->u.use.flag) : 0;
     if (!done) dd_log("Walk: the game declined prop %u here (position %f)", a->u.use.prop, v.pos);
-    return g_cfg.role == DD_ROLE_HOST ? done : 1;
+    return done;
 }
 /* 770080: every move to another room or corridor. A door or the map on the guest asks the host; the game's own calls pass, unshared. */
 static int walk_player_travel(uintptr_t rva) { return rva == 0x7427ae || rva == 0x77d84f || rva == 0x77e3ea; }
@@ -681,10 +725,18 @@ static int walk_gate(const dd_msg *m) {
             if (!g_walk_use_wait_until) g_walk_use_wait_until = now + 3000;
             /* It may already have walked on past that spot behind the host. */
             go = (delta < DD_WALK_USE_NEAR && delta > -DD_WALK_USE_NEAR) || now > g_walk_use_wait_until;
-            /* A tool needs the overlay, which opens when this copy walks up to the thing. */
-            if (a->u.use.door == 4) {
+            /* Confirms wait for their own ready panel, independent of the
+             * walking pixel. Never turn a confirm into another OPEN. */
+            if (a->u.use.door == 3 || a->u.use.door == 4 || a->u.use.door == 5) {
                 uint32_t mode = 0;
-                go = (go && safe_read((uintptr_t)v.display + DD_WALK_OVERLAY + 0xd88, &mode, 4) && mode == 2) || now > g_walk_use_wait_until + 5000;
+                uint64_t prop = walk_prop_at(v.area_ptr,a->u.use.prop);
+                go = (walk_overlay_state(&v,&mode) && mode==2 && prop && walk_overlay_matches(&v,prop,a->u.use.door)) || now > g_walk_use_wait_until+12000;
+            } else if (a->u.use.door==0) {
+                uint32_t mode = 0; uint64_t prop = walk_prop_at(v.area_ptr,a->u.use.prop);
+                if (walk_overlay_state(&v,&mode) && mode) go = (prop && walk_overlay_matches(&v,prop,0)) || now > g_walk_use_wait_until+12000;
+            } else {
+                uint32_t mode=0;
+                if (!walk_overlay_state(&v,&mode) || mode) go=now>g_walk_use_wait_until+12000;
             }
         }
         if (go) g_walk_use_wait_until = 0;

@@ -272,13 +272,13 @@ static void use_transactions(void) {
     CHECK(wk_uses == 1 && g_town.applied_seq == 1);
     CHECK(wk_select_index == 2);
     { int32_t field = 0; memcpy(&field, wk_display + 0x3f88, 4); CHECK(field == 1); }
-    /* Its game declines the click (774650): the host already did it, so this copy logs it and the orders go on. */
+    /* A declined approved OPEN cannot be silently acknowledged as synchronized. */
     wk_reset(DD_ROLE_GUEST);
     wk_view.pos = 500.0f;
     wk_use_done = 0;
     wk_push(1, &used);
     dd_runtime_poll();
-    CHECK(wk_uses == 1 && g_town.applied_seq == 1 && !g_town.needs_resync);
+    CHECK(wk_uses == 1 && !g_town.applied_seq && g_town.needs_resync);
     wk_use_done = 1;
     /* On the guest a click asks; nothing happens here until the order returns. */
     wk_reset(DD_ROLE_GUEST);
@@ -335,14 +335,17 @@ static void use_transactions(void) {
         wk_push(1, &picked);
         dd_runtime_poll();
         { uint32_t now = 0; memcpy(&now, (void *)(uintptr_t)(panel + 0x76c), 4); CHECK(wk_curios == 1 && now == 77 && g_town.applied_seq == 1); }
-        /* No overlay open here: nothing runs, nothing breaks. */
+        /* No overlay yet: wait; timeout stops instead of silently skipping. */
         wk_reset(DD_ROLE_GUEST);
         g_curio_button = wk_curio;
         wk_curios = 0;
         memset((void *)(uintptr_t)(panel + 0x6a0), 0, 8);
         wk_push(1, &picked);
         dd_runtime_poll();
-        CHECK(!wk_curios && g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!wk_curios && g_incoming.count==1 && !g_town.applied_seq && !g_town.needs_resync);
+        g_walk_use_wait_until=GetTickCount64()-16000;
+        dd_runtime_poll();
+        CHECK(!wk_curios && !g_town.applied_seq && g_town.needs_resync);
         g_curio_button = NULL;
     }
     /* The overlay's button. */
@@ -377,11 +380,11 @@ static void use_transactions(void) {
         CHECK(wk_overlays == 1 && g_town.applied_seq == 1);
         memcpy(&hero, (void *)(uintptr_t)(panel + 0xd78), 8);
         CHECK(hero == wk_party[1]);
-        /* Another prop open, or none: the interaction runs without it. */
+        /* A confirmation cannot fall back to opening the prop again. */
         wk_reset(DD_ROLE_GUEST);
         wk_push(1, &button);
         dd_runtime_poll();
-        CHECK(!wk_overlays && wk_uses == 1);
+        CHECK(!wk_overlays && !wk_uses && g_incoming.count==1);
         /* Not this overlay state: the game alone. */
         wk_reset(DD_ROLE_HOST);
         hook_overlay_use(functor);

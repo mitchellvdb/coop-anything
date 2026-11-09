@@ -133,7 +133,7 @@ int dd_action_valid(const dd_action *a) {
     }
     case DD_ACT_TRAVEL: return a->u.travel.dest[1]<4096 && a->u.travel.has_from<=1 && a->u.travel.flip<=1 && a->u.travel.extra<=1 &&
         (a->u.travel.has_from || !a->u.travel.from_area);
-    case DD_ACT_USE: return a->u.use.prop<4096 && a->u.use.option<16 && a->u.use.hero<4 && a->u.use.flag<=1 && a->u.use.door<=4 &&
+    case DD_ACT_USE: return a->u.use.prop<4096 && a->u.use.option<16 && a->u.use.hero<4 && a->u.use.flag<=1 && a->u.use.door<=5 &&
         (a->u.use.pos & 0x7f800000u) != 0x7f800000u;
     case DD_ACT_BATTLE: return a->u.battle.actor_id && a->u.battle.actor_id!=UINT32_MAX && a->u.battle.target_id!=UINT32_MAX &&
         ((a->u.battle.op!=DD_BATTLE_OP_ENEMY && a->u.battle.op!=DD_BATTLE_OP_FRIEND) || a->u.battle.side || a->u.battle.target_id) &&
