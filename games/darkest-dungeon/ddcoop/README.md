@@ -1,6 +1,6 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test58**, runtime protocol27. The project owner
+Development snapshot **0.5.0-test59**, runtime protocol28. The project owner
 selected this repository for per-kit source commits. Work is isolated on
 `game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
 
@@ -28,7 +28,6 @@ Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
 
 Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
 
-Test58/duo41 preserves initial saved-raid resume while making subsequent approved
-departures use fresh maps on both copies. It also adds English launcher/notices
-and an optional animated mascot. After a disconnect, both games must restart and
-the host must create a fresh session. See runtime/FRESH-RAIDS.md and launcher/MASCOT.md.
+Test59 separates prop OPEN from obstacle confirmation, guards duplicate active
+events and resolves raid trinket drag sources by exact canonical Item address.
+See runtime/PROP-LIFECYCLE.md. Either player may initiate supported actions.

@@ -40,12 +40,11 @@ For the optional two-window build, compile the runtime with DD_DUO, pin that sep
 DLL, and build the launcher with DDC_VERSION set to the matching duo version. See
 runtime/DUNGEON.md and the runtime build source list. No binary/game file is in git.
 
-Test58 checks120 unique game address patterns. Read-only fresh-raid branch proof:
+Test59 checks120 native signatures and uses runtime protocol28. Read-only proof:
 
-    python -I tests/test_fresh_raid_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_prop_layout.py "%DD_GAME_EXE%"
 
-Optional animated launcher artwork is embedded at build time through Windows
-GDI+. Set DDC_MASCOT_GIF to your own local GIF before launcher build; without it
-the optional mascot is omitted. Artwork is not in source. Both MSVC and MinGW
-build recipes include lr_mascot.c and the Windows GDI+ library; this release was
-validated with MSVC. See launcher/MASCOT.md. No additional player DLL is needed.
+Run the normal runtime/ASan/overlay and launcher suites. Regression native game
+effects are simulated; real two-PC validation is still required. Optional local
+GIF artwork uses DDC_MASCOT_GIF and Windows GDI+. See launcher/MASCOT.md; artwork
+is deliberately excluded from source. Existing MinGW recipe was not tested here.

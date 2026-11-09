@@ -1,0 +1,27 @@
+DDCoop test59 - loot trinkets and dungeon interactions
+=====================================================
+
+1. Close both games and let guest recovery finish. Install test59 on BOTH PCs.
+   Start a NEW session; both copies must load the same selected campaign.
+2. With a free trinket slot, drag a trinket directly from loot onto a hero.
+   Compare equipped trinket and remaining loot on both copies. Repeat initiated
+   by the other player. Swapping with an occupied slot should also stay equal.
+3. Without a shovel, approach an obstacle/corpse pile. Have only GUEST choose
+   clear by hand. Both should get the same effect, close the panel and move on.
+   Repeat with only HOST choosing. Do not both click through independently.
+4. Open an Iron Maiden or another curio; try a second open click while its panel
+   is already visible. No event-not-reset assertion should appear. Make the
+   normal hand/item choice once and compare effects/loot. Repeat roles.
+5. Once the panel has closed, GUEST uses food from inventory on a wounded hero.
+   Compare food quantity and HP on both copies. Repeat as HOST.
+6. Walk on and enter the next fight using either player's movement. Both must
+   arrive, with the same heroes/order and active turn. Compare map and bags.
+7. Also retain the previous check: return Hamlet and start a second expedition;
+   neither copy may resume the old saved battle. English UI/GIF remain included.
+8. Close both games; let guest recovery finish, then Copy logs on BOTH launchers.
+   For a mismatch, note which player acted and the last prop/action before it.
+
+Protocol28: same kit required. Duo42 is the two-window equivalent for one PC.
+Guest always -nosave; host follows Save progress when hosting. A state-check
+failure stops shared actions. Restart BOTH games and create a NEW host session;
+rejoining the old running host is intentionally refused. Live validation pending.

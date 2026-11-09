@@ -1,12 +1,14 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
-New in test58 / duo41
-- A new expedition now uses a fresh dungeon on both PCs. The guest no longer
-  resumes the initial saved raid when departing again with -nosave.
-- Launcher, in-game DDCoop notices and these instructions are in English.
-- The animated mascot is built into the launcher. No extra GIF file is needed.
-- Default party-order button/shortcut, inventory checks and earlier fixes remain.
+New in test59 / duo42
+- Prop opening and obstacle confirmation are separate shared actions. Duplicate
+  opens cannot confirm a panel or start a second active event.
+- Both players may clear an obstacle without a shovel. Confirmations wait for
+  the matching panel, then native closing permits food and walking afterwards.
+- Loot trinket drags also resolve the exact selected item in the raid inventory.
+- English UI, animated mascot and fresh subsequent expedition fix remain.
+- Automated tests pass; these repairs still need a live two-PC test.
 
 Install on BOTH PCs
 1. Close both games. Let DDCoop finish restoring the guest's own campaign, then
@@ -32,8 +34,9 @@ Rejoining the old running host is intentionally refused to prevent loading an
 outdated snapshot. Do not delete saves or manually copy a different campaign.
 
 Test plan
-See TESTSTAPPEN-test58.txt. Resume a dungeon, complete it, return to the Hamlet,
-then depart on a second mission with a changed party. Repeat if possible.
+See TESTSTAPPEN-test59.txt. Test direct loot-trinket equipment, no-shovel obstacle choices,
+curio double clicks, food afterwards and entering the next fight. Then also
+return to the Hamlet and start another expedition.
 Compare the map, room, party, supplies and first fight on both PCs.
 Use Copy logs on both launchers afterwards; send both bundles and the last action
 if anything differs. New changes have automated coverage but still need live tests.
