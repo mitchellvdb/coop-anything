@@ -1,6 +1,6 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test66**, runtime protocol30. The project owner
+Development snapshot **0.5.0-test67**, runtime protocol31. The project owner
 selected this repository for per-kit source commits. Work is isolated on
 `game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
 
@@ -29,11 +29,9 @@ Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
 Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
 
 
-Test66 adds duplicate-stack inventory repair with immutable native Item templates
-and automatic checkpoint restart for connected multi-PC launchers. Host Resync
-closes games normally, recovers guest backups, reloads the new host snapshot and
-automatically reconnects/prepares/opens each game with its original player slot.
-Exact unsaved progress is not guaranteed. Launcher wire/lobby3 requires all PCs
-updated. Solo guest .bat windows still restart manually. An earlier provisions
-access violation remains unresolved; bounded non-handling fault traces help the
-next live test. See runtime/AUTOMATIC-RESYNC.md.
+Test67 adds shared curio/obstacle X from any player and fixes a circular skill
+selection wait observed during the Collector fight. SELECT spans native input
+states29/30 for the same turn/actor; TARGET/MOVE remain exact-phase. No combat
+state/RNG override. Live Collector repeat remains pending. Prior66 duplicate-stack
+repair, fault diagnostics and automatic multi-PC checkpoint restart are retained.
+See runtime/INPUT-PHASE.md and runtime/AUTOMATIC-RESYNC.md.

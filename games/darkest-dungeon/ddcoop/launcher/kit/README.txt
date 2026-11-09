@@ -1,6 +1,13 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
+New in test67 / duo50
+- Curio X closes the matching panel for everyone, from any player. Native close
+  animations are retained; cancelling does not trigger the curio result.
+- A skill choice can reach a copy still selecting a skill, fixing the circular
+  input wait seen during the Collector fight. Target/turn/actor guards remain.
+- Collector gameplay needs a repeat test; see the included test steps.
+
 New in test66 / duo49
 - Inventory repair handles repeated stacks without moving an earlier repaired one.
 - Host Resync automatically closes connected launcher games, restores guest saves,

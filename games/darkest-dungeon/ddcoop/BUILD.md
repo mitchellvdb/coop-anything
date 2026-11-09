@@ -41,11 +41,10 @@ DLL, and build the launcher with DDC_VERSION set to the matching duo version. Se
 runtime/DUNGEON.md and the runtime build source list. No binary/game file is in git.
 
 
-Test66/duo49 retains runtime protocol30 and120 native addresses; launcher wire/
-lobby3. Launcher recipes include launcher/src/lr_restart.c. The Windows runtime
-suite also tests the non-handling fault observer. No new external library needed.
-For the alternate MinGW launcher recipe, set DDC_VERSION=0.5.0-test66 explicitly.
-Run native/runtime, ASan, overlay, full launcher, exact layout proofs and read-only
-DLC checks. Native effects and game close/recovery in fixtures are simulated.
-No game/installer/live Steam storage or MinGW build was run during validation.
-Optional embedded GIF artwork is excluded from source; see launcher/MASCOT.md.
+Test67/duo50: runtime protocol31,122 native signatures, launcher wire/lobby3.
+Windows default kit version67. No new dependency. Run native/runtime/fuzz, MSVC
+ASan, overlay, full launcher, eight native layout proofs and read-only DLC checks.
+test_prop_layout.py now proves the distinct curio/obstacle X callbacks, copied
+instruction boundaries and native29/30 skill-pointer dispatch. Native effects in
+fixtures are simulated; live Collector/game/installer/Steam storage and MinGW
+build were not run here. Optional GIF artwork is excluded from source.
