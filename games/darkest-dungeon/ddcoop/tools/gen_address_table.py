@@ -99,7 +99,6 @@ FUNCTIONS = [
     ("quest_choice_two", 0x1407504e0, "After a finished quest: the second button (functor, panel at +8)"),
     ("results_setup", 0x1407a0170, "RaidResultsDisplay::InitializeInternal"),
     ("results_next", 0x1407a2440, "RaidResultsDisplay: move on, at the last step to town"),
-    ("item_clear", 0x1405de910, "Inventory item: empty this slot"),
     ("bag_shop_drop", 0x1407ef6d0, "An item dropped on the shop: sells it back"),
     ("hero_equipment_levels", 0x1405d5670, "Hero: weapon and armour levels (+132c, +1330) from the purchased %s.weapon/%s.armour upgrades; the Blacksmith callback 66aa20 calls it"),
     ("hero_skill_levels", 0x1405d3c20, "Hero: skill levels from the purchased %s.%s upgrades; the Guild callback 673210 calls it"),
@@ -162,6 +161,9 @@ def main():
              " * sha256 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12). Do not edit. */"]
     text = [s for s in secs if s[0].rstrip(b"\0") == b".text"][0]
     code = data[text[4]:text[4] + text[3]]
+    assert len({name for name, _, _ in FUNCTIONS}) == len(FUNCTIONS), "duplicate address name"
+    # Inventory drag aliases and the generic/Rules RNG names share native entries.
+    # Aliased names are valid; duplicate names never are.
     for name, va, what in FUNCTIONS:
         off = file_offset(secs, va - IMAGE_BASE)
         pattern = data[off:off + PATTERN_LEN]

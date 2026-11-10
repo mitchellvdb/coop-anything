@@ -126,7 +126,7 @@ void lr_relay_on_message(lr_relay *r, uint64_t peer, const lr_msg *m, uint64_t n
     case LR_STREAM_DATA:
         if (!s) return;
         r->bytes_from_peer += m->len;
-        if (!append(s, m->data, m->len)) fail_stream(r, s, "te veel wachtende gegevens");
+        if (!append(s, m->data, m->len)) fail_stream(r, s, "Too much buffered data");
         break;
     case LR_STREAM_CLOSE:
         if (!s) return;

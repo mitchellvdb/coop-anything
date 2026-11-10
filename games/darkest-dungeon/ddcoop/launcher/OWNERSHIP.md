@@ -1,3 +1,16 @@
+# Current contract — test69 audit
+
+Shared gameplay failures no longer authorize a private guest continuation or a
+silent apply ACK. Runtime31 now also checks the exact runtime hello version.
+Launcher wire3, file/overlay/party IPC formats, guest-nosave and host save
+preference are retained. Exported logs redact known ticket/token/password lines;
+original logs stay unchanged. All selected players need the same69 kit.
+
+The amendments below are historical, newest first. A newer amendment supersedes
+older two-player wording or behavior. runtime/REVIEW-2026-11-10.md lists current
+findings, remaining limits and evidence. Windows default69; lr_logs.c is included
+in every launcher build recipe and synthetic tests on Windows/Linux.
+
 # Test68 party editing amendment (Codex)
 
 Every connected player may compose the expedition party, including heroes whose

@@ -28,6 +28,7 @@
 #include "lr_prepare_win.h"
 #include "lr_steam.h"
 #include "lr_mascot.h"
+#include "lr_logs.h"
 
 /* How long a session waits for Steam to serve a save the game just wrote (LR_PREPARE_UNREAD), trying every 3 s. */
 #define LR_STEAM_WAIT_MS 90000u
@@ -917,7 +918,8 @@ static void collect_logs(int open_folder) {
         lr_join(from, sizeof from, i >= 8 ? G.bin : G.moddir, names[i]);
         lr_join(to, sizeof to, dir, names[i]);
         if (lr_read_file(from, 64u * 1024 * 1024, &data, &len)) {
-            lr_write_file(to, data, len);
+            size_t safe_len = lr_logs_redact(data, len, NULL);
+            lr_write_file(to, data, safe_len);
             free(data);
         }
     }
@@ -928,7 +930,8 @@ static void collect_logs(int open_folder) {
         n += snprintf(summary + n, sizeof summary - (size_t)n, "[%s] %s\r\n", G.ok[i] ? "OK" : "--", G.check_text[i]);
     char path[LR_PATH_MAX];
     lr_join(path, sizeof path, dir, "checks.txt");
-    lr_write_file(path, (const uint8_t *)summary, strlen(summary));
+    size_t safe_len = lr_logs_redact((uint8_t *)summary, strlen(summary), NULL);
+    lr_write_file(path, (const uint8_t *)summary, safe_len);
     if (open_folder) ShellExecuteW(NULL, L"explore", W(dir), NULL, NULL, SW_SHOWNORMAL);
 }
 static void do_logs(void) { collect_logs(1); }
