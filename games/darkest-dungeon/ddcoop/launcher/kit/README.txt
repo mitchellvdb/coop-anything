@@ -1,6 +1,13 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
+New in test68 / duo51
+- Building treatment no longer blocks composing a new party when several old
+  members are still remembered. Available replacements work from any player.
+- Combat hero ownership does not restrict Hamlet party composition. Closed
+  expedition screens receive the shared model and show it when opened.
+- Direct equipping from loot is a separate report, not claimed fixed here.
+
 New in test67 / duo50
 - Curio X closes the matching panel for everyone, from any player. Native close
   animations are retained; cancelling does not trigger the curio result.

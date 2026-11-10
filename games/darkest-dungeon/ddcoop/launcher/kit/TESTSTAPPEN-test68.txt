@@ -1,0 +1,21 @@
+DDCoop test68 - party changes after returning to Hamlet
+=====================================================
+
+1. Close old games and let guest recovery finish. Install68 on EVERY PC.
+2. Return from a dungeon. Put at least two members of the old party into stress
+   buildings, then open the expedition screen and add different available heroes.
+   The busy heroes must leave the proposed party while staying in treatment.
+3. Let Player1,2,3,4 each add, move and remove a hero. Combat hero ownership must
+   not restrict Hamlet party selection. Compare the result on every copy.
+4. Repeat a guest change while the host expedition screen is closed. Open it
+   afterwards: it must show the shared party. Repeat with another guest closed.
+5. Embark again and compare the actual party, inventory and combat controls.
+6. Copy logs from EVERY PC, especially immediately after any refusal/desync.
+
+Do not pick heroes currently in a building; treatment remains active. Conflicting
+simultaneous edits can still be refused as stale; retry after the current change.
+The separate direct-equip-from-loot report is not claimed fixed by the party fix.
+New drag diagnostics record source/target/submit. If it fails, note the exact
+message and copy logs before continuing the session.
+Guests always-nosave; the host keeps the save checkbox. Automatic multi-PC Resync
+requires every launcher open; solo .bat guests restart manually.

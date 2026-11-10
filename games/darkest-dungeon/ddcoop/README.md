@@ -1,6 +1,6 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test67**, runtime protocol31. The project owner
+Development snapshot **0.5.0-test68**, runtime protocol31. The project owner
 selected this repository for per-kit source commits. Work is isolated on
 `game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
 
@@ -29,9 +29,11 @@ Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
 Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
 
 
-Test67 adds shared curio/obstacle X from any player and fixes a circular skill
-selection wait observed during the Collector fight. SELECT spans native input
-states29/30 for the same turn/actor; TARGET/MOVE remain exact-phase. No combat
-state/RNG override. Live Collector repeat remains pending. Prior66 duplicate-stack
-repair, fault diagnostics and automatic multi-PC checkpoint restart are retained.
-See runtime/INPUT-PHASE.md and runtime/AUTOMATIC-RESYNC.md.
+Test68 fixes next-party composition after several remembered members enter
+buildings. Busy remembered IDs are pruned from a proposed destination, while
+strict pre-state checks and treatment remain intact. Every connected player
+may add/move/remove available heroes, regardless of combat owner or whether
+the host expedition screen is open. See runtime/PARTY-RETURN.md.
+Direct equip from loot remains a separate unresolved report: new item/endpoint
+drag diagnostics help identify its error. No gameplay fix is claimed for it.
+Prior67 curio X/input phases and66 repair/restart/fault diagnostics are retained.

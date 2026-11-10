@@ -41,10 +41,9 @@ DLL, and build the launcher with DDC_VERSION set to the matching duo version. Se
 runtime/DUNGEON.md and the runtime build source list. No binary/game file is in git.
 
 
-Test67/duo50: runtime protocol31,122 native signatures, launcher wire/lobby3.
-Windows default kit version67. No new dependency. Run native/runtime/fuzz, MSVC
-ASan, overlay, full launcher, eight native layout proofs and read-only DLC checks.
-test_prop_layout.py now proves the distinct curio/obstacle X callbacks, copied
-instruction boundaries and native29/30 skill-pointer dispatch. Native effects in
-fixtures are simulated; live Collector/game/installer/Steam storage and MinGW
-build were not run here. Optional GIF artwork is excluded from source.
+Test68/duo51 retains runtime31,122 native signatures and launcher wire/lobby3.
+Windows build default68. No new dependency/native address. Run runtime/native/
+fuzz, MSVC ASan, overlay, both full launcher/fake-Steam suites, eight read-only
+ABI proofs and DLC checks. New fixture tests/runtime_party_return_fixture.inc
+uses actual hooks/FIFO with modeled native operations; no real game/installer,
+Steam storage, multi-PC restart or MinGW build was run. Optional artwork excluded.
