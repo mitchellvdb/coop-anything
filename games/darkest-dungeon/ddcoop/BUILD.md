@@ -1,4 +1,4 @@
-# DDCoop build and validation — test70 / duo53
+# DDCoop build and validation — test71 / duo54
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -10,9 +10,9 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 121 named signatures cover 117 native
-entrypoints (some deliberate alias names);81 live/early hook targets are distinct.
-Runtime protocol 31; exact runtime hello version also required. Launcher wire 3.
+Never relax pins for an unknown update. 132 named signatures cover 128 native
+entrypoints (some deliberate alias names);87 live/early hook targets are distinct.
+Runtime protocol 32; exact runtime hello version also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -27,7 +27,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test70"
+    set "DDC_VERSION=0.5.0-test71"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -49,6 +49,7 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_prop_layout.py "%DD_GAME_EXE%"
     python -I tests/test_supply_init_layout.py "%DD_GAME_EXE%"
     python -I tests/test_camping_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_activity_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -74,8 +75,8 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-For duo53, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo53. Gameplay source remains identical. Source
+For duo54, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo54. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:
@@ -92,3 +93,12 @@ exported copy only. It is not full anonymization of names or paths.
 Linux portable tests: sh launcher/build-linux.sh (gcc, ASan/UBSan).
 MinGW Windows build: launcher/build-windows.sh, with DDC_VERSION explicitly set.
 Those toolchains were not run in this review; Windows/MSVC validation was run.
+
+Test71 adds shared provisional Tavern/Abbey activity slots (six stress activities).
+The actual bridge fixture checks all four initiators with a closed/idle host,
+first-wins reservation, commit once, clear, native confirmed removal, UI hydration,
+source-finish/removal and stale drag epochs. The native adapter proof is static;
+actual engine effects in fixtures are modeled. See runtime/ACTIVITY.md and
+runtime/ACTIVITY-NATIVE.md. Runtime32 requires the new matching kit on all peers.
+Guest departure waits up to30s for its town then follows without a local click;
+it refuses/STOPs at timeout rather than ACK a manual fallback.

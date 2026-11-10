@@ -1,35 +1,44 @@
 # DDCoop — Darkest Dungeon co-op
 
-Current development snapshot **test70 / duo53**, runtime protocol31 and launcher
+Current development snapshot **test71 / duo54**, runtime protocol32 and launcher
 wire/lobby3. Source lives on `game/darkest-dungeon-ddcoop` under this subtree;
-other projects and the repository's shared playbook remain unchanged.
+other projects/shared playbook remain unchanged. Earlier contributions retained.
 
-Players each run their own copy. Any connected player may initiate supported
-shared choices, ordered through the host. Combat ownership uses persistent hero
-IDs. Guest campaign replacement is backed up/restored; guests always -nosave.
-Host saving follows its checkbox. Selected slots1..9 only; profile_9 forbidden.
+Each player uses their own copy. All connected players can initiate supported
+shared Hamlet/dungeon actions, ordered through the host. Combat ownership uses
+persistent hero IDs. Host game/launcher remain running; no manual host click is
+required for the newly tested guest preparation/provisioning/embark sequence.
+Guest slot replacement is backed up/restored, guests always -nosave. Host saving
+follows its checkbox. Selected slots1..9 only; profile_9 forbidden.
 
-This independent recheck fixes queue-full STOP loss, unbounded transport sends,
-unsafe camping indices and false town-state ACKs. Metadata/DLC preflight now
-rejects corrupted campaigns and empty/incomplete required feature data before
-backup/replacement, while preserving valid basegame saves without a DLC object.
+New shared Tavern/Abbey drafts synchronize before Accept: first accepted intent
+reserves the hero/slot, revision/epoch reject stale choices, paid effects happen
+once through verified native functions. Native drop/source callbacks are guarded
+before unchecked UI lookup or local model mutation. Open/reopened widgets project
+the shared state. Guest departure waits for a usable town instead of falsely
+ACKing and asking for a manual second click. See [ACTIVITY.md](runtime/ACTIVITY.md)
+and [native analysis](runtime/ACTIVITY-NATIVE.md) for exact scope and evidence.
 
-Read [runtime/RECHECK-2026-11-10.md](runtime/RECHECK-2026-11-10.md) for findings,
-proof and remaining risks. [BUILD.md](BUILD.md), [KIT.md](KIT.md) and
-[HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) are the current starting documents.
-RELEASES.json records both variants' exact hashes. All peers need the same kit.
+Read [BUILD.md](BUILD.md), [KIT.md](KIT.md), [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md)
+and RELEASES.json for validation, versions and exact artifact hashes. All peers
+need the same kit. Source-only GitHub delivery; player binaries remain outside git.
 
-Campaign-DLC groundwork covers nine features: Musketeer, Shieldbreaker,
-CC/Flagellant/Districts, CoM and Fire's Edge/Runaway/Duelist. The read-only data
-checker supports feature/common fingerprints and report comparison. Shard-aware
-transaction APIs are modeled and tested; native provisioning remains gold-only.
-See [runtime/DLC.md](runtime/DLC.md). Full live DLC support is NOT claimed.
+Tests model native effects, with actual bridge/FIFO/codec,5000 four-copy draft
+schedules/640000 requests, all4 guest/host initiators, native fault injection,
+MSVC ASan, eleven read-only EXE proofs, isolated overlay/preview and full normal/
+duo launcher/fake-Steam suites. Real rendering/new native integration still need
+owner game tests. No real game/installer/save/Steam write was performed here.
 
-Native engine effects in tests are modeled. Local TCP/crypto, four-controller
-restart simulations and four-core fake-Steam transfer tests do not replace a
-real multi-PC game/Cloud test. Direct loot equip, complete combat-state digest,
-remaining rank-based item identity, prior provisions crash and live DLC remain
-open. No game assets, Steam DLL, binary, save, artwork or private log is published.
-Never activate Circus/PlayFab paths or bypass TamperingManager. Passive arena_mp
-save flags remain readable without such integration. Prior contributions by
-Claude Code/Codex retained; this source delivery written/published by Codex.
+New draft scope is six stress activities. Sanitarium extra choices retain the
+existing path; clear with X then place, no new atomic slot-to-slot drag move.
+Exact cross-copy native price/gold verification, complete combat-state digest,
+remaining rank-based item identity, direct loot equip and the prior provisions
+crash remain open. Resync uses the host checkpoint and may lose unsaved progress;
+solo batch guests restart manually. Linux/MinGW/optional Capstone were not run.
+
+Nine campaign-feature DLC groundwork and shard-aware model APIs from70 remain;
+native supplies are gold-only and full live DLC support is unvalidated. See
+[DLC.md](runtime/DLC.md) and the retained [recheck](runtime/RECHECK-2026-11-10.md).
+Never activate Circus/PlayFab integration or bypass TamperingManager. No game
+assets, Steam DLL, binaries, saves, artwork or private logs are published.
+Written/published by Codex; previous Claude Code/Codex contributions retained.
