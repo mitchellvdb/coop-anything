@@ -507,6 +507,7 @@ static void hook_machine_code(void) {
 #include "runtime_prop_fixture.inc"
 #include "runtime_input_phase_fixture.inc"
 #include "runtime_review_fixture.inc"
+#include "runtime_selection_fixture.inc"
 #include "runtime_activity_fixture.inc"
 #include "runtime_hunger_fixture.inc"
 #include "runtime_quest_return_fixture.inc"
@@ -749,6 +750,7 @@ int main(void) {
     prop_cancel_checks();
     battle_input_phase_checks();
     runtime_review_checks();
+    selection_transition_checks();
     hunger_transactions();
     quest_return_transactions();
     activity_transactions();

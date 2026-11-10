@@ -149,6 +149,7 @@ int dd_action_valid(const dd_action *a) {
     case DD_ACT_OWNERS: return party_ids_valid(a->u.owners.heroes) &&
         (a->u.owners.heroes[0] || a->u.owners.heroes[1] || a->u.owners.heroes[2] || a->u.owners.heroes[3]);
     case DD_ACT_ITEM: return a->u.item.op<=DD_ITEM_OP_BAG_CHECK && (a->u.item.hero<4 || a->u.item.hero==255) && a->u.item.inv<=1 && a->u.item.flag<=1 &&
+        (a->u.item.op!=DD_ITEM_OP_SELECT || (!a->u.item.state && a->u.item.hero<4 && a->u.item.id && a->u.item.id!=UINT32_MAX && !a->u.item.inv && !a->u.item.flag)) &&
         (a->u.item.op!=DD_ITEM_OP_BAG_CHECK || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.inv)) &&
         (a->u.item.op!=DD_ITEM_OP_QUEST_RETURN || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.flag)) &&
         (a->u.item.op!=DD_ITEM_OP_HUNGER || (a->u.item.round && !a->u.item.state && a->u.item.hero==255 && a->u.item.type && a->u.item.amount<=0x42800000u)) &&

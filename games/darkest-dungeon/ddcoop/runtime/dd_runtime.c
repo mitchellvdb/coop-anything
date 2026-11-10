@@ -122,7 +122,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
-static const char g_mod_version[] = "0.5.0-test71";
+static const char g_mod_version[] = "0.5.0-test72";
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;

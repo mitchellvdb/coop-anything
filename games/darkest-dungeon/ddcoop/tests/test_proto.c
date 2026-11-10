@@ -417,6 +417,28 @@ static void test_desync_wire(void) {
     m.u.town.action.u.use.door=7;
     CHECK(!dd_encode(&m,wire,sizeof wire),"unknown prop operation refused");
 }
+static void test_selection_identity(void) {
+    uint8_t wire[256]; dd_msg out = {0}; size_t used = 0;
+    for (unsigned rank=0;rank<4;rank++) {
+        dd_action a = {0}; a.kind=DD_ACT_ITEM; a.u.item.op=DD_ITEM_OP_SELECT;
+        a.u.item.hero=(uint8_t)rank; a.u.item.area=100; a.u.item.id=11+rank;
+        dd_msg m=town(DD_MSG_TOWN_APPLY,a);
+        size_t n=dd_encode(&m,wire,sizeof wire);
+        CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && used==n &&
+              out.u.town.action.u.item.id==11+rank,"selection persistent identity roundtrip");
+        for (unsigned invalid=0;invalid<6;invalid++) {
+            dd_msg bad=m;
+            if(invalid==0)bad.u.town.action.u.item.id=0;
+            if(invalid==1)bad.u.town.action.u.item.id=UINT32_MAX;
+            if(invalid==2)bad.u.town.action.u.item.hero=255;
+            if(invalid==3)bad.u.town.action.u.item.state=0x1d;
+            if(invalid==4)bad.u.town.action.u.item.inv=1;
+            if(invalid==5)bad.u.town.action.u.item.flag=1;
+            CHECK(!dd_encode(&bad,wire,sizeof wire),"selection malformed identity/phase %u",invalid);
+        }
+    }
+    puts("Selection packet: four ranks carry persistent identity; missing/sentinel hero, combat phase and unrelated flags refused");
+}
 int main(void) {
     test_desync_wire();
     test_roundtrip();
@@ -424,6 +446,7 @@ int main(void) {
     test_decode_errors();
     test_camp_skill_rank_bounds();
     test_activity_packets();
+    test_selection_identity();
     fuzz();
     printf("%s (%d failure%s)\n", failures ? "FAILED" : "OK", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

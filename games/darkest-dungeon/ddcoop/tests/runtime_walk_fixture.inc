@@ -61,6 +61,12 @@ static void __fastcall wk_select(void *party, int32_t index) {
     CHECK(party == (void *)(wk_raid_lists + 8));
     wk_selects++;
     wk_select_index = index;
+    /* Native606450 also stores Party.selected+430 (raid+438). */
+    uint64_t begin = 0, end = 0, selected = 0;
+    memcpy(&begin, party, 8); memcpy(&end, (uint8_t *)party+8, 8);
+    if (begin && end>=begin && index>=0 && (uint64_t)index<(end-begin)/8)
+        memcpy(&selected, (void *)(uintptr_t)(begin+(uint64_t)index*8), 8);
+    memcpy((uint8_t *)party+0x430, &selected, 8);
 }
 static uintptr_t __fastcall wk_interact(void *prop, int32_t option, void *hero) {
     CHECK(prop == wk_props[1]);

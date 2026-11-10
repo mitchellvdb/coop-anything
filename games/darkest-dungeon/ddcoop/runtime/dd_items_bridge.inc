@@ -340,9 +340,12 @@ static void __fastcall hook_panel_close(void *functor) {
 /* The player clicked another hero, outside a fight. A curio or item then uses that hero, so the other copy must have it too (owner's run, 16:12: the destress went to the wrong hero). */
 static void walk_selection_poll(const walk_view *v) {
     uint64_t hero = 0;
+    uint32_t id = 0;
     uint8_t rank = 0;
     dd_action a;
     if (!walk_shared() || v->battle || !safe_read((uintptr_t)v->raid + 0x438, &hero, 8) || !hero || !walk_hero_rank(v->raid, hero, &rank)) return;
+    id = battle_hero_id(hero);
+    if (!id || id == UINT32_MAX) return;
     if (g_walk_selected == (int)rank) return;
     int first = g_walk_selected < 0;
     g_walk_selected = (int)rank;
@@ -351,6 +354,7 @@ static void walk_selection_poll(const walk_view *v) {
     a.kind = DD_ACT_ITEM;
     a.u.item.op = DD_ITEM_OP_SELECT;
     a.u.item.hero = rank;
+    a.u.item.id = id;
     a.u.item.area = v->area;
     memcpy(&a.u.item.pos, &v->pos, 4);
     a.u.item.rules = battle_rules();
@@ -1121,7 +1125,13 @@ static int item_gate(const dd_msg *m) {
     } else if (a->u.item.op == DD_ITEM_OP_CURIO) {
         limit = 5000;
         go = have && curio_open(&v);
-    } else if (a->u.item.op == DD_ITEM_OP_SELECT || a->u.item.op == DD_ITEM_OP_QUEST_ONE || a->u.item.op == DD_ITEM_OP_QUEST_TWO) {
+    } else if (a->u.item.op == DD_ITEM_OP_SELECT) {
+        /* The faster copy emits its post-battle selection before the other
+         * native victory presentation finishes. Keep the expected FIFO head
+         * intact; selecting during that last battle frame would be refused. */
+        limit = 30000;
+        go = have && !v.battle && v.area == a->u.item.area;
+    } else if (a->u.item.op == DD_ITEM_OP_QUEST_ONE || a->u.item.op == DD_ITEM_OP_QUEST_TWO) {
         go = 1;
     } else if (item_is_camp(a->u.item.op)) {
         uint32_t stage = 0;
@@ -1146,13 +1156,44 @@ static int item_gate(const dd_msg *m) {
     if (!go && now <= g_item_wait_until) {
         if (!g_item_gate_told) {
             g_item_gate_told = 1;
-            dd_log("Item: order op=%u waits for this copy (battle state=%u)", a->u.item.op, v.battle);
+            dd_log("Item: order op=%u waits for this copy (readable=%d battle=%u area=%08x expected=%08x)",
+                   a->u.item.op, have, v.battle, v.area, a->u.item.area);
         }
         return 1;
     }
     g_item_gate_told = 0;
     g_item_wait_until = 0;
     return 0;
+}
+/* SELECT has a persistent identity, not just a rank that a shuffle may reuse.
+ * The pinned606450 native selector writes Party.selected+430 (raid+438).
+ * Check the effect before ACK; a missing native function is never success. */
+static int item_select_apply(const walk_view *v, const dd_action *a) {
+    uint64_t begin = 0, end = 0, hero = 0, selected = 0;
+    int32_t before_field = 0, after_field = -1;
+    unsigned rank = a->u.item.hero;
+    if (v->battle || v->area != a->u.item.area || !g_party_select || rank >= 4 ||
+        !a->u.item.id || !safe_read((uintptr_t)v->raid + 8, &begin, 8) || !begin ||
+        !safe_read((uintptr_t)v->raid + 0x10, &end, 8) || end < begin ||
+        (end-begin)%8 || (end-begin)/8 > 4 || rank >= (end-begin)/8 ||
+        !safe_read((uintptr_t)(begin+rank*8), &hero, 8) || !hero ||
+        battle_hero_id(hero) != a->u.item.id ||
+        !safe_read((uintptr_t)v->display + 0x3f88, &before_field, 4)) {
+        dd_log("Item: selection refused (battle=%u area=%08x expected=%08x rank=%u hero=%u)",
+               v->battle, v->area, a->u.item.area, rank, a->u.item.id);
+        return 0;
+    }
+    walk_select(v, (uint8_t)rank);
+    if (!safe_read((uintptr_t)v->raid + 0x438, &selected, 8) || selected != hero ||
+        !safe_read((uintptr_t)v->display + 0x3f88, &after_field, 4) ||
+        after_field != (int32_t)((end-begin)/8)-1-(int32_t)rank ||
+        battle_hero_id(selected) != a->u.item.id) {
+        dd_log("Item: native selection effect could not be verified (rank=%u hero=%u)",rank,a->u.item.id);
+        runtime_sync_stop(3);
+        return 0;
+    }
+    dd_log("Item: hero %u selected (rank=%u role=%s)", a->u.item.id, rank, dd_role_name(g_cfg.role));
+    return 1;
 }
 static int item_apply(const dd_action *a) {
     if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) return quest_return_apply(a);
@@ -1187,6 +1228,8 @@ static int item_apply(const dd_action *a) {
         return 1;
     }
     if (!g_walk_view(&v)) {
+        if (a->u.item.op == DD_ITEM_OP_SELECT)
+            dd_log("Item: selection has no readable raid after bounded wait (area=%08x rank=%u hero=%u)",a->u.item.area,a->u.item.hero,a->u.item.id);
         if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) { runtime_sync_stop(2); return 0; }
         return refused;
     }
@@ -1217,10 +1260,7 @@ static int item_apply(const dd_action *a) {
     if (a->u.item.op == DD_ITEM_OP_BAG_SLOT) return bag_apply(&v, a);
     overlay = v.display + DD_WALK_LOOT_OVERLAY;
     if (a->u.item.op == DD_ITEM_OP_SELECT) {
-        if (v.battle || a->u.item.hero == 255) return refused;
-        dd_log("Item: hero %u selected (role=%s)", a->u.item.hero, dd_role_name(g_cfg.role));
-        walk_select(&v, a->u.item.hero);
-        return 1;
+        return item_select_apply(&v, a);
     }
     if (item_is_camp(a->u.item.op)) {
         uint32_t stage = 0;
