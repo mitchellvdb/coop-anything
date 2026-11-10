@@ -1,4 +1,4 @@
-# DDCoop build and validation — test73 / duo56
+# DDCoop build and validation — test74 / duo57
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -10,9 +10,10 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 135 named signatures cover 131 native
-entrypoints (some deliberate alias names);88 live/early hook targets are distinct.
-Runtime protocol 33; exact runtime hello version73 also required. Launcher wire 3.
+Never relax pins for an unknown update. 136 named signatures cover 132 distinct
+native addresses:131 function entries plus one exact weekly caller witness
+(some deliberate alias names);88 live/early hook targets are distinct.
+Runtime protocol 33; exact runtime hello version74 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -27,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test73"
+    set "DDC_VERSION=0.5.0-test74"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -52,6 +53,7 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_activity_layout.py "%DD_GAME_EXE%"
     python -I tests/test_selection_layout.py "%DD_GAME_EXE%"
     python -I tests/test_prop_choice_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_activity_weekly_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -77,8 +79,8 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-For duo56, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo56. Gameplay source remains identical. Source
+For duo57, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo57. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:
@@ -122,3 +124,12 @@ curio items without a shared effect. Thirteen read-only native proofs/135 named
 pins/131 entries/88 hooks, final native/MSVC ASan and full normal/duo launcher
 suites are validation requirements. See runtime/PROP-CHOICES.md. Wire33/hello73
 requires all new peers. No live DLC or full-state-verification claim is added.
+
+Test74 distinguishes the automatic weekly activity assignment caller from UI
+Accept; it also centralizes startup/hello runtime version reporting. New bridge
+fixtures reproduce322 assertion failures with the old hook, then pass with the
+fix across all4 roles/all6 stress activities, stale EMPTY/COMMITTED caches,
+single modeled native cost/effect, no extra packets/notices, UI ordering, STOP
+and nested applies. Fourteen read-only proofs include the exact weekly/UI caller
+proof. The new136th pin is a caller witness, not another hook/function entry.
+See runtime/ACTIVITY-WEEKLY.md for the live session evidence and validation limits.

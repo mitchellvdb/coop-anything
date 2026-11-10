@@ -1,39 +1,36 @@
-# Test73 / duo56
+# Test74 / duo57
 
-One shared resolution for curio/obstacle hand/tool/X/button/item drop/routed click.
-All4 players may initiate, including automatic obstacle panels and normal NULL
-native actor. First valid accepted choice wins; rejected rivals change no hero
-selection, Rules, HP/stress or item count. See [PROP-CHOICES.md](runtime/PROP-CHOICES.md).
+Small weekly activity fix after an otherwise successful owner four-window session.
+All3guest applied-action lists match seq1..149 with no gaps/duplicates; all4checked
+post-return Town states match9heroes, then3shared recruits bring every roster to12.
+No gameplaySTOP. A final connectionloss stops peers; intentionalclose versus lost
+process not established. Propitem3/X1 observed live; no hand/shovel action observed.
 
-Baseline72 suite passes. Its NULL-hand negative control reproduces native1/shared
-packets0; initialsix-route new fixtures fail62 assertions before fixes. Final
-expanded native/protocol/fuzz/FIFO and MSVC ASan tests pass: seven routes/all4
-initiators/all3 receivers,25 same-panel pairs x4 winners x3 receivers, source
-pickup/drop/cleanup including last item/stale Restore, nullable actor, delayed
-readiness, stopped/unready/malformed captures, stale choices/OPEN/X-reopen, exact
-actor/revision and all-peer synthetic HP/stress/items/Rules. Fourteen malformed/
-unsupported native item-match cases reject without effects or unnecessary STOP.
-Native routing distinguishes curio items from ordinary food; changed delayed
-ordinary-item routing refuses before effect. Legacy optimistic curio path disabled.
+Wrong reserved-slot notice was real: native weekly AssignHero was refused as UI
+Accept without a DRAFT. Exactnative return53cbef now goes straight to the original,
+without guest requests/hostobserved broadcasts. UI68b0e7 stays shared/ordered.
+Nested admitted effects do not re-emit, and outsideSTOP/unreadyguards still apply.
+Existing town epoch reseeds afterward. Startup banner/hello share one versionmacro.
+No earlier save repair claimed. See runtime/ACTIVITY-WEEKLY.md.
 
-PASS thirteen read-only native proofs:135 named pins/131 entrypoints/88 distinct
-live/early hooks, early typed Item/source restoration and exact pure route/match
-semantics. One new live drop hook, two new pure predicate pins. Full normal/duo
-launcher/fake-Steam/restore,10000 restart interleavings/four-core transfer,
-5000 four-copy/640000 reservation model requests,18/14 native adapter cases,
-DLC5000/1200 currency cases, bounded actual TCP/crypto, overlay/hidden English/
-embedded GIF preview and DLC readiness15 tests (one OS symlink privilege skip)
-pass. Historical72 evidence labelled; existing warnings recorded.
+New regression reproduces322 before-fix assertions then passes native/MSVC ASan:
+all4roles/all6stressactivities, EMPTY/COMMITTED caches, native modeled effect/cost
+once, no packets/notices, ordinaryUIaccept/replay, STOP/nestedapply. PASS14exact
+native proofs,136pins/132addresses(131functionentries+1callerwitness)/88hooks.
+PASS both full launcher/fake-Steam/restore,10000restartsimulations/four-coretransfer,
+retained prop/selection/activity/guest-autonomy/transport/FIFO/protocol/fuzz,
+5000fourcopy reservationmodels/640000requests,DLC5000/1200currency, overlay/hidden
+English/embedded GIFpreview/staticanalysis. Existingwarnings recorded; DLCdata
+15tests with1OSsymlinkprivilegeskip. Nativeeffects modeled; no realgame launched.
 
-278 text source archive files, exact ZIP/binary pins/labels/payload, normal/
-duo source parity and patches versus72/Claude64 byte-verified. Duo56 uses DD_DUO
-and differs only in runtime pin/test instructions. RELEASES.json lists hashes;
-player binaries remain outside git. Runtime33/exacthello73 cannot mix with72.
+281 text sourcearchive files; exactZIP/pins/labels/payload/GIF and normal/duo
+parity verified; patches versus73/Claude64 reproduce all sourcebytes. Sources
+published in4commits: runtime, minimalClaude-ownedlauncher/tools, runtimepin,
+release/handoff. Player binaries stay outsidegit. Protocol33/exacthello74 needs
+matchingpeers. No newnative/multi-PC/Cloud livevalidation, Linux/MinGW/Capstone run.
 
-No real game/installer/owner-save/Steam mutation, new live native/multi-PC/Cloud
-validation, Linux/MinGW/optional Capstone run. Native effects modeled. General
-native interaction routes covered, not every DLC/mod effect live-tested. Direct
-loot-to-hero equip, full-state verification, prior provisions crash/full live DLC
-remain open. Host game/launcher keep running; guest-nosave/host checkbox retained.
-Recovery uses checkpoint and may lose unsaved progress; solo batch guests restart
-manually. Earlier bar/provisioning/departure/selection work is retained.
+Next livecheck: normalmissionreturn and shared bar/abbey draft/Accept/X. No forced
+wipe needed. Direct loot-to-hero equip, complete stateverification, olderprovisions
+crash/full native/liveDLC remain open. Host game/launcher keep running; guests-nosave,
+hostcheckbox retained. Recoverymay loseunsaved progress; solo batchguests restart
+manually. Earlier activity/provisioning/departure/selection/propwork retained.
