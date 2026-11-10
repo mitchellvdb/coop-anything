@@ -1,3 +1,13 @@
+# Test73 prop-choice contract
+
+Runtime protocol33/exact hello73; launcher wire3 unchanged. USE now carries a
+monotone resolution/scene revision and persistent actor ID. Hand/tool/X/direct
+curio drop/click all use the ordered apply path for host and guests alike.
+Native NULL actor is preserved by use.flag for terminal choices. Stale choices
+and OPEN after a resolved panel refuse before native/selection/Rules effects.
+Automatic obstacle panels need no explicit shared OPEN. No owner-file/mapping
+change. See runtime/PROP-CHOICES.md. Existing session/recovery invariants remain.
+
 # Test72 selection transition addendum
 
 Runtime byte protocol32/launcher3 remain. Exact runtime hello72 is mandatory:

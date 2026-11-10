@@ -1,5 +1,12 @@
 DDCoop - development test kit {VERSION}
 
+New in test73 / duo56
+--------------------
+Hand/tool/X/item choices on curios and obstacles now resolve as one shared
+choice for every player. This includes items used from the bag by click or drag.
+A competing choice cannot run another result or consume an extra item. The first
+accepted valid choice wins. Everyone needs this new kit. Read PROP-CHOICES.md and TESTSTAPPEN-test73.txt.
+
 New in test72 / duo55
 --------------------
 Post-combat hero selection waits for every receiving copy to finish its native
