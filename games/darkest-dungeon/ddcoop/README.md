@@ -1,42 +1,46 @@
 # DDCoop — Darkest Dungeon co-op
 
-Current development snapshot **test72 / duo55**, runtime byte protocol32 and
-launcher wire/lobby3. Exact runtime hello72 is mandatory for all participants.
-Source is isolated on game/darkest-dungeon-ddcoop under this subtree; unrelated
-projects/shared playbook are preserved. Prior contributions retained.
+Current snapshot **test73 / duo56**, runtime protocol33/exacthello73 and launcher
+wire/lobby3. All peers need matching new kits. Source stays on the dedicated
+`game/darkest-dungeon-ddcoop` branch under this subtree; other projects/shared
+playbook and existing Claude/Codex contributions are preserved.
 
-Players each run their own game. Supported shared actions can start from any
-player and are ordered through the host; hero ownership uses persistent IDs.
-Guests back up/replace/restore their selected slot and always run-nosave. Host
-saving follows its checkbox; selected slots1..9 only, profile_9 forbidden.
-Host keeps game/launcher running; no manual host approval for guest departure.
+Each player runs their own game. Supported shared actions can start from any
+player and are ordered through the host. Hero ownership uses persistent IDs.
+Guests back up/replace/restore their selected slot and always use-nosave; host
+saving follows its checkbox. Selected slots1..9 only, profile_9 forbidden.
+Host game/launcher remain running; no manual host approval for guest choices.
 
-The owner confirmed71 Tavern drafts and provisioning in a real four-window test.
-A subsequent stop at victory was a SELECT readiness race: host had ended combat,
-all3 guests were14-27ms behind, and immediate apply refused their battle state.
-SELECT now waits at the expected FIFO head for a same-area non-battle view, then
-checks persistent hero identity and the actual native effect before success.
-No ACK/effect while waiting, no overtaking and bounded timeout into refusal/STOP.
-See [transition analysis](runtime/SELECTION-TRANSITION.md), [BUILD.md](BUILD.md),
-[KIT.md](KIT.md), [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) and RELEASES.json.
+This kit repairs a local-only obstacle hand path: a normal native NULL actor
+made the old hook fall back to native with no request. Hand/tool/curio button/X,
+item drop and routed inventory click now use one ordered resolution. First
+accepted valid choice wins; exact revision/area/prop/kind/actor protects crossed
+or stale choices, including X/reopen and old OPEN. NULL native actor semantics
+are preserved. Pure preflight precedes selection/Rules/native effects.
 
-All4 initiators/all3 receivers are covered by actual bridge/FIFO/codec fixtures,
-including delayed combat/loading, wrong area/identity, malformed party vectors,
-missing/no-effect native function, timeout and stopped sessions. Existing71
-baseline passed; new tests fail75 assertions on old code, final native/MSVC ASan
-pass. Twelve exact read-only proofs include native selected pointer writes.
-Full normal/duo launcher/fake-Steam/restore, retained reservation/DLC/transport/
-recovery tests, isolated overlay and English/embedded GIF preview pass.
-Native effects are modeled; live repair still needs owner playtesting. No real
-game/installer/owner-save/Steam writes. Linux/MinGW/optional Capstone not run.
+Early typed drop and matched source cleanup prevent local inventory prediction
+and stale Restore counts. Ordinary food/hero use remains distinct through the
+native routing predicate, and unsupported curio items reject before effects.
+See [PROP-CHOICES.md](runtime/PROP-CHOICES.md), [BUILD.md](BUILD.md), [KIT.md](KIT.md),
+[HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) and RELEASES.json for scope and hashes.
 
-Test71's six Tavern/Abbey stress activities remain shared before Accept. Clear
-with X then place; no new atomic slot-to-slot move or Sanitarium extra choices.
-Full combat-state/transaction digest, exact cross-copy prices, remaining rank-
-based item uses, direct loot equip and prior provisions crash remain open. Nine
-DLC-feature groundwork/shard model APIs remain, native provisioning gold-only;
-[DLC.md](runtime/DLC.md) lists unvalidated full live DLC work. Resync uses a host
-checkpoint and may lose unsaved progress; solo batch guests restart manually.
-Never activate Circus/PlayFab integration or bypass TamperingManager.
-No binaries, game assets, Steam DLLs, saves, artwork or private logs published.
-Written/published by Codex; earlier Claude Code/Codex contributions retained.
+Native/MSVC ASan actual bridge/FIFO/codec tests pass: seven routes/all4 initiators/
+all3 receivers, NULL actor, delayed panel, source cleanup/last item,25 competing
+pairs x4 winners x3 receivers,14 native compatibility refusals, click-routing and
+no local fallback. Old72 NULL control reproduces localhand1/sharedpackets0; the
+initialsix-route before-fix test fails62 assertions. Thirteen exact read-only
+native proofs cover135 named pins/131 entrypoints/88 hooks. Full normal/duo
+launcher/fake-Steam/restore, retained transport/recovery/DLC/reservation models,
+isolated overlay and English/embedded GIF preview pass. Native effects modeled;
+new interactions still need owner playtests. No real game/installer/save/Steam
+write. Linux/MinGW/optional Capstone not run. Existing warnings recorded.
+
+Common native routes are covered, not a claim that every DLC/mod-specific effect
+has been live-tested. Direct loot-to-hero trinket equip, full transaction/combat-
+state verification, prior provisions crash and full native/live DLC remain open.
+The bar, guest provisioning/departure and post-combat selection fixes are retained.
+See [DLC.md](runtime/DLC.md); native supplies remain gold-only. Recovery uses the
+host checkpoint and may lose unsaved progress; solo batch guests restart manually.
+Never activate Circus/PlayFab integration or bypass TamperingManager. No binaries,
+game assets, Steam DLLs, saves, artwork or private player logs are published.
+Written/published by Codex; previous Claude Code/Codex contributions retained.

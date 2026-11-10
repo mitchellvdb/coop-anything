@@ -1,34 +1,39 @@
-# Test72 / duo55
+# Test73 / duo56
 
-Owner confirmed71 Tavern drafts and provisioning in the actual game. This kit
-repairs a subsequent post-combat SELECT timing race; see
-[SELECTION-TRANSITION.md](runtime/SELECTION-TRANSITION.md).
+One shared resolution for curio/obstacle hand/tool/X/button/item drop/routed click.
+All4 players may initiate, including automatic obstacle panels and normal NULL
+native actor. First valid accepted choice wins; rejected rivals change no hero
+selection, Rules, HP/stress or item count. See [PROP-CHOICES.md](runtime/PROP-CHOICES.md).
 
-PASS native/protocol/fuzz/FIFO and MSVC ASan actual-bridge regressions. The71
-baseline native/overlay/build passes; new fixture fails75 assertions before fix.
-All4 initiators/all3 receiving guests, host or guest late combat, missing view,
-no FIFO overtaking/native effect/ACK while waiting, exactly one selection when
-ready, same-area distant pixels, area/phase timeout, persistent ID/vector/native
-faults, no-effect postchecks, STOP and sequence guards. Four-rank codec tests
-reject invalid selection IDs/phase/flags. Bytewire32/launcher3 unchanged but
-exact runtime hello72 means older kits cannot mix.
+Baseline72 suite passes. Its NULL-hand negative control reproduces native1/shared
+packets0; initialsix-route new fixtures fail62 assertions before fixes. Final
+expanded native/protocol/fuzz/FIFO and MSVC ASan tests pass: seven routes/all4
+initiators/all3 receivers,25 same-panel pairs x4 winners x3 receivers, source
+pickup/drop/cleanup including last item/stale Restore, nullable actor, delayed
+readiness, stopped/unready/malformed captures, stale choices/OPEN/X-reopen, exact
+actor/revision and all-peer synthetic HP/stress/items/Rules. Fourteen malformed/
+unsupported native item-match cases reject without effects or unnecessary STOP.
+Native routing distinguishes curio items from ordinary food; changed delayed
+ordinary-item routing refuses before effect. Legacy optimistic curio path disabled.
 
-PASS twelve read-only EXE proofs with132 named pins/128 entrypoints/87 distinct
-live/early hook targets, including native606450 selected Hero* writes. No new
-hook or unknown-build relaxation. Full normal/duo launcher/fake-Steam/restore,
-10000 restart interleavings/four-core transfer, retained5000 four-copy/640000
-reservation requests,18/14 adapter cases, DLC5000/1200 currency cases and bounded
-actual localhost transport/crypto tests pass. DLC readiness15 cases (one actual
-OS symlink privilege skip), overlay/hidden English preview/GIF pass. Existing
-warnings recorded; no new analyzer diagnostic. Historical71 logs labelled.
+PASS thirteen read-only native proofs:135 named pins/131 entrypoints/88 distinct
+live/early hooks, early typed Item/source restoration and exact pure route/match
+semantics. One new live drop hook, two new pure predicate pins. Full normal/duo
+launcher/fake-Steam/restore,10000 restart interleavings/four-core transfer,
+5000 four-copy/640000 reservation model requests,18/14 native adapter cases,
+DLC5000/1200 currency cases, bounded actual TCP/crypto, overlay/hidden English/
+embedded GIF preview and DLC readiness15 tests (one OS symlink privilege skip)
+pass. Historical72 evidence labelled; existing warnings recorded.
 
-273 text source archive files. Exact ZIP/binary pins/labels/payload, source
-parity and patches versus71/Claude64 byte-verified. Duo55 uses DD_DUO and differs
-only in runtime pin/test steps; RELEASES.json records exact hashes. Player
-binaries remain outside git. No real game/installer/owner-save/Steam mutation,
-live multi-PC/Cloud/new native repair, Linux/MinGW/optional Capstone test.
-Native effects modeled. Full native DLC, exact cross-copy prices/full-state
-verification, remaining rank-based item uses, direct loot equip, prior provisions
-crash, Sanitarium extras and atomic slot-to-slot moves remain open. Host keeps
-game/launcher running; guests-nosave, host checkbox retained. Recovery resumes
-host checkpoint and may lose unsaved progress; solo batch guests restart manually.
+278 text source archive files, exact ZIP/binary pins/labels/payload, normal/
+duo source parity and patches versus72/Claude64 byte-verified. Duo56 uses DD_DUO
+and differs only in runtime pin/test instructions. RELEASES.json lists hashes;
+player binaries remain outside git. Runtime33/exacthello73 cannot mix with72.
+
+No real game/installer/owner-save/Steam mutation, new live native/multi-PC/Cloud
+validation, Linux/MinGW/optional Capstone run. Native effects modeled. General
+native interaction routes covered, not every DLC/mod effect live-tested. Direct
+loot-to-hero equip, full-state verification, prior provisions crash/full live DLC
+remain open. Host game/launcher keep running; guest-nosave/host checkbox retained.
+Recovery uses checkpoint and may lose unsaved progress; solo batch guests restart
+manually. Earlier bar/provisioning/departure/selection work is retained.
