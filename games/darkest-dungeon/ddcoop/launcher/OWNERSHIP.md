@@ -1,3 +1,13 @@
+# Test68 party editing amendment (Codex)
+
+Every connected player may compose the expedition party, including heroes whose
+combat owner is another player. Host transport orders actions; this grants no
+extra gameplay restriction to guests. Available heroes only. Old remembered IDs
+now in buildings are pruned from a new destination without ending treatment.
+Runtime31, launcher wire/lobby3 and mapping contracts remain unchanged. All PCs
+need the same68 runtime kit. Windows build default68; host save preference and
+guest-nosave unchanged. See runtime/PARTY-RETURN.md.
+
 # Test67 runtime compatibility amendment (Codex)
 
 Launcher wire/lobby3 and the live-party mapping contract remain unchanged.
