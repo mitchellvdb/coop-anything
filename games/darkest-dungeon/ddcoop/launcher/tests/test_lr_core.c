@@ -505,6 +505,80 @@ static void test_automatic_transfer_restart(void) {
     puts("Automatic restart transfer: 4 real cores, delayed modeled close/recovery, reverse joins preserve Player1..4 and ownership; fresh host checkpoint transferred byte-identically to all guests");
 }
 
+
+static void deliver_metadata(node *guest,const uint8_t *game,size_t size) {
+ lr_msg m={0};uint8_t wire[LR_MAX_MSG];size_t len;
+ m.type=LR_HELLO;m.a=LR_ROLE_HOST;m.b=guest->core.cfg.build;m.id=guest->core.cfg.kit;
+ len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());
+ memset(&m,0,sizeof m);m.type=LR_SESSION;m.a=3;memset(m.text,'a',LR_PASSWORD_LEN);
+ len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());
+ memset(&m,0,sizeof m);m.type=LR_SAVE_BEGIN;m.a=1;m.b=(uint32_t)size;strcpy(m.text,"profile_2");
+ len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());
+ memset(&m,0,sizeof m);m.type=LR_SAVE_FILE;m.a=(uint32_t)size;m.b=lr_crc32(0,game,size);strcpy(m.text,"persist.game.json");
+ len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());
+ for(size_t pos=0;pos<size;) {
+  memset(&m,0,sizeof m);m.type=LR_SAVE_CHUNK;m.a=(uint32_t)pos;m.data=game+pos;m.len=size-pos<LR_CHUNK?size-pos:LR_CHUNK;
+  len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());pos+=m.len;
+ }
+ memset(&m,0,sizeof m);m.type=LR_SAVE_END;len=lr_encode(&m,wire);CHECK(len);lr_core_on_message(&guest->core,1,LR_CH_CONTROL,wire,len,now_ms());
+}
+static void test_campaign_metadata_refusal(void) {
+ static uint8_t game[65536];size_t size;char original_root[sizeof root];strcpy(original_root,root);
+ char path[LR_PATH_MAX],dir[LR_PATH_MAX],name[64];node h,g;
+ static const char *const invalid_dlc[]={"musketeer","Bad Name"};
+ for(unsigned kind=0;kind<5;kind++) {
+  snprintf(name,sizeof name,"metadata-host-%u",kind);setup_node(&h,1,name);make_host_campaign(h.core.cfg.remote_dir);
+  lr_join(dir,sizeof dir,h.core.cfg.remote_dir,"profile_2");lr_join(path,sizeof path,dir,"persist.game.json");
+  if(kind==0)CHECK(lr_delete_file(path));
+  else if(kind==1)write_text(dir,"persist.game.json","not DSON metadata");
+  else if(kind==2){size=dw_game(game,0,"",invalid_dlc,2);CHECK(lr_write_file(path,game,size));}
+  else if(kind==3){static const char *const future[]={"future_feature"};size=dw_game(game,0,"",future,1);CHECK(lr_write_file(path,game,size));}
+  else h.no_dlc=1;
+  CHECK(!lr_core_host_start(&h.core,now_ms()) && h.core.state==LR_ST_FAILED && !h.core.relay_up);
+  lr_core_free(&h.core);drop_queue();
+ }
+ for(unsigned kind=0;kind<5;kind++) {
+  snprintf(name,sizeof name,"metadata-guest-%u",kind);setup_node(&g,2,name);make_guest_campaign(g.core.cfg.remote_dir);
+  lr_join(g.core.cfg.restore_path,sizeof g.core.cfg.restore_path,g.core.cfg.remote_dir,"original-recovery.bin");
+  CHECK(lr_core_guest_join(&g.core,1,now_ms()));drop_queue();
+  if(kind==0){memcpy(game,"not DSON metadata",17);size=17;}
+  else if(kind==1)size=dw_game(game,0,"",invalid_dlc,2);
+  else if(kind==2)size=dw_game(game,1,"tutorial",NULL,0);
+  else if(kind==4){static const char *const future[]={"future_feature"};size=dw_game(game,0,"",future,1);}
+  else {const char *text="{\"data\":{\"inraid\":true,\"raiddungeon\":\"tutorial\"}}";size=strlen(text);memcpy(game,text,size);}
+  deliver_metadata(&g,game,size);
+  CHECK(g.core.state==LR_ST_FAILED && !lr_core_take_launch(&g.core));
+  CHECK(!g.core.backup_path[0] && !lr_dir_exists(g.core.cfg.backup_root) && !lr_file_exists(g.core.cfg.restore_path));
+  lr_join(dir,sizeof dir,g.core.cfg.remote_dir,"profile_2");lr_join(path,sizeof path,dir,"persist.part00.json");
+  char *own=read_text(path);CHECK(own && !strcmp(own,"{\"guest\": \"own\"}"));free(own);
+  lr_join(path,sizeof path,dir,"persist.game.json");CHECK(!lr_file_exists(path));
+  lr_core_free(&g.core);drop_queue();
+ }
+ static const char *const all[]={"musketeer","crimson_court","flagellant","districts","shieldbreaker","color_of_madness","fires_edge","runaway","duelist"};
+ for(unsigned flag=0;flag<9;flag++) {
+  snprintf(name,sizeof name,"metadata-feature-%u",flag);setup_node(&g,2,name);make_guest_campaign(g.core.cfg.remote_dir);
+  lr_join(g.core.cfg.restore_path,sizeof g.core.cfg.restore_path,g.core.cfg.remote_dir,"original-recovery.bin");
+  g.no_dlc=1;CHECK(lr_core_guest_join(&g.core,1,now_ms()));drop_queue();
+  size=dw_game(game,0,"",all+flag,1);deliver_metadata(&g,game,size);
+  CHECK(g.core.state==LR_ST_FAILED && strstr(g.core.error,lr_dlc_title(all[flag])));
+  CHECK(!g.core.backup_path[0] && !lr_dir_exists(g.core.cfg.backup_root) && !lr_file_exists(g.core.cfg.restore_path));
+  lr_core_free(&g.core);drop_queue();
+ }
+ setup_node(&g,2,"metadata-all-present");make_guest_campaign(g.core.cfg.remote_dir);
+ lr_join(g.core.cfg.restore_path,sizeof g.core.cfg.restore_path,g.core.cfg.remote_dir,"original-recovery.bin");
+ CHECK(lr_core_guest_join(&g.core,1,now_ms()));drop_queue();size=dw_game(game,0,"",all,9);deliver_metadata(&g,game,size);
+ CHECK(g.core.state==LR_ST_GUEST_LAUNCH && lr_file_exists(g.core.cfg.restore_path) && g.core.backup_path[0]);
+ lr_core_free(&g.core);drop_queue();
+ /* Passive arena_mp metadata is present in real regular saves; it does not activate PvP. */
+ setup_node(&g,2,"metadata-passive-arena");make_guest_campaign(g.core.cfg.remote_dir);g.no_dlc=1;
+ lr_join(g.core.cfg.restore_path,sizeof g.core.cfg.restore_path,g.core.cfg.remote_dir,"original-recovery.bin");
+ CHECK(lr_core_guest_join(&g.core,1,now_ms()));drop_queue();
+ static const char *const passive[]={"arena_mp"};size=dw_game(game,0,"",passive,1);deliver_metadata(&g,game,size);
+ CHECK(g.core.state==LR_ST_GUEST_LAUNCH && lr_file_exists(g.core.cfg.restore_path));
+ lr_core_free(&g.core);drop_queue();strcpy(root,original_root);
+ printf("Campaign preflight: missing/corrupt metadata and tutorial refused before backup/write; all nine feature flags reject missing DLC and valid complete feature list launches via recovery journal\n");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(4242);
@@ -1007,6 +1081,7 @@ int main(void) {
     lr_core_free(&guest2.core);
     drop_queue();
     test_automatic_transfer_restart();
+    test_campaign_metadata_refusal();
     printf(failures ? "test_lr_core: %d FAILURES\n" : "test_lr_core: all passed\n", failures);
     return failures != 0;
 }

@@ -1,5 +1,6 @@
 #include "lr_core.h"
 #include "lr_snapshot.h"
+#include "lr_dlc.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -550,6 +551,8 @@ static int store_campaign(lr_core *c) {
 
 /* ---- host ---- */
 
+static int campaign_dlc_ok(lr_core *c, const lr_game_info *game);
+
 #define LR_HOST_RESTART_TEXT "Your friend left. Close the game and click Host again to start a new session."
 void lr_core_host_loaded(lr_core *c) {
     if (c->role != LR_ROLE_HOST || c->host_loaded) return;
@@ -610,7 +613,9 @@ int lr_core_host_start(lr_core *c, uint64_t now_ms) {
     }
     lr_game_info game;
     if (!files_game_info(c, &game)) {
-        logf_(c, "campaign: persist.game.json missing or unreadable; tutorial and DLC not checked");
+        files_free(c);
+        fail(c, "Campaign metadata (persist.game.json) is missing or unreadable; tutorial and DLC cannot be checked safely. Nothing was sent.");
+        return 0;
     } else {
         log_dlc(c, &game);
         if (game.text || game.tutorial) {
@@ -621,6 +626,7 @@ int lr_core_host_start(lr_core *c, uint64_t now_ms) {
             return 0;
         }
     }
+    if (!campaign_dlc_ok(c, &game)) { files_free(c); return 0; }
     lr_owners_init(&c->owners);
     c->owners_sent = 0;
     for (uint32_t i = 0; i < c->file_count; i++)
@@ -800,33 +806,34 @@ int lr_core_guest_join(lr_core *c, uint64_t host_peer, uint64_t now_ms) {
 
 /* Guest: the game calls a campaign with DLC we lack "corrupted" and may start a new one in its place, so
  * check before our own save is touched. Fails the session (with the missing DLC by name) when one is missing. */
-static int guest_dlc_ok(lr_core *c) {
-    lr_game_info game;
-    if (!files_game_info(c, &game)) {
-        logf_(c, "campaign: persist.game.json missing or unreadable; DLC not checked");
-        return 1;
+static int campaign_dlc_ok(lr_core *c, const lr_game_info *game) {
+    log_dlc(c, game);
+    for (int i = 0; i < game->dlc_count; i++) if (strcmp(game->dlc[i], "arena_mp") && !lr_dlc_known(game->dlc[i])) {
+        char msg[sizeof c->error];
+        snprintf(msg, sizeof msg, "This campaign uses a DLC feature this DDCoop version does not support: %s. Use matching supported DLC and DDCoop versions; no campaign was replaced.", game->dlc[i]);
+        fail(c, msg); return 0;
     }
-    log_dlc(c, &game);
     if (!c->cfg.has_dlc) return 1;
     char missing[100];
     size_t k = 0;
     missing[0] = 0;
-    for (int i = 0; i < game.dlc_count; i++) {
-        int have = c->cfg.has_dlc(c->cfg.ctx, game.dlc[i]);
-        logf_(c, "DLC %s: %s", game.dlc[i], have ? "installed" : "MISSING");
-        const char *title = lr_dlc_title(game.dlc[i]);
+    for (int i = 0; i < game->dlc_count; i++) {
+        /* Some ordinary campaign saves retain this passive flag. No Circus assets/API/native path is used. */
+        if (!strcmp(game->dlc[i], "arena_mp")) continue;
+        int have = c->cfg.has_dlc(c->cfg.ctx, game->dlc[i]);
+        logf_(c, "DLC %s: %s", game->dlc[i], have ? "installed" : "MISSING");
+        const char *title = lr_dlc_title(game->dlc[i]);
         if (have || strstr(missing, title)) continue; /* flagellant and districts are both The Crimson Court */
         if (k + strlen(title) + 12 < sizeof missing)
             k += (size_t)snprintf(missing + k, sizeof missing - k, "%s%s%s", k ? ", " : "", title,
-                                  strcmp(game.dlc[i], "musketeer") == 0 ? " (gratis)" : "");
+                                  strcmp(game->dlc[i], "musketeer") == 0 ? " (gratis)" : "");
         else if (k + 6 < sizeof missing && !strstr(missing, "..."))
             k += (size_t)snprintf(missing + k, sizeof missing - k, ", ...");
     }
     if (!k) return 1;
     char msg[sizeof c->error];
     snprintf(msg, sizeof msg,
-             "The host campaign requires DLC you do not have: %s. Install it through Steam and join again; "
-             "your own save has not been changed.",
+             "This campaign requires DLC data that is missing or incomplete: %s. Install or verify the DLC through Steam, then try again; no campaign was replaced.",
              missing);
     fail(c, msg);
     return 0;
@@ -900,7 +907,13 @@ static void guest_save_message(lr_core *c, const lr_msg *m) {
             fail(c, lr_bye_text(LR_BYE_GAME_RUNNING));
             return;
         }
-        if (!guest_dlc_ok(c)) {
+        lr_game_info game;
+        if (!files_game_info(c, &game) || game.text || game.tutorial) {
+            send_simple_to(c, c->peer, LR_SAVE_RESULT, LR_BYE_SAVE);
+            fail(c, "The host campaign metadata is unreadable or still an unfinished tutorial. Ask the host to finish and save a campaign first; your own save has not been changed.");
+            return;
+        }
+        if (!campaign_dlc_ok(c, &game)) {
             send_simple_to(c, c->peer, LR_SAVE_RESULT, LR_BYE_DLC);
             return;
         }

@@ -247,7 +247,7 @@ const char *lr_bye_text(uint32_t reason) {
     case LR_BYE_BUILD: return "Your Darkest Dungeon versions differ; update the game through Steam.";
     case LR_BYE_SAVE: return "The campaign could not be transferred.";
     case LR_BYE_GAME_RUNNING: return "Close Darkest Dungeon first, then join again.";
-    case LR_BYE_PROTOCOL: return "onverwacht bericht (verschillende versies?)";
+    case LR_BYE_PROTOCOL: return "Unexpected message (different versions?)";
     case LR_BYE_RESTART: return "The host must close the game and click Host again first; then join the new session.";
     case LR_BYE_STARTED: return "The host's game has already loaded the campaign. Everyone has to join before that: ask the host to close the game, choose the number of players and click Host again.";
     case LR_BYE_DLC: return "Your friend is missing DLC required by this campaign (see their launcher).";

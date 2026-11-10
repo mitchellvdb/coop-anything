@@ -37,7 +37,7 @@ typedef struct {
     void *ctx;
     int (*allowed)(void *ctx, uint64_t peer);   /* host: is this peer in our lobby? NULL = everyone */
     int (*game_running)(void *ctx);             /* guest: is Darkest.exe open? NULL = never */
-    int (*has_dlc)(void *ctx, const char *name); /* guest: is this DLC installed ("musketeer")? NULL = not checked */
+    int (*has_dlc)(void *ctx, const char *name); /* local campaign-DLC data ready ("musketeer")? NULL = data presence not checked */
     void (*random)(void *ctx, uint8_t *buf, size_t len);
     void (*log)(void *ctx, const char *line);   /* NULL = no log */
     uint32_t build;                              /* first 4 bytes of the Darkest.exe SHA-256 */

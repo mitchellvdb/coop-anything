@@ -1,4 +1,17 @@
 DDCoop - development test kit {VERSION}
+
+New in test70 / duo53
+--------------------
+Independent fault simulations found and repaired lost STOP messages under full
+queues, unbounded network sends, unsafe camping indices and town mismatch ACKs.
+Campaign metadata and nonempty required DLC data are checked before replacement.
+A valid absent DLC-list is treated as an empty list; corrupted lists are refused.
+Read RECHECK-2026-11-10.md and DLC.md for evidence and remaining live-test limits.
+
+Campaign-DLC groundwork now covers nine features, including Fire's Edge and its
+two heroes. It is not complete live DLC support. Native shard supplies still
+refuse pending measured currency/price/refund binding; no prices are invented.
+
 ======================================
 
 New in test69 / duo52

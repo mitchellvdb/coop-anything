@@ -29,6 +29,7 @@
 #include "lr_steam.h"
 #include "lr_mascot.h"
 #include "lr_logs.h"
+#include "lr_dlc.h"
 
 /* How long a session waits for Steam to serve a save the game just wrote (LR_PREPARE_UNREAD), trying every 3 s. */
 #define LR_STEAM_WAIT_MS 90000u
@@ -247,32 +248,10 @@ static int game_running_cb(void *ctx) {
     return darkest_running();
 }
 
-/* Steam installs a DLC the account owns as <game>\dlc\<app id>_<name>; parts of a DLC that a campaign lists
- * on their own ("flagellant", "districts") are <game>\dlc\<app id>_<name>\features\<part>. Only reads folder
- * names. */
+/* Data readiness only: a package directory alone does not prove its feature files exist. */
 static int has_dlc_cb(void *ctx, const char *name) {
     (void)ctx;
-    char pattern[LR_PATH_MAX], dlc[LR_PATH_MAX];
-    lr_join(dlc, sizeof dlc, G.root, "dlc");
-    lr_join(pattern, sizeof pattern, dlc, "*");
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW(W(pattern), &fd);
-    if (h == INVALID_HANDLE_VALUE) return 0;
-    int found = 0;
-    size_t n = strlen(name);
-    do {
-        char folder[LR_PATH_MAX], path[LR_PATH_MAX], features[LR_PATH_MAX];
-        to_utf8(fd.cFileName, folder, sizeof folder);
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || folder[0] == '.') continue;
-        size_t len = strlen(folder);
-        if (len > n && folder[len - n - 1] == '_' && strcmp(folder + len - n, name) == 0) found = 1;
-        lr_join(path, sizeof path, dlc, folder);
-        lr_join(features, sizeof features, path, "features");
-        lr_join(path, sizeof path, features, name);
-        if (lr_dir_exists(path)) found = 1;
-    } while (!found && FindNextFileW(h, &fd));
-    FindClose(h);
-    return found;
+    return lr_dlc_present(G.root, name);
 }
 
 static void set_check(int i, int ok, const char *fmt, ...) {
@@ -1209,7 +1188,7 @@ static void update_friends(void) {
     for (int i = 0; i < n; i++) {
         char line[256];
         snprintf(line, sizeof line, "%s   %s", list[i].name,
-                 list[i].hosting ? "<< HOST DDCOOP - klik Join" : list[i].in_game ? "(in a game)" : "(online)");
+                 list[i].hosting ? "<< HOST DDCOOP - click Join" : list[i].in_game ? "(in a game)" : "(online)");
         LRESULT idx = SendMessageW(G.friends, LB_ADDSTRING, 0, (LPARAM)W(line));
         SendMessageW(G.friends, LB_SETITEMDATA, (WPARAM)idx, i);
         if (list[i].id == selected) SendMessageW(G.friends, LB_SETCURSEL, (WPARAM)idx, 0);

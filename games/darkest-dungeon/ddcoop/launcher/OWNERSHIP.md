@@ -1,3 +1,15 @@
+# Current contract — test70
+
+All participants use runtime test70 (normal or duo variant), protocol31 and
+launcher wire3. A transport STOP is delivered outside the action FIFO and the
+stream closes after the attempt; full queues and bounded-send failures require
+session recovery. No shared action may continue after a known town mismatch.
+Camping commands validate actual actor/selected skill before native execution.
+Metadata/DLC checks precede guest backup or replacement. All supported shared
+choices retain the same player permissions; combat owners still use hero IDs.
+The DLC data report comparison remains a separate read-only tool, not a new
+launcher/runtime wire contract. Shard model APIs do not enable a native shop.
+
 # Current contract — test69 audit
 
 Shared gameplay failures no longer authorize a private guest continuation or a

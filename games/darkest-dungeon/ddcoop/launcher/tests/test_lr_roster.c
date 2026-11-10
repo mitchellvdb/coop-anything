@@ -17,6 +17,52 @@ static int failures;
         }                                                                                                              \
     } while (0)
 
+
+/* Campaign metadata is a launch precondition, not best-effort DLC hints. */
+static void test_game_metadata(void) {
+ static uint8_t bytes[65536];lr_game_info g;size_t n;
+ static const char *const all[]={"musketeer","crimson_court","flagellant","districts","shieldbreaker","color_of_madness","fires_edge","runaway","duelist"};
+ n=dw_game(bytes,0,"",all,9);CHECK(lr_game_parse(bytes,n,&g) && g.dlc_count==9);
+ for(int i=0;i<9;i++)CHECK(!strcmp(g.dlc[i],all[i]));
+ CHECK(!strcmp(lr_dlc_title("fires_edge"),"The Fire's Edge") && !strcmp(lr_dlc_title("runaway"),"The Fire's Edge") && !strcmp(lr_dlc_title("duelist"),"The Fire's Edge"));
+ static const char *const duplicate[]={"musketeer","musketeer"};
+ static const char *const bad[]={"musketeer","Bad Name"};
+ static const char *const too_long[]={"musketeer_123456789012345678901234567890"};
+ static const char *const too_many[]={"a0","a1","a2","a3","a4","a5","a6","a7","a8","a9","a10","a11","a12","a13","a14","a15","a16"};
+ n=dw_game(bytes,0,"",duplicate,2);CHECK(!lr_game_parse(bytes,n,&g));
+ n=dw_game(bytes,0,"",bad,2);CHECK(!lr_game_parse(bytes,n,&g));
+ n=dw_game(bytes,0,"",too_long,1);CHECK(!lr_game_parse(bytes,n,&g));
+ n=dw_game(bytes,0,"",too_many,17);CHECK(!lr_game_parse(bytes,n,&g));
+ for(unsigned kind=0;kind<8;kind++) {
+  dson_writer w={0};dw_begin(&w,"base_root");
+  if(kind!=6)dw_bool(&w,"inraid",0);
+  if(kind!=7)dw_str(&w,"raiddungeon","");else dw_int(&w,"raiddungeon",0);
+  if(kind==0){} /* Valid base-game saves can omit an empty dlc object. */
+  else if(kind==1)dw_int(&w,"dlc",0);
+  else {
+   dw_begin(&w,"dlc");
+   if(kind==2)dw_str(&w,"0","musketeer");
+   else if(kind==3){dw_begin(&w,"0");dw_int(&w,"source",4);dw_end(&w);}
+   else if(kind==4){dw_begin(&w,"0");dw_str(&w,"name","");dw_end(&w);}
+   else if(kind==5){static const char hidden[]="musketeer\0hidden";dw_begin(&w,"0");dw_blob(&w,"name",hidden,sizeof hidden);dw_end(&w);}
+   dw_end(&w);
+  }
+  dw_end(&w);n=dw_finish(&w,bytes);
+  if(kind==0)CHECK(lr_game_parse(bytes,n,&g) && !g.dlc_count);else CHECK(!lr_game_parse(bytes,n,&g));
+ }
+ /* Overstated child count, subtree span and table object mismatch cannot silently truncate a list. */
+ for(unsigned corruption=0;corruption<3;corruption++) {
+  dson_writer w={0};dw_begin(&w,"base_root");dw_bool(&w,"inraid",0);dw_str(&w,"raiddungeon","");
+  dw_begin(&w,"dlc");int list=w.stack[w.sp-1];
+  dw_begin(&w,"0");dw_str(&w,"name","musketeer");dw_end(&w);dw_end(&w);dw_end(&w);
+  if(corruption==0)w.o[list][2]++;
+  if(corruption==1)w.o[list][3]++;
+  if(corruption==2)w.o[list][1]++;
+  n=dw_finish(&w,bytes);CHECK(!lr_game_parse(bytes,n,&g));
+ }
+ printf("Campaign metadata: all nine known feature flags, strict complete DLC list, duplicate/malformed/oversized/hidden names and damaged object boundaries checked\n");
+}
+
 int main(void) {
     static uint8_t file[65536], copy[65536];
     static const dw_hero roster[] = {
@@ -71,6 +117,8 @@ int main(void) {
     }
     printf("mutations: 200000, %ld still gave heroes\n", parsed);
 
+    test_game_metadata();
+
     /* persist.game.json */
     lr_game_info g;
     static const char *const one[] = {"musketeer"};
@@ -80,20 +128,19 @@ int main(void) {
     CHECK(g.dlc_count == 1 && strcmp(g.dlc[0], "musketeer") == 0); /* presented_dlc (arena_mp) is not used */
     n = dw_game(file, 0, "", NULL, 0);
     CHECK(lr_game_parse(file, n, &g) == 1 && !g.tutorial && g.dlc_count == 0);
-    n = dw_game(file, 1, "crypts", odd, 3); /* in a normal raid: not the tutorial; a bad name is dropped */
+    n = dw_game(file, 1, "crypts", odd, 3); /* in a normal raid, malformed DLC metadata refuses the whole campaign */
     {
         lr_game_info named;
-        CHECK(lr_game_parse(file, n, &named) && !strcmp(named.estate, "Darkest")); /* What the player called it, for the launcher's list. */
+        CHECK(!lr_game_parse(file, n, &named)); /* What the player called it, for the launcher's list. */
     }
-    CHECK(lr_game_parse(file, n, &g) == 1 && !g.tutorial && g.dlc_count == 2);
-    CHECK(strcmp(g.dlc[0], "crimson_court") == 0 && strcmp(g.dlc[1], "color_of_madness") == 0);
+    CHECK(!lr_game_parse(file, n, &g));
     /* the game's own template (scripts/starting_save/persist.game.json), byte for byte */
     static const char tmpl[] = "{\n    \"version\": 2,\n    \"data\": {\n        \"totalelapsed\": 0,\n"
                                "        \"inraid\": true,\n        \"raiddungeon\": \"tutorial\",\n"
                                "        \"estatename\": \"Darkest\"\n    }\n}";
     CHECK(sizeof tmpl - 1 == 159);
     CHECK(lr_game_parse((const uint8_t *)tmpl, sizeof tmpl - 1, &g) == 1 && g.text && g.tutorial && g.dlc_count == 0);
-    CHECK(lr_game_parse(hero_only, hn, &g) == 1 && !g.tutorial && g.dlc_count == 0); /* other base_root: no fields */
+    CHECK(!lr_game_parse(hero_only, hn, &g)); /* another DSON object is not campaign metadata */
     CHECK(lr_game_parse((const uint8_t *)"xx", 2, &g) == 0);
     CHECK(strcmp(lr_dlc_title("musketeer"), "The Musketeer") == 0 && strcmp(lr_dlc_title("new_one"), "new_one") == 0);
     n = dw_game(file, 1, "tutorial", odd, 3);

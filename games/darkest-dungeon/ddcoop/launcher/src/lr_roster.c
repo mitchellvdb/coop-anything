@@ -52,7 +52,7 @@ static uint32_t field_obj(const dson *d, uint32_t f) { return (field_info(d, f) 
 /* The field's name (NUL terminated in the data block); NULL if it does not fit. */
 static const char *field_name(const dson *d, uint32_t f, uint32_t *name_len) {
     uint32_t off = field_off(d, f), n = (field_info(d, f) >> 2) & 0x1FF;
-    if (n == 0 || !in_range(d->data_len, off, n) || d->data[off + n - 1] != 0) return NULL;
+    if (n == 0 || !in_range(d->data_len, off, n) || d->data[off + n - 1] != 0 || memchr(d->data + off, 0, n - 1)) return NULL;
     *name_len = n;
     return (const char *)d->data + off;
 }
@@ -208,7 +208,7 @@ int lr_hero_level(int32_t xp) {
 static int value_bool(const dson *d, int64_t f, int *v) {
     const uint8_t *p;
     uint32_t n;
-    if (f < 0 || field_is_obj(d, (uint32_t)f) || !field_value(d, (uint32_t)f, &p, &n) || n < 1) return 0;
+    if (f < 0 || field_is_obj(d, (uint32_t)f) || !field_value(d, (uint32_t)f, &p, &n) || n < 1 || p[0] > 1) return 0;
     *v = p[0] != 0;
     return 1;
 }
@@ -227,6 +227,58 @@ static int has_text(const uint8_t *buf, size_t len, const char *s) {
     return 0;
 }
 
+/* DLC names and dungeon metadata must be read completely, never truncated/sanitized
+ * into a different feature. Display names in the roster retain their tolerant reader. */
+static int campaign_text(const dson *d, int64_t f, char *out, size_t cap) {
+    const uint8_t *p; uint32_t n;
+    if (!value_blob(d, f, &p, &n) || !n || n > cap || p[n - 1] || memchr(p, 0, n - 1)) return 0;
+    for (uint32_t i = 0; i + 1 < n; i++) if (p[i] < 0x20 || p[i] == 0x7f) return 0;
+    memcpy(out, p, n); return 1;
+}
+static int campaign_object_end(const dson *d, uint32_t f, uint32_t limit, uint32_t *end) {
+    if (f >= d->n2 || !field_is_obj(d, f)) return 0;
+    uint32_t obj = field_obj(d, f);
+    if (obj >= d->n1 || get32(d->m1 + 16 * obj + 4) != f) return 0;
+    uint64_t next = (uint64_t)f + 1 + get32(d->m1 + 16 * obj + 12);
+    if (next > limit || next > d->n2) return 0;
+    *end = (uint32_t)next; return 1;
+}
+/* A missing optional DLC list is legal in a base-game save. Distinguish that
+ * from lookup failure caused by a damaged root/child span or duplicate key. */
+static int campaign_find_dlc(const dson *d, int64_t *found) {
+    uint32_t end; *found = -1;
+    if (!campaign_object_end(d, 0, d->n2, &end) || end != d->n2) return 0;
+    uint32_t direct = get32(d->m1 + 16 * field_obj(d, 0) + 8), i = 1;
+    for (uint32_t k = 0; k < direct; k++) {
+        uint32_t len, next = i + 1;
+        if (i >= end) return 0;
+        const char *key = field_name(d, i, &len);
+        if (!key) return 0;
+        if (!strcmp(key, "dlc")) { if (*found >= 0) return 0; *found = i; }
+        if (field_is_obj(d, i) && !campaign_object_end(d, i, end, &next)) return 0;
+        i = next;
+    }
+    return i == end;
+}
+static int campaign_dlc_name(const dson *d, uint32_t f, uint32_t limit, char name[LR_DLC_NAME_MAX + 1], uint32_t *end) {
+    if (!campaign_object_end(d, f, limit, end)) return 0;
+    uint32_t direct = get32(d->m1 + 16 * field_obj(d, f) + 8), i = f + 1;
+    int found = 0;
+    for (uint32_t k = 0; k < direct; k++) {
+        uint32_t len, next = i + 1;
+        if (i >= *end) return 0;
+        const char *key = field_name(d, i, &len);
+        if (!key) return 0;
+        if (!strcmp(key, "name")) {
+            if (found || !campaign_text(d, i, name, LR_DLC_NAME_MAX + 1) || !dlc_name_ok(name)) return 0;
+            found = 1;
+        }
+        if (field_is_obj(d, i) && !campaign_object_end(d, i, *end, &next)) return 0;
+        i = next;
+    }
+    return found && i == *end;
+}
+
 int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out) {
     memset(out, 0, sizeof *out);
     size_t i = 0;
@@ -242,33 +294,31 @@ int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out) {
     static const char *const root[] = {"base_root"};
     static const char *const inraid[] = {"base_root", "inraid"};
     static const char *const dungeon[] = {"base_root", "raiddungeon"};
-    static const char *const dlc[] = {"base_root", "dlc"};
     static const char *const estate[] = {"base_root", "estatename"};
     if (path(&d, root, 1) != 0) return 0;
     value_text(&d, path(&d, estate, 2), out->estate, sizeof out->estate);
     int raid = 0;
     char where[32];
-    value_bool(&d, path(&d, inraid, 2), &raid);
-    value_text(&d, path(&d, dungeon, 2), where, sizeof where);
+    if (!value_bool(&d, path(&d, inraid, 2), &raid) ||
+        !campaign_text(&d, path(&d, dungeon, 2), where, sizeof where)) return 0;
     out->tutorial = raid && strcmp(where, "tutorial") == 0;
-    int64_t list = path(&d, dlc, 2);
-    if (list < 0 || !field_is_obj(&d, (uint32_t)list) || field_obj(&d, (uint32_t)list) >= d.n1) return 1;
+    int64_t list;
+    if (!campaign_find_dlc(&d, &list)) return 0;
+    if (list < 0) return 1; /* The game omits an empty DLC list in some valid base-game saves. */
+    uint32_t end;
+    if (!campaign_object_end(&d, (uint32_t)list, d.n2, &end)) return 0;
     uint32_t direct = get32(d.m1 + 16 * field_obj(&d, (uint32_t)list) + 8);
-    uint64_t f = (uint64_t)list + 1;
-    for (uint32_t k = 0; k < direct && f < d.n2; k++) {
-        uint32_t name_len;
-        if (!field_name(&d, (uint32_t)f, &name_len)) return 1;
-        uint64_t next = f + 1;
-        if (field_is_obj(&d, (uint32_t)f)) {
-            if (field_obj(&d, (uint32_t)f) >= d.n1) return 1;
-            next += get32(d.m1 + 16 * field_obj(&d, (uint32_t)f) + 12);
-            char name[LR_DLC_NAME_MAX + 1];
-            value_text(&d, child(&d, (uint32_t)f, "name"), name, sizeof name);
-            if (out->dlc_count < LR_MAX_DLC && dlc_name_ok(name))
-                snprintf(out->dlc[out->dlc_count++], sizeof out->dlc[0], "%s", name);
-        }
+    if (direct > LR_MAX_DLC) return 0;
+    uint32_t f = (uint32_t)list + 1;
+    for (uint32_t k = 0; k < direct; k++) {
+        uint32_t name_len, next;
+        char name[LR_DLC_NAME_MAX + 1];
+        if (f >= end || !field_name(&d, f, &name_len) || !campaign_dlc_name(&d, f, end, name, &next)) return 0;
+        for (int j = 0; j < out->dlc_count; j++) if (!strcmp(out->dlc[j], name)) return 0;
+        snprintf(out->dlc[out->dlc_count++], sizeof out->dlc[0], "%s", name);
         f = next;
     }
+    if (f != end) return 0;
     return 1;
 }
 
@@ -279,6 +329,8 @@ const char *lr_dlc_title(const char *name) {
         {"musketeer", "The Musketeer"},           {"crimson_court", "The Crimson Court"},
         {"flagellant", "The Crimson Court"},      {"districts", "The Crimson Court"},
         {"shieldbreaker", "The Shieldbreaker"},   {"color_of_madness", "The Color of Madness"},
+        {"fires_edge", "The Fire's Edge"},        {"runaway", "The Fire's Edge"},
+        {"duelist", "The Fire's Edge"},
         {"arena_mp", "The Butcher's Circus"},
     };
     for (size_t i = 0; i < sizeof titles / sizeof *titles; i++)

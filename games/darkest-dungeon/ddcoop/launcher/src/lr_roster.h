@@ -45,7 +45,9 @@ typedef struct {
 } lr_game_info;
 
 /* Parses persist.game.json. Returns 1 and fills out, or 0 if the file is neither the binary save nor the
- * text template. DLC beyond LR_MAX_DLC, and names that are not [a-z0-9_], are dropped. */
+ * text template. Binary campaigns require valid inraid/raiddungeon metadata; an omitted DLC
+ * list means no campaign DLC, while an existing list must be complete.
+ * Malformed, duplicate, oversized or truncated DLC names/lists fail the whole parse. */
 int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out);
 
 /* The store name of a DLC ("musketeer" -> "The Musketeer"); the name itself if unknown. */
