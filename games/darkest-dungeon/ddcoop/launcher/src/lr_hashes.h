@@ -8,6 +8,6 @@
 #define LR_HASH_BOOTSTRAP "ad3c25374e9fb23ff5e388cde052a7359abad1cda9bf5afb6aad399e25e82589"     /* test12 SDL input + GL swap bootstrap */
 #define LR_HASH_BOOTSTRAP_TEST11 "e7f1c4a7aa8a96144b17497fd774aefac71af3625a69e3e1f2e57be59c24a627" /* verified predecessor, upgrade only with intact original */
 #define LR_HASH_TOWN_PROBE_V12 "e3d4796686656c496715ab0d9917d4413b12b34ef8eef3cb6929b9c27c7dd8fc" /* read-only probe */
-#define LR_HASH_RUNTIME "2f81663c78d354792d77fbc5a76945e8f20231a3c17818dc667a2b179e581023" /* test69: reviewed hooks, strict shared effects and movement */
+#define LR_HASH_RUNTIME "9d9502c123b55b6364a9509a644ddf9513d67bc846171a67da45d865d15a9918" /* test70: bounded transport, camping/town safety and DLC groundwork */
 
 #endif
