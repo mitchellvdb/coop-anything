@@ -6,6 +6,7 @@
 
 #ifdef _WIN32
 #include <ws2tcpip.h>
+#include <windows.h>
 #define CLOSESOCK closesocket
 typedef int socklen_t;
 #else
@@ -17,6 +18,7 @@ typedef int socklen_t;
 #include <netinet/tcp.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 #define CLOSESOCK close
 #endif
@@ -121,14 +123,46 @@ dd_socket dd_net_connect(const char *host, int port, int timeout_ms) {
     return s;
 }
 
+static int monotonic_ms(uint64_t *value) {
+#ifdef _WIN32
+    *value = GetTickCount64();
+    return 1;
+#else
+    struct timespec t;
+    if (clock_gettime(CLOCK_MONOTONIC, &t)) return 0;
+    *value = (uint64_t)t.tv_sec * 1000u + (uint64_t)t.tv_nsec / 1000000u;
+    return 1;
+#endif
+}
+/* Blocking send must have its own bound: a local relay can stop reading while
+ * its Steam peer is paused. A STOP cannot overtake a send already in progress.
+ * Recompute the remaining total budget before every chunk; a dribbling reader
+ * must not extend this deadline indefinitely. */
+static int send_budget(dd_socket s, uint32_t remaining) {
+#ifdef _WIN32
+    DWORD timeout = remaining;
+#else
+    struct timeval timeout = {(long)(remaining / 1000u), (long)(remaining % 1000u) * 1000};
+#endif
+    return setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof timeout) == 0;
+}
 static int send_all(dd_socket s, const uint8_t *p, size_t len) {
+    uint64_t started = 0, now = 0;
+    if (!len) return 1;
+    if (!p || !DD_NET_SEND_TIMEOUT_MS || !monotonic_ms(&started)) return 0;
     while (len) {
-        int n = (int)send(s, (const char *)p, (int)(len > 65536 ? 65536 : len), 0);
+        if (!monotonic_ms(&now) || now - started >= DD_NET_SEND_TIMEOUT_MS ||
+            !send_budget(s, (uint32_t)(DD_NET_SEND_TIMEOUT_MS - (now - started)))) return 0;
+        int flags = 0;
+#ifdef MSG_NOSIGNAL
+        flags = MSG_NOSIGNAL; /* Peer close is a transport error, not a process-wide SIGPIPE. */
+#endif
+        int n = (int)send(s, (const char *)p, (int)(len > 65536 ? 65536 : len), flags);
         if (n <= 0) return 0;
         p += n;
         len -= (size_t)n;
     }
-    return 1;
+    return monotonic_ms(&now) && now - started < DD_NET_SEND_TIMEOUT_MS;
 }
 
 /* Reads exactly len bytes within timeout_ms per read. */
@@ -164,8 +198,8 @@ int dd_conn_handshake_host(dd_conn *c, const char *password, int timeout_ms) {
         !recv_exact(c->sock, hs2, sizeof hs2, timeout_ms))
         return 0;
     int ok = dd_sess_host_finish(&c->sess, hs2, hs3);
-    send_all(c->sock, hs3, sizeof hs3); /* tells a guest with the wrong password that it was refused */
-    return ok;
+    int sent = send_all(c->sock, hs3, sizeof hs3); /* tells a guest with the wrong password that it was refused */
+    return ok && sent;
 }
 
 int dd_conn_handshake_guest(dd_conn *c, const char *password, int timeout_ms) {
@@ -180,7 +214,9 @@ int dd_conn_send(dd_conn *c, const dd_msg *m) {
     size_t n = dd_encode(m, plain, sizeof plain);
     if (!n || c->failed) return 0;
     size_t f = dd_sess_seal(&c->sess, plain, n, frame, sizeof frame);
-    return f && send_all(c->sock, frame, f);
+    if (f && send_all(c->sock, frame, f)) return 1;
+    c->failed = 1; /* A partial frame/advanced nonce may never be retried on this stream. */
+    return 0;
 }
 
 dd_poll_result dd_conn_poll(dd_conn *c, int timeout_ms, dd_msg *out) {

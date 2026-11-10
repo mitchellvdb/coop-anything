@@ -669,35 +669,36 @@ static void hm_town_check(void) {
     CHECK(queue_push(&g_incoming, &m));
     dd_runtime_poll();
     CHECK(g_town.applied_seq == 1 && !alerts && !g_town.needs_resync);
-    /* Still in the raid here: it waits for the town. */
-    hm_raid_now = 1;
-    putint(hm_wallet, 25);
-    m.seq = 2;
-    CHECK(queue_push(&g_incoming, &m));
-    dd_runtime_poll();
+    /* A late guest waits, then compares the same town without a false stop. */
+    hm_raid_now = 1; m.seq = 2;
+    CHECK(queue_push(&g_incoming, &m)); dd_runtime_poll();
     CHECK(g_incoming.count == 1 && g_town.applied_seq == 1);
-    /* In town, with other gold: said once, and the order is done. */
-    hm_raid_now = 0;
-    dd_runtime_poll();
-    CHECK(!g_incoming.count && g_town.applied_seq == 2 && alerts == 1 && !g_town.needs_resync);
-    /* Another hero's stress and another trinket count too. */
-    putint(hm_wallet, 20);
-    putint(hm_entries[1] + 8 + DD_HERO_STRESS, 0x42200000u);
-    m.seq = 3;
-    CHECK(queue_push(&g_incoming, &m));
-    dd_runtime_poll();
-    CHECK(g_town.applied_seq == 3 && alerts == 2);
-    putint(hm_entries[1] + 8 + DD_HERO_STRESS, 0);
-    putint(hm_gear[2][0], 1);
-    putint(hm_gear[2][0] + 0x44, 3950276909u);
-    putint(hm_gear[2][0] + 0x88, 101);
-    g_shop_notice[0] = 0; /* the same text is not said twice in a row */
-    m.seq = 4;
-    CHECK(queue_push(&g_incoming, &m));
-    dd_runtime_poll();
-    CHECK(g_town.applied_seq == 4 && alerts == 3);
-    g_walk_view = saved;
-    puts("Town after a raid: the host sends currencies, heroes and count once, two seconds after the town is back; the guest compares in town and says a difference");
+    hm_raid_now = 0; dd_runtime_poll();
+    CHECK(!g_incoming.count && g_town.applied_seq == 2 && !g_town.needs_resync && !alerts);
+    /* Four independently different states must fail BEFORE ACK or the next
+     * ordered action. Model native reads; never edit a real save or game. */
+    for (unsigned scenario = 0; scenario < 4; scenario++) {
+        hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 0;
+        if (scenario == 0) putint(hm_wallet, 25);
+        if (scenario == 1) putint(hm_entries[1] + 8 + DD_HERO_STRESS, 0x42200000u);
+        if (scenario == 2) {
+            putint(hm_gear[2][0], 1); putint(hm_gear[2][0] + 0x44, 3950276909u);
+            putint(hm_gear[2][0] + 0x88, 101);
+        }
+        if (scenario == 3) putptr(world_campaign + 0x28, (uintptr_t)(world_roster + 2));
+        m.seq = 1; CHECK(queue_push(&g_incoming, &m));
+        m.seq = 2; CHECK(queue_push(&g_incoming, &m));
+        dd_runtime_poll();
+        CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent && g_incoming.count == 1);
+    }
+    /* Not readable after the bounded load wait is also a failed comparison. */
+    hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 1;
+    m.seq = 1; CHECK(queue_push(&g_incoming, &m)); dd_runtime_poll();
+    CHECK(!g_town.applied_seq && !g_town.needs_resync && g_incoming.count == 1);
+    g_item_wait_until = 1; dd_runtime_poll();
+    CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
+    hm_raid_now = 0; g_walk_view = saved;
+    puts("Town after a raid: matching/delayed towns succeed; currency/stress/trinket/roster mismatch or unreadable timeout stops before ACK/next action");
 }
 static void hm_dismiss_hidden(void) {
     for (int role = DD_ROLE_HOST; role <= DD_ROLE_GUEST; role++) {

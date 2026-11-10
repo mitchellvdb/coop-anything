@@ -155,7 +155,7 @@ static void prop_lifecycle_checks(void) {
     CHECK(g_incoming.count==2 && !it_uses && !pcx_opens);
     g_walk_use_wait_until=GetTickCount64()-16000;dd_runtime_poll();
     CHECK(g_town.needs_resync && !it_uses && !pcx_opens && !g_town.applied_seq);
-    dd_msg stop={0};CHECK(queue_peek(&g_outgoing,&stop) && stop.type==DD_MSG_SYNC_STOP);
+    CHECK(g_transport_sync_stop != 0);
     wk_reset(DD_ROLE_HOST);items_reset();
     puts("Prop lifecycle: distinct OPEN/confirm, duplicate Iron Maiden opens, either player's no-shovel choice once, delayed panel, food/walking after native close, timeout peer stop and no native event assertion verified");
 }

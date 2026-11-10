@@ -344,6 +344,7 @@ static void __fastcall it_skill(void *camp, void *party, void *loot, uint32_t x,
 static void __fastcall it_leave(void *functor) { it_leaves++; memcpy(&it_leave_overlay, (uint8_t *)functor + 8, 8); }
 static int it_skill_yes(uintptr_t rva) { (void)rva; return 1; }
 static int it_skill_no(uintptr_t rva) { (void)rva; return 0; }
+static uint32_t it_camp_levels[4][7], it_camp_selected[4][4];
 static void it_camp_reset(int role, uint32_t stage) {
     it_reset(role);
     g_retreat = it_retreat;
@@ -351,6 +352,14 @@ static void it_camp_reset(int role, uint32_t stage) {
     g_camp_skill = it_skill;
     g_camp_leave = it_leave;
     g_camp_skill_caller = it_skill_yes;
+    memset(it_camp_levels, 0, sizeof it_camp_levels);
+    for (unsigned i = 0; i < 4; i++) {
+        for (unsigned j = 0; j < 4; j++) it_camp_selected[i][j] = j;
+        putptr(bt_heroes[i] + 0x1398, (uintptr_t)it_camp_selected[i]);
+        putptr(bt_heroes[i] + 0x13a0, (uintptr_t)(it_camp_selected[i] + 4));
+        putptr(bt_heroes[i] + 0x13b0, (uintptr_t)it_camp_levels[i]);
+        putptr(bt_heroes[i] + 0x13b8, (uintptr_t)(it_camp_levels[i] + 7));
+    }
     it_retreats = it_meals = it_skills = it_leaves = 0;
     memset(it_meal_args, 0, sizeof it_meal_args);
     memcpy(wk_raid_lists + DD_ITEM_CAMP_STAGE, &stage, 4);
@@ -439,11 +448,11 @@ static void retreat_and_camp_checks(void) {
         int32_t chosen = 3, now = 0;
         void *c = wk_raid_lists + 0x5100, *p = wk_raid_lists + 8, *l = wk_raid_lists + 0x5140;
         it_camp_reset(DD_ROLE_HOST, 5);
-        hook_camp_skill(c, p, l, 11, 12, 13);
-        CHECK(it_skills == 1 && sent == 1 && last_message.u.town.action.u.item.turn == 11 && last_message.u.town.action.u.item.type == 12 && last_message.u.town.action.u.item.id == 13);
+        hook_camp_skill(c, p, l, 2, 1, 13);
+        CHECK(it_skills == 1 && sent == 1 && last_message.u.town.action.u.item.turn == 2 && last_message.u.town.action.u.item.type == 1 && last_message.u.town.action.u.item.id == 13);
         dd_action skill = last_message.u.town.action;
         it_camp_reset(DD_ROLE_GUEST, 5);
-        hook_camp_skill(c, p, l, 11, 12, 13);
+        hook_camp_skill(c, p, l, 2, 1, 13);
         CHECK(!it_skills && sent == 1);
         it_camp_reset(DD_ROLE_GUEST, 5);
         g_camp_skill_caller = it_skill_no;
@@ -454,9 +463,26 @@ static void retreat_and_camp_checks(void) {
         memcpy(bt_heroes[1] + 0x141c, &chosen, 4);
         wk_push(1, &skill);
         dd_runtime_poll();
-        CHECK(it_skills == 1 && it_skill_args[0] == 11 && it_skill_args[1] == 12 && it_skill_args[2] == 13);
+        CHECK(it_skills == 1 && it_skill_args[0] == 2 && it_skill_args[1] == 1 && it_skill_args[2] == 13);
         memcpy(&now, (uint8_t *)(uintptr_t)hero + 0x141c, 4);
         CHECK(now == -1);
+    }
+    /* A valid packet must also fit the actual party and learned selection.
+     * Missing/dead actor, short/malformed vectors, stale selected index and a
+     * locked skill must never reach the unsafe native lookup. */
+    for (unsigned scenario = 0; scenario < 6; scenario++) {
+        it_camp_reset(DD_ROLE_GUEST, 5);
+        dd_action bad = {0}; bad.kind = DD_ACT_ITEM;
+        bad.u.item.op = DD_ITEM_OP_CAMP_SKILL; bad.u.item.hero = 255;
+        bad.u.item.round = 5; bad.u.item.turn = 2; bad.u.item.type = 1;
+        if (scenario == 0) putptr(wk_raid_lists + 0x10, (uintptr_t)(bt_party + 2));
+        if (scenario == 1) bt_party[2] = 0;
+        if (scenario == 2) putptr(bt_heroes[2] + 0x13a0, (uintptr_t)(it_camp_selected[2] + 1));
+        if (scenario == 3) putptr(bt_heroes[2] + 0x13a0, (uintptr_t)it_camp_selected[2] + 3);
+        if (scenario == 4) it_camp_selected[2][1] = 32;
+        if (scenario == 5) it_camp_levels[2][1] = UINT32_MAX;
+        wk_push(1, &bad); dd_runtime_poll();
+        CHECK(!it_skills && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
     }
     /* Leave: a functor with the overlay. */
     {

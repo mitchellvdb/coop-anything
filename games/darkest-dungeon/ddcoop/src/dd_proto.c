@@ -148,6 +148,9 @@ int dd_action_valid(const dd_action *a) {
         (a->u.item.op!=DD_ITEM_OP_BAG_CHECK || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.inv)) &&
         (a->u.item.op!=DD_ITEM_OP_QUEST_RETURN || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.flag)) &&
         (a->u.item.op!=DD_ITEM_OP_HUNGER || (a->u.item.round && !a->u.item.state && a->u.item.hero==255 && a->u.item.type && a->u.item.amount<=0x42800000u)) &&
+        /* PerformCampingSkill uses an actor rank and a selected camping-skill position, not hashes.
+         * The adapter verifies actual party/selected-vector membership before native execution. */
+        (a->u.item.op!=DD_ITEM_OP_CAMP_SKILL || (a->u.item.turn<4 && a->u.item.type<8)) &&
         (!a->u.item.state || a->u.item.state==0x1d || a->u.item.state==0x1e) && a->u.item.slot>=0 && a->u.item.slot<4096 &&
         (a->u.item.pos & 0x7f800000u) != 0x7f800000u && (a->u.item.amount & 0x7f800000u) != 0x7f800000u;
     default: return 0;

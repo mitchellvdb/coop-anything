@@ -93,7 +93,9 @@ static dd_dng_result allowed(const dd_dungeon *s, unsigned from, const dd_dng_co
     if (!peer(s, from) || !dd_dng_command_valid(c)) return DD_DNG_INVALID;
     if (c->actor.kind == DD_DNG_HERO && dd_dungeon_effective_owner(s, c->actor.id) != (int)from)
         return DD_DNG_OWNER;
-    if (c->actor.kind != DD_DNG_HERO && from) return DD_DNG_OWNER;
+    /* The host orders global choices, but any connected player may initiate them.
+     * Only modeled monster AI is host-only; hero choices keep their owner check. */
+    if (c->kind == DD_DNG_MONSTER_SKILL && from) return DD_DNG_OWNER;
     for (unsigned i = 0; i < c->target_count; i++)
         if (c->targets[i].kind == DD_DNG_HERO && dd_dungeon_effective_owner(s, c->targets[i].id) < 0)
             return DD_DNG_INVALID;

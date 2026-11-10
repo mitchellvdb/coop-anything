@@ -180,7 +180,7 @@ static dd_dng_departure departure(void) {
     for (unsigned i = 0; i < 4; i++)
         d.heroes[i] = 101 + i;
     d.owners[1] = 1;
-    d.owners[2] = 2; /* Future core capacity, not current INI v1 or live transport support. */
+    d.owners[2] = 2; /* Third modeled player; live runtime uses a separate bridge/protocol. */
     d.map_seed = 0xfedcba98;
     d.rules_seed = 1345;
     d.battle_seed = 2456;
@@ -365,7 +365,7 @@ static void test_expedition(void) {
     dd_dng_command c = command(h, DD_DNG_SKILL, 101, 1);
     CHECK(request(&sim, 0, &c) == DD_DNG_PHASE);
     c = command(h, DD_DNG_MOVE, 0, 1);
-    CHECK(request(&sim, 1, &c) == DD_DNG_OWNER);
+    transact(&sim, 1, c); /* Shared navigation is also initiated by a guest. */
     c = command(h, DD_DNG_USE_ITEM, 102, 2);
     transact(&sim, 1, c);
     c = command(h, DD_DNG_MOVE, 0, 2);
@@ -406,7 +406,7 @@ static void test_expedition(void) {
         CHECK(dd_dungeon_offer(&sim.nodes[i], 0, RUN_ID, &sim.departure, now) == DD_DNG_INVALID);
         OK(dd_dungeon_offer(&sim.nodes[i], 0, RUN_ID + 1, &sim.departure, now));
     }
-    printf("PASS three-copy expedition: owner turns, host AI/navigation, provisions, RNG, return barriers\n");
+    printf("PASS three-copy expedition: owner turns, host AI/shared navigation, provisions, RNG, return barriers\n");
 }
 static void test_failures(void) {
     simulation sim;
@@ -537,9 +537,13 @@ static void test_owners(void) {
     const char *guest = "written_by=guest\nversion=garbage\nhero.102=1000000";
     CHECK(dd_dng_owners_parse(guest, strlen(guest), party, owners, &rev) == 0);
     CHECK(!rev && !owners[1]);
+    /* Four-player ownership uses wire/file values 0..3, including guests2/3. */
+    const char *four = "written_by=host\nversion=1\nrevision=8\nhero.101=0\nhero.102=1\nhero.103=2\nhero.104=3\n";
+    CHECK(dd_dng_owners_parse(four, strlen(four), party, owners, &rev) == 1);
+    CHECK(rev == 8 && owners[0] == 0 && owners[1] == 1 && owners[2] == 2 && owners[3] == 3);
     const char *bad[] = {"written_by=host\n",
                          "written_by=host\nversion=2",
-                         "written_by=host\nversion=1\nhero.102=2",
+                         "written_by=host\nversion=1\nhero.102=4",
                          "written_by=host\nversion=1\nhero.102=1\nhero.102=0",
                          "written_by=host\nversion=1\nrevision=4294967296",
                          "written_by=host\nversion=1\nhero.-1=1",
@@ -572,7 +576,7 @@ static void test_owners(void) {
         int r = dd_dng_owners_parse(input, len, party, owners, &rev);
         CHECK(r >= -1 && r <= 1);
         for (unsigned j = 0; j < 4; j++)
-            CHECK(owners[j] <= 1);
+            CHECK(owners[j] <= 3);
     }
     printf("PASS bounded ownership v1 parser, written_by, defaults, frozen table, 10000 malformed inputs\n");
 }
@@ -706,8 +710,7 @@ static void test_camp_and_validation(void) {
     CHECK(request(&sim, 0, &c) == DD_DNG_PHASE);
     start_scene(&sim, DD_DNG_LOOT);
     c = command(h, DD_DNG_TAKE_LOOT, 0, 1);
-    CHECK(request(&sim, 1, &c) == DD_DNG_OWNER);
-    transact(&sim, 0, c);
+    transact(&sim, 1, c); /* Global loot choice has no host privilege. */
     c = command(h, DD_DNG_FINISH_QUEST, 0, 2);
     transact(&sim, 0, c);
     c = command(h, DD_DNG_RETURN_TOWN, 0, 3);
@@ -766,6 +769,7 @@ static void test_long_explore(void) {
     }
     printf("PASS1000 mixed-owner exploration actions through codec with interleaved ACK arrival\n");
 }
+#include "runtime_dungeon_parallel_fixture.inc"
 int main(void) {
     test_food_departure();
     test_codec();
@@ -774,6 +778,7 @@ int main(void) {
     test_failures();
     test_camp_and_validation();
     test_long_explore();
+    test_four_parallel();
     printf("PASS dungeon foundation (%u committed three-copy fixture actions); NO live game integration "
            "tested\n",
            checks);

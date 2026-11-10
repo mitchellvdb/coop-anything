@@ -416,6 +416,26 @@ static void __fastcall hook_camp_meal(void *args) {
 /* 5c7420 Camping::PerformCampingSkill (camp raid+5100, party raid+8, loot raid+5140, three numbers), from the skill's button (70af49, 71f080). */
 static int camp_skill_caller(uintptr_t rva) { return rva == 0x70af4e || rva == 0x71f085; }
 static int (*g_camp_skill_caller)(uintptr_t) = camp_skill_caller;
+/* The native function indexes party.begin[x] and dereferences the selected
+ * camping-skill lookup(y) without checking either result. Validate the actual
+ * local vectors before any native effect, including trusted-looking packets. */
+static int camp_skill_ready(const walk_view *v, uint32_t rank, uint32_t selected) {
+    uint64_t begin = 0, end = 0, actor = 0, skills = 0, skills_end = 0;
+    uint32_t index = 0; int active = 0;
+    if (rank >= 4 || selected >= 8 ||
+        !safe_read((uintptr_t)v->raid + 8, &begin, 8) || !begin ||
+        !safe_read((uintptr_t)v->raid + 0x10, &end, 8) || end < begin ||
+        (end - begin) % 8 || (end - begin) / 8 > 4 || rank >= (end - begin) / 8 ||
+        !safe_read((uintptr_t)(begin + rank * 8), &actor, 8) || !battle_hero_id(actor) ||
+        !safe_read((uintptr_t)actor + 0x1398, &skills, 8) || !skills ||
+        !safe_read((uintptr_t)actor + 0x13a0, &skills_end, 8) || skills_end < skills ||
+        (skills_end - skills) % 4 || (skills_end - skills) / 4 > 8 ||
+        selected >= (skills_end - skills) / 4 ||
+        !safe_read((uintptr_t)(skills + selected * 4), &index, 4)) return 0;
+    dd_hamlet model = {0}; dd_hamlet_hero hero = {0};
+    model.read = shop_read; hero.hero = actor;
+    return dd_hamlet_skill(&model, &hero, 1, index, &active) && active;
+}
 static void __fastcall hook_camp_skill(void *camp, void *party, void *loot, uint32_t x, uint32_t y, uint32_t z) {
 #ifdef _MSC_VER
     uintptr_t caller = (uintptr_t)_ReturnAddress();
@@ -428,6 +448,10 @@ static void __fastcall hook_camp_skill(void *camp, void *party, void *loot, uint
     if (g_game_apply_depth || !walk_shared() || !g_camp_skill_caller(caller - image_base()) || !camp_order(DD_ITEM_OP_CAMP_SKILL, &a, &v)) {
         g_camp_skill(camp, party, loot, x, y, z);
         return;
+    }
+    if (!camp_skill_ready(&v, x, y)) {
+        dd_log("Camping skill refused: local actor/selected skill is unavailable (rank=%u selected=%u)", x, y);
+        runtime_sync_stop(3); return;
     }
     a.u.item.turn = x;
     a.u.item.type = y;
@@ -1030,8 +1054,9 @@ static int town_check_apply(const dd_action *a) {
     uint32_t d[3];
     if (g_cfg.role == DD_ROLE_HOST) return 0; /* only the host says what its town is */
     if (!town_check_here(d)) {
-        dd_log("Town: not readable here; the host's town was not compared");
-        return 1;
+        dd_log("Town: not readable after the bounded load wait; shared comparison failed");
+        runtime_sync_stop(3);
+        return 0;
     }
     if (d[0] == a->u.item.type && d[1] == a->u.item.id && d[2] == a->u.item.round) {
         dd_log("Town: same as the host after the raid (%u heroes)", d[2]);
@@ -1039,10 +1064,8 @@ static int town_check_apply(const dd_action *a) {
     }
     dd_log("Town: differs from the host after the raid: currencies %08x/%08x, heroes %08x/%08x, count %u/%u (here/host)", d[0], a->u.item.type, d[1],
            a->u.item.id, d[2], a->u.item.round);
-    shop_notice(d[2] != a->u.item.round || d[1] != a->u.item.id
-                    ? "The heroes differ from the host after the raid. The host save is authoritative; restart the session if unsure and send the logs."
-                    : "Gold or heirlooms differ from the host after the raid. The host save is authoritative; restart the session if unsure and send the logs.");
-    return 1;
+    runtime_sync_stop(3);
+    return 0; /* Never acknowledge a known different town or continue the FIFO. */
 }
 static int item_gate(const dd_msg *m) {
     walk_view v = {0};
@@ -1217,7 +1240,10 @@ static int item_apply(const dd_action *a) {
         } else if (a->u.item.op == DD_ITEM_OP_CAMP_SKILL) {
             uint64_t hero = 0, none = 0;
             int32_t no_skill = -1;
-            if (!g_camp_skill) return refused;
+            if (!g_camp_skill || !camp_skill_ready(&v, a->u.item.turn, a->u.item.type)) {
+                dd_log("Camping skill refused: actor/selected skill is unavailable (rank=%u selected=%u)", a->u.item.turn, a->u.item.type);
+                return refused;
+            }
             g_camp_skill((void *)(uintptr_t)(v.raid + 0x5100), (void *)(uintptr_t)(v.raid + 8), (void *)(uintptr_t)(v.raid + 0x5140), a->u.item.turn, a->u.item.type, a->u.item.id);
             /* What the button does after it (70af4e): no skill chosen any more. */
             if (safe_read((uintptr_t)v.raid + 0x438, &hero, 8) && hero) memcpy((void *)(uintptr_t)(hero + 0x141c), &no_skill, 4);

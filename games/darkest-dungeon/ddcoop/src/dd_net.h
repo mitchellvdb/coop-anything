@@ -19,6 +19,10 @@ typedef int dd_socket;
 #define DD_NO_SOCKET (-1)
 #endif
 
+/* Total budget for one frame/handshake send, not a sliding per-chunk timeout. */
+#ifndef DD_NET_SEND_TIMEOUT_MS
+#define DD_NET_SEND_TIMEOUT_MS 5000u
+#endif
 #define DD_RX_BUF (DD_FRAME_MAX_PLAIN + DD_FRAME_OVERHEAD)
 
 typedef struct {

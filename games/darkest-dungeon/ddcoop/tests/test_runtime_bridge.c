@@ -77,6 +77,7 @@ static void reset(int role) {
     g_session_seen = 1; g_session_lost = g_session_loss_notified = 0;
     g_queue_failed = 0;
     g_peer_sync_stop = g_sync_stop_sent = 0;
+    g_transport_sync_stop = 0;
     g_recruit_waiting = 0;
     g_shop_notice[0] = 0;
     g_sell_request = 0;
@@ -677,6 +678,7 @@ static void activity_transactions(void) {
     puts("Building placement without the building's screen: the activity comes from the town's buildings; two of a kind, a missing one and a looping tree refuse; the panel's activity still works");
 }
 
+#include "runtime_transport_stop_fixture.inc"
 int main(void) {
     queue_init(&g_incoming);
     queue_init(&g_outgoing);
@@ -717,15 +719,7 @@ int main(void) {
         queue_clear(&g_outgoing);
         reset(DD_ROLE_HOST);
     }
-    /* One lost link must notify every still-connected guest, once. */
-    reset(DD_ROLE_HOST);
-    g_guests[1].ready=g_guests[2].ready=1;
-    queue_clear(&g_outgoing);queue_clear(&g_guests[1].out);queue_clear(&g_guests[2].out);
-    g_session_lost=1;
-    CHECK(runtime_shared_blocked() && g_town.needs_resync);
-    for(int i=0;i<3;i++) { dd_msg out; CHECK(queue_pop(guest_out(i),&out) && out.type==DD_MSG_SYNC_STOP);
-        CHECK(!queue_pop(guest_out(i),&out)); }
-    CHECK(runtime_shared_blocked() && !g_outgoing.count && !g_guests[1].out.count && !g_guests[2].out.count);
+    transport_stop_checks();
     reset(DD_ROLE_HOST);
     recruit_transactions();
     sale_transactions();

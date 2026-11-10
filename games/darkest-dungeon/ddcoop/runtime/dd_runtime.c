@@ -21,6 +21,10 @@
 #include "dd_overlay.h"
 static unsigned g_game_apply_depth;
 static volatile LONG g_peer_sync_stop;
+/* Process-lifetime transport latch: never cleared by queue draining/campaign
+ * transitions. Each connection worker sends it before queued ordinary traffic,
+ * then closes. A full action queue cannot swallow the stop or its retry. */
+static volatile LONG g_transport_sync_stop;
 static int g_sync_stop_sent;
 static void runtime_sync_stop(uint32_t reason);
 static int bag_repair_busy(void);
@@ -95,7 +99,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
-static const char g_mod_version[] = "0.5.0-test69";
+static const char g_mod_version[] = "0.5.0-test70";
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;
@@ -794,20 +798,23 @@ static void hook_restore(dd_hook *h) {
     }
 }
 
+static void runtime_queue_failure(void) {
+    InterlockedExchange(&g_queue_failed, 1);
+    InterlockedCompareExchange(&g_transport_sync_stop, 2, 0);
+}
 /* to: DD_TOWN_ALL, or a player (1..3; 0 = the host, for a guest). A guest always sends to the host. */
 static dd_msg_queue *guest_out(int index) { return index ? &g_guests[index].out : &g_outgoing; } /* Player 1: as with two players. */
 static int net_send(int to, const dd_msg *m) {
     int ok = 1;
-    if (g_cfg.role != DD_ROLE_HOST) return queue_push(&g_outgoing, m);
-    for (int i = 0; i < DD_MAX_GUESTS; i++)
+    if (g_cfg.role != DD_ROLE_HOST) ok = queue_push(&g_outgoing, m);
+    else for (int i = 0; i < DD_MAX_GUESTS; i++)
         if (InterlockedCompareExchange(&g_guests[i].ready, 0, 0) && (to == DD_TOWN_ALL || to == 0 || to == i + 1) && !queue_push(guest_out(i), m)) ok = 0; /* 0: "the other side", as with two players */
+    if (!ok) runtime_queue_failure();
     return ok;
 }
 static void outgoing_send(void *unused, int to, const dd_msg *m) {
     (void)unused;
-    if (!net_send(to, m)) {
-        InterlockedExchange(&g_queue_failed,1);dd_log("town outbound queue full; rejoin required");
-    }
+    if (!net_send(to, m)) dd_log("town outbound queue full; rejoin required");
 }
 static void runtime_stop_shared(uint32_t reason, int notify) {
     bag_templates_clear();
@@ -815,13 +822,33 @@ static void runtime_stop_shared(uint32_t reason, int notify) {
     dd_overlay_turn(DD_OVERLAY_TURN_NONE);
     dd_overlay_session(DD_OVERLAY_REFUSED);
     dd_log("Sync stop: reason=%u role=%s peer=%d", reason, dd_role_name(g_cfg.role), !notify);
+    if (notify) InterlockedCompareExchange(&g_transport_sync_stop, (LONG)(reason ? reason : 1), 0);
     if (!g_sync_stop_sent) {
         g_sync_stop_sent = 1;
-        if (notify) { dd_msg m = {0}; m.type = DD_MSG_SYNC_STOP; m.u.load.slot = reason; outgoing_send(NULL, DD_TOWN_ALL, &m); }
-        shop_notice("The games are no longer in sync. Shared actions have stopped for both players. Close both games and start a new session; send the logs.");
+        shop_notice("The games are no longer in sync. Shared actions have stopped for all players. Close all games and start a new session; send the logs.");
     }
 }
 static void runtime_sync_stop(uint32_t reason) { runtime_stop_shared(reason, 1); }
+/* Runs only on a connection worker. Stop is not a FIFO entry and is checked
+ * before each ordinary send; an already in-flight send may finish first.
+ * Return 0 after the attempt so broken/backpressured links close as well. */
+typedef int (*session_send_fn)(dd_conn *, const dd_msg *);
+static int session_send_pending(dd_conn *c, dd_msg_queue *out, session_send_fn send_message) {
+    for (;;) {
+        LONG reason = InterlockedCompareExchange(&g_transport_sync_stop, 0, 0);
+        dd_msg m;
+        if (reason) {
+            queue_clear(out);
+            memset(&m, 0, sizeof m);
+            m.type = DD_MSG_SYNC_STOP;
+            m.u.load.slot = (uint32_t)reason;
+            (void)send_message(c, &m);
+            return 0;
+        }
+        if (!queue_pop(out, &m)) return 1;
+        if (!send_message(c, &m)) return 0;
+    }
+}
 
 static void log_town_action(const char *phase, const dd_action *a, uint32_t request_id, uint32_t sequence) {
     if (!a) return;
@@ -1131,12 +1158,15 @@ static int session_loop(dd_conn *c, int host, int player) {
     else dd_log("direct TCP session ready (role=guest, player %d)", g_cfg.player);
     for (;;) {
         dd_msg m;
-        while (queue_pop(out, &m))
-            if (!dd_conn_send(c, &m)) return 0;
+        if (!session_send_pending(c, out, dd_conn_send)) return 0;
         dd_poll_result p = dd_conn_poll(c, 20, &m);
         if (p == DD_POLL_CLOSED) return 0;
         if (p != DD_POLL_MSG) continue;
-        if (m.type == DD_MSG_SYNC_STOP) { InterlockedExchange(&g_peer_sync_stop, (LONG)m.u.load.slot); continue; }
+        if (m.type == DD_MSG_SYNC_STOP) {
+            InterlockedExchange(&g_peer_sync_stop, (LONG)m.u.load.slot);
+            if (host) InterlockedCompareExchange(&g_transport_sync_stop, (LONG)m.u.load.slot, 0);
+            return 0; /* No later peer action may overtake its stop. */
+        }
         if (!host && m.type == DD_MSG_WALK) {
             walk_receive(&m);
             continue;
@@ -1171,7 +1201,7 @@ static int session_loop(dd_conn *c, int host, int player) {
         if ((host && m.type == DD_MSG_TOWN_REQUEST) ||
             (!host && (m.type == DD_MSG_TOWN_APPLY || m.type == DD_MSG_TOWN_REJECT))) {
             if (!queue_push(&g_incoming, &m)) {
-                InterlockedExchange(&g_queue_failed,1);dd_log("town inbound queue full; rejoin required");
+                runtime_queue_failure();dd_log("town inbound queue full; rejoin required");
             }
         }
     }
@@ -1430,8 +1460,7 @@ static void runtime_poll_once(void) {
     (void)runtime_shared_blocked(); /* Pending dismissal blocks input, but this pump must finish it. */
     if (!InterlockedCompareExchange(&g_session_ready, 0, 0)) return;
     if(InterlockedExchange(&g_queue_failed,0)) {
-        g_town.needs_resync=1;
-        shop_notice("The shared action queue is full. Close both games and restart the co-op session.");
+        runtime_sync_stop(2);
     }
     if(g_town.needs_resync)return;
     if(hamlet_dismiss_poll())return;

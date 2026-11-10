@@ -29,10 +29,9 @@ static void desync_regressions(void) {
     wk_push(1, &choice);
     dd_runtime_poll();
     CHECK(!bt_picks && !g_town.applied_seq && g_town.needs_resync);
-    dd_msg stop = {0};
-    CHECK(queue_peek(&g_outgoing, &stop) && stop.type == DD_MSG_SYNC_STOP && stop.u.load.slot == 1);
+    CHECK(g_transport_sync_stop == 1);
     runtime_sync_stop(1);
-    CHECK(g_outgoing.count == 1); /* One stop message, never an echo loop. */
+    CHECK(g_transport_sync_stop == 1 && !g_outgoing.count && g_sync_stop_sent); /* Sticky priority stop, no queued echo loop. */
 
     /* The stop travels outside the FIFO: it cannot wait behind an animation. */
     bt_reset(DD_ROLE_HOST);
@@ -81,7 +80,7 @@ static void desync_regressions(void) {
     CHECK(!it_uses && g_incoming.count == 1);
     g_item_wait_until = 1;
     dd_runtime_poll();
-    CHECK(!it_uses && !g_town.applied_seq && g_town.needs_resync && queue_peek(&g_outgoing, &stop) && stop.type == DD_MSG_SYNC_STOP);
+    CHECK(!it_uses && !g_town.applied_seq && g_town.needs_resync && g_transport_sync_stop != 0);
 
     /* The associated Rules prefix has the same phase guard, no pixel gate. */
     uint8_t rules[16] = {0};
@@ -119,7 +118,7 @@ static void desync_regressions(void) {
         CHECK(g_bag_repairing && runtime_shared_blocked());
         for (unsigned i = 1; i < count; i++) wk_push(i + 1, &repair[i].u.town.action);
         dd_runtime_poll();
-        if (broken) CHECK(g_town.needs_resync && g_town.applied_seq < count && queue_peek(&g_outgoing, &stop) && stop.type == DD_MSG_SYNC_STOP);
+        if (broken) CHECK(g_town.needs_resync && g_town.applied_seq < count && g_transport_sync_stop != 0);
         else CHECK(!g_town.needs_resync && g_town.applied_seq == count && !bag_repair_busy() && it_count(it_bag, 0) == 2);
     }
     bt_unwire();

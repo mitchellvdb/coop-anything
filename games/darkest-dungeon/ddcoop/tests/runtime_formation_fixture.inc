@@ -71,12 +71,12 @@ static void formation_checks(void) {
     fm_reset(DD_ROLE_GUEST);wk_view.area++;
     CHECK(queue_push(&g_incoming,&order));dd_runtime_poll();CHECK(g_incoming.count==1 && !fm_calls);
     g_formation_wait=1;dd_runtime_poll();
-    CHECK(g_town.needs_resync && !fm_calls && !g_town.applied_seq && queue_peek(&g_outgoing,&stop) && stop.type==DD_MSG_SYNC_STOP);
+    CHECK(g_town.needs_resync && !fm_calls && !g_town.applied_seq && g_transport_sync_stop != 0);
 
     /* Partial native result is never broadcast/ACKed; neither peer may continue. */
     fm_reset(DD_ROLE_HOST);fm_partial=1;
     hook_formation_reset(wk_display);
-    CHECK(fm_calls==1 && !sent && !g_town.applied_seq && g_town.needs_resync && queue_peek(&g_outgoing,&stop) && stop.type==DD_MSG_SYNC_STOP);
+    CHECK(fm_calls==1 && !sent && !g_town.applied_seq && g_town.needs_resync && g_transport_sync_stop != 0);
     fm_reset(DD_ROLE_GUEST);fm_partial=1;
     CHECK(queue_push(&g_incoming,&order));dd_runtime_poll();
     CHECK(fm_calls==1 && !g_town.applied_seq && g_town.needs_resync);

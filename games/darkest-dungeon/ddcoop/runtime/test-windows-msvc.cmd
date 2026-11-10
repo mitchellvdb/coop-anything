@@ -2,7 +2,9 @@
 setlocal
 pushd "%~dp0.."
 if not exist build\win\runtime-tests mkdir build\win\runtime-tests
-for %%T in (proto town shop recruit hamlet provisions supplies saves addr session) do (
+call runtime\test-net-send-msvc.cmd
+if errorlevel 1 goto failed
+for %%T in (proto town shop recruit hamlet provisions supplies supplies_dlc_edges saves addr session) do (
   call :test %%T
   if errorlevel 1 goto failed
 )
@@ -24,6 +26,8 @@ if "%1"=="session" set "SOURCES=src\dd_session.c src\dd_crypto_win.c src\dd_prot
 if "%1"=="session" set "LIBS=bcrypt.lib"
 if "%1"=="supplies" set "SOURCES=src\dd_supplies.c src\dd_proto.c src\dd_crypto_win.c"
 if "%1"=="supplies" set "LIBS=bcrypt.lib"
+if "%1"=="supplies_dlc_edges" set "SOURCES=src\dd_supplies.c src\dd_proto.c src\dd_crypto_win.c"
+if "%1"=="supplies_dlc_edges" set "LIBS=bcrypt.lib"
 cl /nologo /std:c11 /O2 /MT /W4 /D_CRT_SECURE_NO_WARNINGS /Isrc /Itests /Fobuild\win\runtime-tests\ /Febuild\win\runtime-tests\test_%1.exe tests\test_%1.c %SOURCES% /link %LIBS%
 if errorlevel 1 exit /b 1
 if "%1"=="addr" (

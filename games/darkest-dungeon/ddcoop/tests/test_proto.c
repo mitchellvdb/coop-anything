@@ -253,6 +253,55 @@ static void test_decode_errors(void) {
     CHECK(dd_decode(buf + used, n + n2 - used, &out, &used) == DD_DECODE_OK && out.type == DD_MSG_TOWN_APPLY, "second");
 }
 
+/* PerformCampingSkill arguments x/y index the party/selected skills respectively.
+ * Reject oversized values before native execution; retain the target selector sentinel. */
+static void test_camp_skill_rank_bounds(void) {
+    uint8_t buf[DD_PROTO_HEADER + DD_PROTO_MAX_BODY];
+    dd_msg m = {0}, out = {0};
+    size_t used = 0;
+    m.type = DD_MSG_TOWN_REQUEST;
+    m.u.town.request_id = 1;
+    dd_action *a = &m.u.town.action;
+    a->kind = DD_ACT_ITEM;
+    a->u.item.op = DD_ITEM_OP_CAMP_SKILL;
+    a->u.item.hero = 255;
+    a->u.item.round = 2;
+    /* Selected skills use the existing bounded eight-entry model; target can be a sentinel. */
+    a->u.item.type = 7;
+    a->u.item.id = 0xffffffffu;
+    for (uint32_t rank = 0; rank < 4; rank++) for (uint32_t selected = 0; selected < 8; selected++) {
+        a->u.item.turn = rank;
+        a->u.item.type = selected;
+        size_t n = dd_encode(&m, buf, sizeof buf);
+        CHECK(dd_action_valid(a) && n && dd_decode(buf, n, &out, &used) == DD_DECODE_OK &&
+              out.u.town.action.u.item.turn == rank && out.u.town.action.u.item.type == a->u.item.type &&
+              out.u.town.action.u.item.id == a->u.item.id, "camping actor rank %u selected position %u accepted", rank, selected);
+    }
+    const uint32_t invalid[] = {4, 255, 256, 0x7fffffffu, UINT32_MAX};
+    for (unsigned i = 0; i < sizeof invalid / sizeof *invalid; i++) {
+        a->u.item.turn = invalid[i];
+        CHECK(!dd_action_valid(a) && !dd_encode(&m, buf, sizeof buf), "oversized camping actor %u refused by encoder", invalid[i]);
+        a->u.item.turn = 0;
+        size_t n = dd_encode(&m, buf, sizeof buf);
+        /* header + request ID + kind + area + pos + stage, then actor rank. */
+        size_t at = DD_PROTO_HEADER + 4 + 1 + 4 * 3;
+        for (unsigned b = 0; b < 4; b++) buf[at + b] = (uint8_t)(invalid[i] >> (8 * b));
+        CHECK(dd_decode(buf, n, &out, &used) == DD_DECODE_BAD_VALUE, "oversized camping actor %u refused by decoder", invalid[i]);
+    }
+    a->u.item.turn = 0;
+    const uint32_t invalid_skill[] = {8, 32, 256, UINT32_MAX};
+    for (unsigned i = 0; i < sizeof invalid_skill / sizeof *invalid_skill; i++) {
+        a->u.item.type = invalid_skill[i];
+        CHECK(!dd_action_valid(a) && !dd_encode(&m, buf, sizeof buf), "oversized camping skill %u refused by encoder", invalid_skill[i]);
+        a->u.item.type = 0;
+        size_t n = dd_encode(&m, buf, sizeof buf);
+        size_t at = DD_PROTO_HEADER + 4 + 1 + 4 * 6;
+        for (unsigned b = 0; b < 4; b++) buf[at + b] = (uint8_t)(invalid_skill[i] >> (8 * b));
+        CHECK(dd_decode(buf, n, &out, &used) == DD_DECODE_BAD_VALUE, "oversized camping skill %u refused by decoder", invalid_skill[i]);
+    }
+    printf("Camping packet: four actor ranks/eight selected skills bounded; native target sentinel preserved\n");
+}
+
 static void fuzz(void) {
     uint8_t buf[DD_PROTO_HEADER + DD_PROTO_MAX_BODY + 32];
     dd_msg out;
@@ -347,6 +396,7 @@ int main(void) {
     test_roundtrip();
     test_invalid_encode();
     test_decode_errors();
+    test_camp_skill_rank_bounds();
     fuzz();
     printf("%s (%d failure%s)\n", failures ? "FAILED" : "OK", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

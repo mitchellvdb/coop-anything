@@ -5,7 +5,7 @@
 #define DD_DUNGEON_H
 #include <stddef.h>
 #include <stdint.h>
-#define DD_DNG_PLAYERS 4 /* Core capacity; current live launcher/transport still supports only two. */
+#define DD_DNG_PLAYERS 4 /* Proposed core capacity; live runtime uses its own bridge/protocol. */
 #define DD_DNG_HEROES 4
 #define DD_DNG_TARGETS 8
 #define DD_DNG_PROVISIONS 32
