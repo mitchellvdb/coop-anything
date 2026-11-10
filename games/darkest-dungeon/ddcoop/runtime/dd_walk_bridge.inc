@@ -23,8 +23,9 @@ static int g_prop_cancelled;
 static uint32_t g_prop_cancel_area, g_prop_cancel_index, g_prop_cancel_type;
 static party_select_fn g_party_select;
 static volatile LONG64 g_walk_target;     /* Area id and position bits of the host's last message; written by the network thread. */
-static volatile LONG g_walk_intent;       /* On the host: the direction the guest's keys ask for. */
-static volatile LONG64 g_walk_intent_at;  /* When it arrived. It runs out, so a lost guest does not keep walking the party. */
+/* One atomic timestamp/direction per guest. An idle guest cannot erase another
+ * player's held key, and simultaneous opposite directions have equal priority. */
+static volatile LONG64 g_walk_intents[DD_MAX_GUESTS];
 static int g_walk_capture, g_walk_captured, g_walk_intent_sent;
 static uint32_t g_walk_sent_area, g_walk_sent_pos, g_walk_log_area;
 static int g_walk_log_tile, g_walk_sent_any, g_walk_gate_told;
@@ -79,8 +80,7 @@ static void walk_reset(void) {
     if (g_walk_wait_told) shop_notice_clear(g_walk_wait_text);
     g_walk_wait_told = 0;
     InterlockedExchange64(&g_walk_target, 0);
-    InterlockedExchange(&g_walk_intent, 0);
-    InterlockedExchange64(&g_walk_intent_at, 0);
+    for (int i = 0; i < DD_MAX_GUESTS; i++) InterlockedExchange64(&g_walk_intents[i], 0);
     g_walk_capture = g_walk_captured = g_walk_intent_sent = 0;
     g_walk_sent_area = g_walk_sent_pos = g_walk_log_area = 0;
     g_walk_log_tile = -1;
@@ -104,9 +104,22 @@ static int walk_following(void) { return g_cfg.role == DD_ROLE_GUEST && walk_sha
 static void walk_receive(const dd_msg *m) {
     InterlockedExchange64(&g_walk_target, (LONG64)(((uint64_t)m->u.walk.area << 32) | m->u.walk.pos));
 }
-static void walk_intent_receive(const dd_msg *m) {
-    InterlockedExchange(&g_walk_intent, m->u.intent.direction);
-    InterlockedExchange64(&g_walk_intent_at, (LONG64)GetTickCount64());
+static void walk_intent_receive(const dd_msg *m, int player) {
+    if (player < 1 || player > DD_MAX_GUESTS || m->u.intent.direction < -1 || m->u.intent.direction > 1) return;
+    uint64_t value = (GetTickCount64() << 2) | (uint64_t)(m->u.intent.direction + 1);
+    InterlockedExchange64(&g_walk_intents[player - 1], (LONG64)value);
+}
+static int walk_direction(int mine, uint64_t now) {
+    int chosen = mine;
+    for (int i = 0; i < DD_MAX_GUESTS; i++) {
+        uint64_t value = (uint64_t)InterlockedCompareExchange64(&g_walk_intents[i], 0, 0), at = value >> 2;
+        if (!value || at > now || now - at > 300) continue;
+        int wish = (int)(value & 3u) - 1;
+        if (!wish) continue;
+        if (chosen && chosen != wish) return 0;
+        chosen = wish;
+    }
+    return chosen;
 }
 static void walk_chase(const walk_view *v) {
     uint64_t target = (uint64_t)InterlockedCompareExchange64(&g_walk_target, 0, 0);
@@ -211,10 +224,7 @@ static void __fastcall hook_raid_move(void *display, float *out) {
         g_raid_move(display, out);
         g_walk_capture = 0;
         int mine = g_walk_captured;
-        LONG wish = InterlockedCompareExchange(&g_walk_intent, 0, 0);
-        uint64_t at = (uint64_t)InterlockedCompareExchange64(&g_walk_intent_at, 0, 0);
-        if (GetTickCount64() - at > 300) wish = 0;
-        int chosen = mine && wish && mine != wish ? 0 : mine ? mine : (int)wish;
+        int chosen = walk_direction(mine, GetTickCount64());
         if (chosen && walk_guest_busy()) chosen = 0; /* A guest still has a window open: the tiles would part. */
         float direction[3] = {(float)chosen, 0, 0};
         memcpy(out, direction, sizeof direction);
@@ -1034,7 +1044,6 @@ static float __fastcall hook_rules_uniform(void *rng, uint64_t b, uint64_t c, ui
 }
 static void bag_state_forget(void) { bag_state_reset(); }
 static void bag_poll_hook(const walk_view *v) {
-    if (g_loot_escape && !loot_open(v)) g_loot_escape = 0;
     bag_poll(v);
 }
 static void battle_reset_hook(void) {
@@ -1078,7 +1087,7 @@ static const hamlet_hook_spec g_walk_hooks[] = {
     {"rules_uniform", (uintptr_t)hook_rules_uniform, &g_rules_uniform, 11},
     {"curio_item", (uintptr_t)hook_curio_item, &g_curio_item, 12},
     {"bark_moving", (uintptr_t)hook_bark_moving, &g_bark_moving, 13},
-    {"tutorial_show", (uintptr_t)hook_tutorial_show, &g_tutorial_show, 10},
+    {"tutorial_show", (uintptr_t)hook_tutorial_show, &g_tutorial_show, 11},
     {"panel_close", (uintptr_t)hook_panel_close, &g_panel_close, 13},
     {"results_setup", (uintptr_t)hook_results_setup, &g_results_setup, 10},
     {"results_next", (uintptr_t)hook_results_next, &g_results_next, 11},

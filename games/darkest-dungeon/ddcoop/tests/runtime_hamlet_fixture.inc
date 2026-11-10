@@ -1260,14 +1260,14 @@ static void hm_secret_room_trinkets(void) {
     CHECK(!g_incoming.count);
     CHECK(!hm_raid_loot[1][0] && hm_gear[0][1][0x88] == 101 && hm_raid_loot[0][0x88] == 102);
     CHECK(g_town.applied_seq == 1 && !g_town.needs_resync && !hm_item_alive);
-    /* It never comes, or holds something else: told, and the expedition goes on. */
+    /* It never comes, or holds something else: no silent ACK; shared actions stop. */
     hm_raid_reset(DD_ROLE_GUEST);
     memset(hm_raid_loot, 0, sizeof hm_raid_loot);
     {
         int before = alerts;
         CHECK(queue_push(&g_incoming, &apply));
         dd_runtime_poll();
-        CHECK(!g_incoming.count && g_town.applied_seq == 1 && !g_town.needs_resync && alerts == before + 1);
+        CHECK(!g_incoming.count && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent && alerts > before);
     }
     /* On the host a refusal stays a refusal. */
     hm_raid_reset(DD_ROLE_HOST);

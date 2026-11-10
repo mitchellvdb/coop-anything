@@ -95,6 +95,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
+static const char g_mod_version[] = "0.5.0-test69";
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;
@@ -317,7 +318,7 @@ static void shop_refusal_notice(const dd_action *a) {
         shop_notice("The game refused this purchase. Check for space in the trinket inventory.");
     } else {
         shop_notice("DDCoop could not complete this purchase. Check shop stock. Send the logs if the "
-                    "aankoop blijft mislukken.");
+                    "purchase keeps failing.");
     }
 }
 
@@ -1007,8 +1008,12 @@ static void bag_drag_done(void);
 #include "dd_frontend_bridge.inc"
 #include "dd_walk_bridge.inc"
 
+enum { DD_RUNTIME_HOOK_COUNT = 9 + sizeof g_hamlet_hooks / sizeof *g_hamlet_hooks +
+    sizeof g_supply_hooks / sizeof *g_supply_hooks + sizeof g_departure_hooks / sizeof *g_departure_hooks +
+    sizeof g_walk_hooks / sizeof *g_walk_hooks };
+_Static_assert(DD_RUNTIME_HOOK_COUNT <= 128, "Review hook storage/stack bounds before extending beyond128");
 static int install_hooks(void) {
-    dd_hook h[80] = {0};
+    dd_hook h[DD_RUNTIME_HOOK_COUNT] = {0};
     unsigned prepared = 0, applied = 0;
     unsigned hamlet_count=(unsigned)(sizeof g_hamlet_hooks/sizeof *g_hamlet_hooks);
     unsigned supply_count=(unsigned)(sizeof g_supply_hooks/sizeof *g_supply_hooks);
@@ -1073,7 +1078,7 @@ static void hello_message(dd_msg *m, const char *name) {
     memset(m, 0, sizeof *m);
     m->type = DD_MSG_HELLO;
     m->u.hello.protocol = DD_PROTO_VERSION;
-    memcpy(m->u.hello.mod_version, "0.5.0-test68", sizeof "0.5.0-test68");
+    memcpy(m->u.hello.mod_version, g_mod_version, sizeof g_mod_version);
     memcpy(m->u.hello.build, g_build_id, sizeof g_build_id);
     size_t n = strlen(name);
     if (n >= sizeof m->u.hello.name) n = sizeof m->u.hello.name - 1;
@@ -1081,14 +1086,18 @@ static void hello_message(dd_msg *m, const char *name) {
     m->u.hello.name[n] = 0;
 }
 
+static int hello_compatible(const dd_msg *m) {
+    return m->type == DD_MSG_HELLO && m->u.hello.protocol == DD_PROTO_VERSION &&
+           !memcmp(m->u.hello.build, g_build_id, sizeof g_build_id) &&
+           !memcmp(m->u.hello.mod_version, g_mod_version, sizeof g_mod_version);
+}
 static int receive_hello(dd_conn *c, dd_msg *hello) {
     ULONGLONG until = GetTickCount64() + DD_HELLO_TIMEOUT_MS;
     while (GetTickCount64() < until) {
         dd_poll_result p = dd_conn_poll(c, 250, hello);
         if (p == DD_POLL_CLOSED) return 0;
         if (p == DD_POLL_TIMEOUT) continue;
-        return hello->type == DD_MSG_HELLO && hello->u.hello.protocol == DD_PROTO_VERSION &&
-               memcmp(hello->u.hello.build, g_build_id, sizeof g_build_id) == 0;
+        return hello_compatible(hello);
     }
     return 0;
 }
@@ -1133,7 +1142,7 @@ static int session_loop(dd_conn *c, int host, int player) {
             continue;
         }
         if (host && m.type == DD_MSG_WALK_INTENT) {
-            walk_intent_receive(&m);
+            walk_intent_receive(&m, player);
             continue;
         }
         if (host && m.type == DD_MSG_BUSY) {
@@ -1193,6 +1202,7 @@ static DWORD WINAPI guest_main(void *socket) {
     InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());
     if (!session_loop(&c, 1, player)) dd_log("guest disconnected (player %d)", player);
     InterlockedExchange(&g->ready, 0);
+    InterlockedExchange64(&g_walk_intents[player - 1], 0);
     InterlockedExchange(&g->load_slot, 0);
     queue_clear(guest_out(player - 1));
     InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());

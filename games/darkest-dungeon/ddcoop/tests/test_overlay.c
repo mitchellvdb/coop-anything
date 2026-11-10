@@ -238,7 +238,7 @@ int main(int argc, char **argv) {
     dd_overlay_session(DD_OVERLAY_WAITING);
     CHECK(!strcmp(session_text(), "Waiting for the other player"));
     dd_overlay_session(DD_OVERLAY_CONNECTED);
-    CHECK(!strcmp(session_text(), "Spelers verbonden"));
+    CHECK(!strcmp(session_text(), "Players connected"));
     dd_overlay_session(DD_OVERLAY_LOST);
     CHECK(strstr(session_text(), "Disconnected") != NULL);
     dd_overlay_session(DD_OVERLAY_REFUSED);
@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
         O.fresh = 0;
         O.snapshot.runtime[0] = 0;
         dd_overlay_session(DD_OVERLAY_CONNECTED);
-        CHECK(strstr(status_text(), "launcher") != NULL && !strcmp(session_text(), "Spelers verbonden") && !strcmp(sync_text(), "The shared session is active."));
+        CHECK(strstr(status_text(), "launcher") != NULL && !strcmp(session_text(), "Players connected") && !strcmp(sync_text(), "The shared session is active."));
         dd_overlay_session(DD_OVERLAY_WAITING);
         CHECK(strstr(sync_text(), "Wait") != NULL);
         O.fresh = 1;

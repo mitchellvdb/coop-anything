@@ -1,3 +1,7 @@
+Current69 review: see REVIEW-2026-11-10.md. The chronological notes below are
+historical.69 supersedes private guest continuation/false ACK fallbacks, fixes
+the popup hook boundary, and independently merges three guest movement inputs.
+
 # HOST/GAST input audit, test54 (Codex, 8 Nov 2026)
 
 Owner: both players may initiate shared gameplay. HOST coordinates order/seeds and

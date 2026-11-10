@@ -4,7 +4,7 @@ Requires developer-only capstone5 (not shipped to players). --decoder-dir may po
 pip --target directory. Run after editing addresses, copied hook lengths or model layouts.
 """
 from pathlib import Path
-import argparse, hashlib, re, struct, sys
+import argparse, ast, hashlib, re, struct, sys
 
 args=argparse.ArgumentParser()
 args.add_argument('exe',type=Path)
@@ -39,16 +39,17 @@ for name,va,pattern in re.findall(r'ADDR\((\w+),\s*0x([0-9a-f]+)ULL,\s*\{([^}]+)
     needle=bytes(int(x,16) for x in re.findall(r'0x([0-9a-f]+)',pattern))
     assert len(needle)==48 and read(rva,48)==needle and code.count(needle)==1,name
     addresses[name]=rva
-assert len(addresses)==50
+entries=ast.literal_eval(next(node.value for node in ast.parse((ROOT/'tools/gen_address_table.py').read_text(encoding='utf-8')).body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='FUNCTIONS' for t in node.targets)))
+assert len(addresses)==len(entries) and all(name in addresses for name,va,what in entries)
 
 source=(ROOT/'runtime/dd_runtime.c').read_text()
 names=['activity_assign_hero','activity_slot_widget_ctor','buy_upgrade','wagon_buy','hero_recruit',
        'recruit_panel_show','recruit_panel_hide','roster_ui_drop','wagon_sell']
 lengths=[int(n) for n in re.search(r'size_t sizes\[\] = \{([^}]+)',source)[1].split(',')]
 hooks=list(zip(names,lengths))
-hooks += [(name,int(n)) for name,n in re.findall(r'\{"([a-z_]+)",\s*\(uintptr_t\)\w+,\s*&[^,]+,\s*(\d+)\}',
-                                              (ROOT/'runtime/dd_hamlet_bridge.inc').read_text())]
-assert len(hooks)==28
+for path in (ROOT/'runtime').glob('*.inc'):
+    hooks += [(name,int(n)) for name,n in re.findall(r'\{"([a-z0-9_]+)",\s*\(uintptr_t\)\w+,\s*&[^,]+,\s*(\d+)\}',path.read_text(encoding='utf-8'))]
+assert len({addresses[name] for name,n in hooks})==len(hooks)
 cs=Cs(CS_ARCH_X86,CS_MODE_64);cs.detail=True
 for name,n in hooks:
     ins=list(cs.disasm(read(addresses[name],n),addresses[name]))
@@ -109,4 +110,4 @@ for value in (0x488,0x2d8,0x2e0):
     assert any((o.mem.disp if o.type==X86_OP_MEM else o.imm)==value for i in ins
                for o in i.operands if o.type in (X86_OP_MEM,X86_OP_IMM)),hex(value)
 
-print('Build28385: pinned EXE,50 unique addresses,28 safe hook boundaries,13 RTTI identities,Hero/item fields,global references and skill callers: OK')
+print(f'Build28385: pinned EXE,{len(addresses)} unique addresses,{len(hooks)} safe hook boundaries,{len(vt_checks)} RTTI identities,Hero/item fields,global references and skill callers: OK')

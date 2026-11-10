@@ -224,7 +224,7 @@ static void use_transactions(void) {
         wish.type = DD_MSG_WALK_INTENT;
         wish.u.intent.direction = -1;
         g_raid_move = wk_native_move_none;
-        walk_intent_receive(&wish);
+        walk_intent_receive(&wish, 1);
         way[0] = 0;
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 1 && wk_direction[0] == -1.0f && way[0] == -1.0f);
@@ -235,22 +235,22 @@ static void use_transactions(void) {
         CHECK(wk_moves == 1 && way[0] == 0);
         /* Equal directions move only once; either player can also move alone. */
         wish.u.intent.direction = 1;
-        walk_intent_receive(&wish);
+        walk_intent_receive(&wish, 1);
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 2 && way[0] == 1.0f);
         wish.u.intent.direction = 0;
-        walk_intent_receive(&wish);
+        walk_intent_receive(&wish, 1);
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 3 && way[0] == 1.0f);
         /* A wish that is too old: the guest may be gone. */
         g_raid_move = wk_native_move_none;
-        InterlockedExchange64(&g_walk_intent_at, (LONG64)GetTickCount64() - 1000);
+        InterlockedExchange64(&g_walk_intents[0], (LONG64)((GetTickCount64() - 1000) << 2) | 2);
         way[0] = 0;
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 3 && way[0] == 0);
         /* Stopped: nothing. */
         wish.u.intent.direction = 0;
-        walk_intent_receive(&wish);
+        walk_intent_receive(&wish, 1);
         hook_raid_move(wk_display, way);
         CHECK(wk_moves == 3);
     }

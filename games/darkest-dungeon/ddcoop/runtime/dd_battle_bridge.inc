@@ -424,7 +424,11 @@ static int battle_apply(const dd_action *a) {
         return 0;
     }
     uint32_t rules = battle_rules();
-    if (rules != a->u.battle.rules) dd_log("Battle: Rules differ at this order: here %08x, there %08x", rules, a->u.battle.rules);
+    if (rules != a->u.battle.rules) {
+        dd_log("Battle: Rules differ at this order: here %08x, there %08x; choice refused", rules, a->u.battle.rules);
+        runtime_sync_stop(3);
+        return 0;
+    }
     dd_log("Battle: order op=%u round=%u turn=%u hero=%u value=%d side=%u place=%u (role=%s)", a->u.battle.op, a->u.battle.round, a->u.battle.turn, a->u.battle.hero, a->u.battle.value,
            a->u.battle.side, a->u.battle.place, dd_role_name(g_cfg.role));
     switch (a->u.battle.op) {

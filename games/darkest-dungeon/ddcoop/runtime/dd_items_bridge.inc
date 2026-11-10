@@ -12,7 +12,6 @@ static loot_button_fn g_loot_take_all, g_loot_close, g_loot_take_item;
 static curio_item_fn g_curio_item;
 static uint64_t g_item_wait_until, g_loot_done_at, g_loot_asked_at;
 static uint32_t g_loot_request, g_loot_asked_key;
-static int g_loot_escape; /* This copy's loot window cannot be shared any more: it may be closed here alone. */
 static int g_item_gate_told;
 static uint64_t g_item_use_asked_at, g_curio_mine_at;
 static void g_tutorial_panel_reset(void);
@@ -38,7 +37,6 @@ static void items_reset(void) {
     quest_return_reset();
     g_item_wait_until = g_loot_done_at = g_loot_asked_at = 0;
     g_loot_request = g_loot_asked_key = 0;
-    g_loot_escape = 0;
     g_item_gate_told = 0;
     g_item_use_asked_at = g_curio_mine_at = 0;
 }
@@ -165,7 +163,7 @@ static int loot_ready(const walk_view *v) {
 }
 /* Every player's click remains shared, including a second loot window. */
 static int loot_local(void) {
-    return g_game_apply_depth || !walk_shared() || g_loot_escape;
+    return g_game_apply_depth || !walk_shared();
 }
 /* Whether this click may become an order. Outside state 2 the game ignores it itself (717014), and an order for it would wait on the other copy for a window that is already gone: a second
  * click on a closing window stopped the session 30 s later. On the guest the window stays as it is until the order comes back, so the same button again is a repeat. */
@@ -200,14 +198,15 @@ static void loot_request_done(uint32_t request) {
     g_loot_request = 0;
     g_loot_asked_at = 0;
     if (g_walk_view(&v) && loot_open(&v)) {
-        g_loot_escape = 1;
-        dd_log("Item: the host refused this loot click; this window may be closed here alone");
+        dd_log("Item: host refused a loot action while this panel remains open; shared recovery required");
+        runtime_sync_stop(3);
     }
 }
 static void loot_button(loot_button_fn native, uint8_t op, void *functor) {
     walk_view v;
     dd_action a;
     if (!native) return;
+    if (runtime_shared_blocked()) return;
     if (loot_local()) {
         native(functor);
         return;
@@ -232,6 +231,7 @@ static void __fastcall hook_loot_take_item(void *button) {
     uint64_t loot = 0;
     int32_t slot = 0;
     if (!g_loot_take_item) return;
+    if (runtime_shared_blocked()) return;
     if (loot_local() || !g_walk_view(&v) || !safe_read((uintptr_t)button + 0x20, &loot, 8) || loot != v.raid + DD_WALK_RAID_LOOT - 0x100 ||
         !safe_read((uintptr_t)button + 0x10, &slot, 4)) {
         g_loot_take_item(button);
@@ -510,6 +510,7 @@ static void results_send_rules(void) {
 static uint64_t __fastcall hook_results_next(void *display) {
     dd_action a;
     if (!g_results_next) return 0;
+    if (runtime_shared_blocked()) return 0;
     g_results_display = (uintptr_t)display;
     if (g_game_apply_depth || !walk_shared()) return g_results_next(display);
     memset(&a, 0, sizeof a);
@@ -519,11 +520,11 @@ static uint64_t __fastcall hook_results_next(void *display) {
     a.u.item.rules = battle_rules();
     if (g_cfg.role == DD_ROLE_GUEST) {
         uint64_t now = GetTickCount64();
-        /* Nobody may get stuck here: if the host does not answer, for instance because it has already gone on, this copy goes on alone. */
+        /* An unanswered choice must not advance this copy's week privately. */
         if (g_results_asked_at && now - g_results_asked_at > 3000) {
-            dd_log("Item: the results screen goes on without the host");
-            g_results_asked_at = 0;
-            return g_results_next(display);
+            if (now - g_results_asked_at > 30000) runtime_sync_stop(3);
+            else shop_notice("Waiting for the shared results action. Do not advance this game separately.");
+            return 0;
         }
         if (g_results_asked_at) return 0;
         g_results_asked_at = now;
@@ -880,10 +881,10 @@ static int bag_apply(const walk_view *v, const dd_action *a) {
     int32_t want = (int32_t)a->u.item.amount;
     if (!bag_span(v->raid, a->u.item.inv, &begin, &count) || (unsigned)a->u.item.slot >= count) {
         dd_log("Item: no bag slot %d here", a->u.item.slot);
-        return 1;
+        return 0;
     }
     p = begin + (uint64_t)a->u.item.slot * DD_ITEM_SIZE;
-    if (!bag_read_slot(p, &here)) return 1;
+    if (!bag_read_slot(p, &here)) return 0;
     if (want <= 0) {
         if (here.count > 0) {
             int32_t zero = 0;
@@ -932,7 +933,7 @@ static int bag_apply(const walk_view *v, const dd_action *a) {
         }
         if (!found) {
             dd_log("Item: no item of kind %08x %08x here for bag slot %d", a->u.item.type, a->u.item.id, a->u.item.slot);
-            return 1;
+            return 0;
         }
         /* Item owns containers: move through native Inventory swaps so internal
          * references and lifetime follow the item, including the displaced one. */
@@ -1132,7 +1133,7 @@ static int item_apply(const dd_action *a) {
     if (a->u.item.op == DD_ITEM_OP_HUNGER) return hunger_apply(a);
     walk_view v;
     battle_view b = {0};
-    int refused = g_cfg.role == DD_ROLE_HOST ? 0 : 1;
+    int refused = 0; /* A missing effect cannot be acknowledged on a guest. */
     uint64_t overlay;
     uint8_t one = 1;
     if (a->u.item.op == DD_ITEM_OP_RULES) {
@@ -1162,6 +1163,10 @@ static int item_apply(const dd_action *a) {
     if (!g_walk_view(&v)) {
         if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) { runtime_sync_stop(2); return 0; }
         return refused;
+    }
+    if (a->u.item.state && battle_rules() != a->u.item.rules) {
+        dd_log("Item: combat Rules differ before op=%u: here %08x, expected %08x", a->u.item.op, battle_rules(), a->u.item.rules);
+        runtime_sync_stop(3); return 0;
     }
     if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) {
         if (g_cfg.role != DD_ROLE_GUEST) return 0;
@@ -1255,11 +1260,7 @@ static int item_apply(const dd_action *a) {
     if (item_is_loot(a->u.item.op)) {
         if (!loot_ready(&v)) {
             dd_log("Item: loot window not ready here for op=%u", a->u.item.op);
-            if (g_cfg.role == DD_ROLE_HOST) return 0;
-            /* The rest of the expedition need not stop for it. The bag is compared at the next door; it is said here, and this window can be closed. */
-            if (loot_open(&v)) g_loot_escape = 1;
-            shop_notice("A host loot action could not run here because the loot screen was not ready. Loot may differ. You may continue; send the logs afterwards.");
-            return 1;
+            return 0;
         }
         dd_log("Item: loot op=%u slot=%d (role=%s)", a->u.item.op, a->u.item.slot, dd_role_name(g_cfg.role));
         g_loot_done_at = GetTickCount64();
@@ -1282,7 +1283,9 @@ static int item_apply(const dd_action *a) {
         return refused;
     }
     uint32_t rules = battle_rules();
-    if (rules != a->u.item.rules) dd_log("Item: Rules differ at this order: here %08x, there %08x", rules, a->u.item.rules);
+    if (rules != a->u.item.rules) {
+        dd_log("Item: Rules differ at this order: here %08x, there %08x", rules, a->u.item.rules);
+    }
     if (a->u.item.op == DD_ITEM_OP_BAG_ASK) {
         if (g_cfg.role == DD_ROLE_HOST) bag_send_all(&v);
         return 1;

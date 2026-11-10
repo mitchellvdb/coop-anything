@@ -308,7 +308,7 @@ static void selection_and_popup_checks(void) {
         g_item_wait_until = 1;
         wk_push(1, &close_it);
         dd_runtime_poll();
-        CHECK(!it_closes_panel && g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!it_closes_panel && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
         g_tutorial_show = NULL;
         g_panel_close = NULL;
     }
@@ -431,7 +431,7 @@ static void retreat_and_camp_checks(void) {
         g_item_wait_until = 1;
         wk_push(1, &meal);
         dd_runtime_poll();
-        CHECK(!it_meals && g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!it_meals && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
     }
     /* A camping skill: its three numbers; the game's own call passes; what the button does afterwards is done on the guest too. */
     {
@@ -825,7 +825,9 @@ static void results_and_bag_checks(void) {
     CHECK(!hook_results_next(it_results) && !it_nexts && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
     CHECK(!hook_results_next(it_results) && !it_nexts && sent == 1); /* Once. */
     g_results_asked_at = GetTickCount64() - 3500;
-    CHECK(hook_results_next(it_results) == 1 && it_nexts == 1 && sent == 1 && !g_results_asked_at);
+    CHECK(!hook_results_next(it_results) && !it_nexts && sent == 1 && g_results_asked_at);
+    g_results_asked_at = GetTickCount64() - 31000;
+    CHECK(!hook_results_next(it_results) && !it_nexts && g_town.needs_resync && g_sync_stop_sent);
     /* The Rules order only changes the guest; the step waits until the screen can go on, and for at most 10 s. */
     {
         dd_action r;
@@ -850,7 +852,7 @@ static void results_and_bag_checks(void) {
         it_can = 1;
         dd_runtime_poll();
         CHECK(it_nexts == 1 && !g_incoming.count);
-        /* It never can: the queue goes on, without a step. */
+        /* It never can: no silent ACK or private step; shared recovery is required. */
         it_reset(DD_ROLE_GUEST);
         it_nexts = 0;
         it_can = 0;
@@ -860,7 +862,7 @@ static void results_and_bag_checks(void) {
         CHECK(g_incoming.count == 1);
         g_item_wait_until = 1;
         dd_runtime_poll();
-        CHECK(!it_nexts && !g_incoming.count && g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!it_nexts && !g_incoming.count && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
     }
     /* A guest's click at the host: the numbers go out first, then the step. */
     {
@@ -978,13 +980,13 @@ static void results_and_bag_checks(void) {
         it_bag_set();
         wk_push(1, &a);
         dd_runtime_poll();
-        CHECK(!it_count(it_bag, 4) && g_town.applied_seq == 1 && !g_town.needs_resync);
+    CHECK(!it_count(it_bag, 4) && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
         a.u.item.slot = 40;
         it_reset(DD_ROLE_GUEST);
         it_bag_set();
         wk_push(1, &a);
         dd_runtime_poll();
-        CHECK(g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
     }
     /* A split: the new stack names its source and is copied there, so the source keeps its share. Two stacks of one kind: the
      * moved one names its own slot, and the other stack stays. */
@@ -1242,7 +1244,7 @@ static void item_transactions(void) {
     wk_push(1, &close_order);
     dd_runtime_poll();
     CHECK(wk_display[DD_WALK_LOOT_OVERLAY + 0x219] == 1 && !wk_display[DD_WALK_LOOT_OVERLAY + 0x218]);
-    /* A missing loot window does not acknowledge a click silently, but the expedition need not stop for it. */
+    /* A missing loot window does not acknowledge a click silently, but the shared action is not ACKed. */
     it_reset(DD_ROLE_GUEST);
     wk_push(1, &close_order);
     dd_runtime_poll();
@@ -1251,21 +1253,21 @@ static void item_transactions(void) {
     {
         int before = alerts;
         dd_runtime_poll();
-        CHECK(!g_incoming.count && g_town.applied_seq == 1 && !g_town.needs_resync && alerts == before + 1 && !g_loot_escape);
+        CHECK(!g_incoming.count && !g_town.applied_seq && g_town.needs_resync && alerts > before && g_sync_stop_sent);
     }
-    /* Open but never ready: told, and this window may now be closed here. */
+    /* Open but never ready: stop; local input cannot bypass failed shared apply. */
     it_reset(DD_ROLE_GUEST);
     it_loot(1);
     wk_push(1, &close_order);
     dd_runtime_poll();
     g_item_wait_until = 1;
     dd_runtime_poll();
-    CHECK(g_town.applied_seq == 1 && g_loot_escape && !sent);
+    CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent && !sent);
     hook_loot_close(functor);
-    CHECK(it_closes == 1 && !sent);
+    CHECK(!it_closes && !sent);
     it_loot(0);
     bag_poll_hook(&wk_view);
-    CHECK(!g_loot_escape);
+    CHECK(g_town.needs_resync);
     /* A second click on a window that is closing goes nowhere, on either copy: an order for it would wait for a window that is gone. */
     it_reset(DD_ROLE_HOST);
     it_loot(3);
@@ -1292,21 +1294,21 @@ static void item_transactions(void) {
         /* Refused with this window open: nothing shared can close it any more. */
         CHECK(queue_push(&g_incoming, &no));
         dd_runtime_poll();
-        CHECK(g_loot_escape && !g_loot_asked_at);
+        CHECK(g_town.needs_resync && g_sync_stop_sent && !g_loot_asked_at);
         it_alls = 0;
         hook_loot_take_all(functor);
-        CHECK(it_alls == 1 && sent == 2);
+        CHECK(!it_alls && sent == 2);
     }
     /* Someone else's refusal says nothing about it. */
     it_reset(DD_ROLE_GUEST);
     it_loot(2);
     hook_loot_take_all(functor);
     loot_request_done(g_loot_request + 5);
-    CHECK(g_loot_request && !g_loot_escape);
+    CHECK(g_loot_request && !g_town.needs_resync);
     /* Refused, but the host's order had already closed it here. */
     it_loot(3);
     loot_request_done(g_loot_request);
-    CHECK(!g_loot_request && !g_loot_escape);
+    CHECK(!g_loot_request && !g_town.needs_resync);
     /* Both click: the host's came first. The guest's is told no at once, and nothing it asks for waits behind it. */
     it_reset(DD_ROLE_HOST);
     it_loot(2);
@@ -1433,7 +1435,7 @@ static void item_transactions(void) {
         memcpy(wk_display + DD_WALK_OVERLAY + 0xd88, &mode, 4);
         dd_runtime_poll();
         CHECK(it_curios == 1 && it_curio_panel == (void *)(wk_display + DD_WALK_OVERLAY) && it_curio_item == (void *)(bag_items + 2 * 0x5a8) && g_town.applied_seq == 1);
-        /* Not in its bag: nothing runs, the queue goes on. */
+        /* Not in its bag: nothing runs and all peers are stopped before ACK. */
         memset(bag_items, 0, sizeof bag_items);
         it_reset(DD_ROLE_GUEST);
         memcpy(wk_raid_lists + DD_WALK_RAID_INVENTORY + 8, &begin, 8);
@@ -1442,7 +1444,7 @@ static void item_transactions(void) {
         memcpy(wk_display + DD_WALK_OVERLAY + 0xd88, &mode, 4);
         wk_push(1, &curio);
         dd_runtime_poll();
-        CHECK(!it_curios && g_town.applied_seq == 1 && !g_town.needs_resync);
+        CHECK(!it_curios && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
         memset(wk_display + DD_WALK_OVERLAY + 0x6a0, 0, 8);
         memset(wk_display + DD_WALK_OVERLAY + 0xd88, 0, 4);
         g_curio_item = NULL;

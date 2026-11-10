@@ -599,16 +599,8 @@ static int hamlet_apply(const dd_action *a) {
         return hamlet_dismiss_apply(&s, a);
     case DD_ACT_PARTY:
         return hamlet_party_apply(&s, a);
-    case DD_ACT_TRINKET_MOVE: {
-        int moved = hamlet_move_apply(&s, a);
-        /* From the raid's loot or bag, on the guest: the copies differ, but only by that item, and the expedition can go on. A hero's trinket in town still stops: that is the campaign. */
-        if (!moved && g_cfg.role == DD_ROLE_GUEST && !g_town.needs_resync && (a->u.move.src_hero >= DD_TRINKET_LOOT || a->u.move.dst_hero >= DD_TRINKET_LOOT)) {
-            dd_log("Hamlet: the host's trinket from raid inventory %u slot %u could not be done here", a->u.move.src_hero, a->u.move.src_slot);
-            shop_notice("A loot trinket could not be applied here, so equipment may differ. You may continue; send the logs afterwards.");
-            return 1;
-        }
-        return moved;
-    }
+    case DD_ACT_TRINKET_MOVE:
+        return hamlet_move_apply(&s, a); /* Failed native preflight is never an applied transaction. */
     default:
         return 0;
     }

@@ -313,7 +313,7 @@ static void party_marks(void) {
 }
 static const char *session_text(void) {
     switch (O.session) {
-    case DD_OVERLAY_CONNECTED: return "Spelers verbonden";
+    case DD_OVERLAY_CONNECTED: return "Players connected";
     case DD_OVERLAY_LOST: return "Disconnected: close the game and restart";
     case DD_OVERLAY_REFUSED: return "Host not responding";
     case DD_OVERLAY_WAITING: return "Waiting for the other player";
@@ -476,7 +476,7 @@ static void raster(void) {
     COLORREF white = RGB(225, 226, 229), muted = RGB(152, 160, 172), gold = RGB(234, 193, 115);
     fill(0, 0, PANEL_W, O.height, RGB(17, 20, 25));
     fill(0, 0, PANEL_W, 31, RGB(33, 40, 50));
-    text(12, 6, 320, 24, "DDCoop   |   F9 verbergen", white, 1);
+    text(12, 6, 320, 24, "DDCoop   |   F9 to hide", white, 1);
     text(PANEL_W - 25, 5, 20, 24, "x", muted, 1);
     text(12, 40, 65, 22, O.snapshot.role[0] ? O.snapshot.role : "DDCoop", gold, 1);
     int connected = O.session == DD_OVERLAY_CONNECTED;
@@ -487,9 +487,9 @@ static void raster(void) {
         char title[32];
         int ok = notice_ok_y();
         if (O.notice_count > 1)
-            snprintf(title, sizeof title, "Melding (nog %d)", O.notice_count - 1);
+            snprintf(title, sizeof title, "Notice (%d more)", O.notice_count - 1);
         else
-            snprintf(title, sizeof title, "Melding");
+            snprintf(title, sizeof title, "Notice");
         fill(4, 95, PANEL_W - 8, O.height - 135, RGB(58, 45, 24));
         text(14, 104, 340, 24, title, gold, 1);
         text(14, 132, 340, ok - 140, O.notices[0], white, 0);
@@ -497,7 +497,7 @@ static void raster(void) {
         text(PANEL_W / 2 - 10, ok + 7, 60, 24, "OK", white, 1);
         goto footer;
     }
-    const char *sections[] = {"Connection", "Heroes", "Controles"};
+    const char *sections[] = {"Connection", "Heroes", "Checks"};
     for (int i = 0; i < 3; i++) {
         fill(i * 123 + 4, 95, 119, 30, O.section == i ? RGB(52, 78, 107) : RGB(34, 43, 56));
         text(i * 123 + 14, 101, 102, 22, sections[i], white, 1);
@@ -541,12 +541,12 @@ static void raster(void) {
             y += height;
         }
         RestoreDC(O.dc, saved);
-        text(12, O.height - 63, 345, 24, "Muiswiel: verder scrollen", muted, 0);
+        text(12, O.height - 63, 345, 24, "Mouse wheel: scroll", muted, 0);
     }
 footer:
     fill(4, O.height - 36, PANEL_W - 8, 32, RGB(34, 43, 56));
     text(18, O.height - 29, 100, 24, "Copy logs", white, 0);
-    text(135, O.height - 29, 100, 24, "Kopieer code", white, 0);
+    text(135, O.height - 29, 100, 24, "Copy code", white, 0);
     text(263, O.height - 29, 98, 24, "Launcher", white, 0);
     GdiFlush();
     for (int i = 0; i < PANEL_W * O.height; i++)

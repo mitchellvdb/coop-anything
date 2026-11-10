@@ -1,3 +1,7 @@
+Current69 review: see REVIEW-2026-11-10.md. The chronological notes below are
+historical.69 supersedes private guest continuation/false ACK fallbacks, fixes
+the popup hook boundary, and independently merges three guest movement inputs.
+
 # Test52 / duo35: real refusal capture, including no food (Codex, 8 Nov 2026)
 
 Owner duo34 run18:31: both copies detected Hunger prompt1 in area43726f63 with

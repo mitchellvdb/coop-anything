@@ -504,6 +504,7 @@ static void hook_machine_code(void) {
 #include "runtime_fresh_raid_fixture.inc"
 #include "runtime_prop_fixture.inc"
 #include "runtime_input_phase_fixture.inc"
+#include "runtime_review_fixture.inc"
 #include "runtime_hunger_fixture.inc"
 #include "runtime_quest_return_fixture.inc"
 #include "dd_focus.h"
@@ -750,6 +751,7 @@ int main(void) {
     prop_lifecycle_checks();
     prop_cancel_checks();
     battle_input_phase_checks();
+    runtime_review_checks();
     hunger_transactions();
     quest_return_transactions();
     activity_transactions();
