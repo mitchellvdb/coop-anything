@@ -284,3 +284,15 @@ with active streams. Control and data channels can progress independently, so a
 control READY alone is not treated as proof that old data packets have drained.
 The isolated relay regression covers delayed old OPEN/DATA/CLOSE against a new
 same-ID stream. Launcher wire3 includes the tag; runtime protocol30 unchanged.
+
+## Test74 weekly activity correction (Codex, 10 Nov 2026)
+
+The exact native automatic week-update AssignHero caller (return RVA53cbef,
+48-byte witness at53cbd4) goes directly to the original function on every role.
+It does not create a UI ACCEPT, a guest request or an observed host assignment.
+The UI caller68b0e7 still uses shared reservations and ordered Accept. Already
+admitted native applies finish without re-emitting; STOP/unready blocks outside
+an admitted apply. The existing town epoch barrier re-seeds activities afterward.
+See runtime/ACTIVITY-WEEKLY.md. No owner-file/mapping/launcher wire change.
+Runtime bytewire33 remains; exact hello test74 requires matching peers. Startup
+log and hello now share DD_RUNTIME_VERSION, avoiding a stale plugin version label.

@@ -142,6 +142,7 @@ FUNCTIONS = [
     ("prop_item_drop", 0x14070bf70, "Curio item slot drop before owning Item mutation"),
     ("prop_item_match", 0x1404b12e0, "Pure curio item/variation acceptance index"),
     ("item_curio_route", 0x140428fe0, "Pure HeroUseItem curio routing predicate"),
+    ("activity_weekly_assign_call", 0x14053cbd4, "Read-only automatic weekly assignment caller witness"),
     ("party_select", 0x140606450, "Party selects a hero (party, index)"),
     ("raid_travel", 0x140770080, "RaidDisplay move to another area (display, dest, from area, flip, extra)"),
     ("party_move", 0x140604af0, "Party move (party, direction); the game's input passes (+-1,0,0)"),

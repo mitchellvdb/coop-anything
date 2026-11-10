@@ -8,7 +8,7 @@ if errorlevel 1 (
 )
 pushd "%~dp0.."
 if not exist build\win mkdir build\win
-if not defined DDC_VERSION set "DDC_VERSION=0.5.0-test73"
+if not defined DDC_VERSION set "DDC_VERSION=0.5.0-test74"
 if not defined DDC_TEST_NOSAVE set "DDC_TEST_NOSAVE=0"
 python -I tools\gen_mascot_resource.py "%DDC_MASCOT_GIF%" build\win\ddcoop-mascot.rc
 if errorlevel 1 goto failed
