@@ -1,39 +1,32 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test68**, runtime protocol31. The project owner
-selected this repository for per-kit source commits. Work is isolated on
-`game/darkest-dungeon-ddcoop` under this directory; the shared playbook/main branch is unchanged.
+Development snapshot **0.5.0-test69 / duo52**, runtime protocol 31 and launcher
+wire/lobby 3. Work stays on `game/darkest-dungeon-ddcoop` under this subtree;
+the repository's shared playbook and other projects are unchanged.
 
-Players each run their own copy. Hamlet actions are ordered through the host;
-either player may initiate supported actions. Hero ownership limits combat input
-to each player's heroes. A guest campaign slot is backed up, replaced with the
-host snapshot and restored afterwards; guests use -nosave. Only the selected
-campaign slot1..9 is used. Slot10/the game's restore area is refused.
+Players each run their own copy. Supported shared actions are ordered through
+the host; any player may initiate them. Combat ownership is per persistent hero
+ID, while Hamlet party composition is shared. Guest campaign replacement is
+backed up/restored; guests always use -nosave. Host saving follows its checkbox.
+Only selected slots 1..9 are used; profile_9/the game's restore slot is forbidden.
 
-Implemented areas include Hamlet purchases/upgrades, hero actions, party and
-trinkets; provisions/departure; walking/interactions; combat choices; hunger,
-loot and return. These are development features with known synchronization risks.
-Color of Madness, Shieldbreaker and Musketeer have data/compatibility groundwork;
-full DLC waves, shard purchases and live support remain unvalidated.
+Test69 follows a broad source/test review. It corrects a native hook instruction
+boundary, removes false shared-success/private-progress fallbacks, stops combat
+RNG mismatch, separates three guest movement votes, checks exact runtime hello
+version and redacts known secrets from exported logs. All peers need this kit.
 
-Read [BUILD.md](BUILD.md) for commands and [KIT.md](KIT.md) for this kit's checks
-and limitations. Tests use the actual bridge with fake native game effects, strict
-wire/fuzz tests, isolated OpenGL and fake-Steam launcher fixtures. This is not a
-claim of complete automated real-client QA. Gameplay still needs owner playtests.
-No assets, Steam DLL, executable, save or private user logs are published.
+Read [runtime/REVIEW-2026-11-10.md](runtime/REVIEW-2026-11-10.md) for concrete
+findings, evidence and remaining priorities. [BUILD.md](BUILD.md) gives current
+commands; [KIT.md](KIT.md) and [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) describe
+the release. RELEASES.json pins both variants; ordinary runtime pin is canonical.
 
-Use this branch as the development starting point. Submit changes on separate
-branches; preserve runtime pins and record which kit and checks you tested.
-Never use the Butcher's Circus/PlayFab path or bypass TamperingManager.
+Hamlet/provisions, travel, combat, hunger, loot and return are development
+features, not a claim that every live scenario is validated. Direct loot equip,
+full post-combat state checks, live four-PC restart and complete DLC remain open.
+Color of Madness, Shieldbreaker and Musketeer have compatibility/data groundwork.
 
-Existing code by Claude Code and Codex is retained. Snapshot publication by Codex.
-
-
-Test68 fixes next-party composition after several remembered members enter
-buildings. Busy remembered IDs are pruned from a proposed destination, while
-strict pre-state checks and treatment remain intact. Every connected player
-may add/move/remove available heroes, regardless of combat owner or whether
-the host expedition screen is open. See runtime/PARTY-RETURN.md.
-Direct equip from loot remains a separate unresolved report: new item/endpoint
-drag diagnostics help identify its error. No gameplay fix is claimed for it.
-Prior67 curio X/input phases and66 repair/restart/fault diagnostics are retained.
+Native bridge fixtures use modeled engine effects. Real game, installer, saves,
+Steam Cloud and multi-PC recovery were not run in this review. No game assets,
+Steam DLL, executable, saves, private raw logs or mascot artwork are published.
+Never use Circus/PlayFab or bypass TamperingManager. Preserve pins and record
+validation when contributing. Prior Claude Code/Codex contributions retained.

@@ -1,6 +1,17 @@
 DDCoop - development test kit {VERSION}
 ======================================
 
+New in test69 / duo52
+- Corrected a native instruction boundary in the tutorial-popup hook; every live
+  and early hook now has a complete read-only instruction check.
+- Missing shared item/loot/results effects and combat RNG mismatches stop for
+  recovery instead of silently continuing with different state.
+- Independent movement votes for three guests; idle windows do not erase held
+  keys. Exact runtime version is checked. Remaining F9 labels are English.
+- Copy logs removes authentication ticket/token/password lines from exports.
+- Read the included review for remaining limits; this is not a claim that every
+  real-game or DLC scenario is fully validated.
+
 New in test68 / duo51
 - Building treatment no longer blocks composing a new party when several old
   members are still remembered. Available replacements work from any player.
