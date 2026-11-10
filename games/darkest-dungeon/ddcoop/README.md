@@ -1,5 +1,8 @@
 # DDCoop — Darkest Dungeon co-op
 
+New to the project? Read [START-HERE.md](START-HERE.md) first: what it is, how the parts fit, the rules,
+how to build and test, and the mistakes already made.
+
 Current snapshot **test74 / duo57**, runtime bytewire33/exacthello74 and launcher
 wire/lobby3. All peers need matching new kits. Source is on the dedicated
 `game/darkest-dungeon-ddcoop` branch under this subtree. Shared playbook/other
