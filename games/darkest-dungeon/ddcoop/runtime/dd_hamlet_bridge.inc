@@ -901,6 +901,7 @@ static int hamlet_raid_drag_source(const dd_hamlet *s, uint64_t selected, uint64
 }
 static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg3, void *data) {
     if (!g_trinket_pickup[kind]) return;
+    prop_item_pickup(kind,ui,data);
     supply_drag_pickup(ui);
     memset(&g_trinket_drag, 0, sizeof g_trinket_drag);
     if (!g_game_apply_depth && hamlet_local_active()) {
@@ -954,6 +955,7 @@ static void __fastcall hook_trinket_pickup_inventory(void *a, void *b, void *c, 
     hamlet_trinket_pickup(1, a, b, c, d);
 }
 static void hamlet_trinket_finish(unsigned kind, void *ui, void *data) {
+    if (prop_item_source_done(ui,data)) return;
     if (supply_drag_finish(ui)) return;
     if (g_trinket_drag.valid && g_trinket_drag.ui == (uintptr_t)ui && hamlet_local_active()) {
         /* Our authoritative transaction already owns both endpoints. Native finish/cancel must not subtract

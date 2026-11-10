@@ -19,6 +19,17 @@ static raid_use_fn g_raid_use;
 static raid_use_one_fn g_raid_trap;
 static raid_travel_fn g_raid_travel;
 static overlay_use_fn g_overlay_use, g_curio_button, g_prop_cancel, g_curio_cancel;
+static uint32_t g_prop_revision=1;
+static struct {uint32_t area,prop,kind;int valid;} g_prop_resolved;
+static int walk_choice_dispatch(const dd_action *);
+static int prop_item_ready(const walk_view *,const dd_action *);
+static int prop_item_apply(const walk_view *,const dd_action *);
+static int prop_item_route(const walk_view *,void *,void *,int32_t,dd_action *);
+static int walk_coop_active(void) {return g_cfg.role!=DD_ROLE_OFF && InterlockedCompareExchange(&g_campaign_active,0,0);}
+static int prop_choice_scene(void) {
+    if(g_prop_revision==UINT32_MAX){runtime_sync_stop(3);return 0;}
+    ++g_prop_revision;g_prop_resolved.valid=0;return 1;
+}
 static int g_prop_cancelled;
 static uint32_t g_prop_cancel_area, g_prop_cancel_index, g_prop_cancel_type;
 static party_select_fn g_party_select;
@@ -39,7 +50,7 @@ static int g_walk_party_told, g_walk_trinket_told;
 static int g_town_check_raid; /* a raid was seen: back in town, the host sends its town to compare */
 static uint64_t g_town_check_at;
 static void town_check_poll(void);
-static uint32_t g_walk_asked_prop, g_walk_asked_door;
+static uint32_t g_walk_asked_prop, g_walk_asked_door, g_walk_asked_revision;
 static int g_walk_selected = -1; /* The hero this copy last knew as selected, outside fights. */
 /* After a shared curio or loot the host walked on while a guest still had the window open; the guest walked those tiles later,
  * with Rules numbers the host had already used (owner's run of 9 Nov 18:53-18:54: stress and torch differed at the next door,
@@ -72,7 +83,7 @@ static int (*g_walk_view)(walk_view *) = walk_read;
 static void battle_reset_hook(void);
 static void formation_reset(void);
 static void walk_reset(void) {
-    g_prop_cancelled = 0;
+    g_prop_cancelled = 0;g_prop_revision=1;g_prop_resolved.valid=0;prop_item_reset();
     formation_reset();
     g_walk_free_at = 0;
     g_walk_busy_sent = -1;
@@ -276,18 +287,24 @@ static int walk_use_order(const walk_view *v, uint64_t prop, uint64_t hero, int3
     a->u.use.option = (uint32_t)option;
     a->u.use.flag = flag != 0;
     a->u.use.door = door;
+    a->u.use.revision = g_prop_revision;
+    if (door>=3 && door!=6 && !hero) {
+        if(!safe_read((uintptr_t)v->raid+0x438,&hero,8) || !hero)return 0;
+        a->u.use.flag=1; /* Preserve native NULL actor, use selected hero only as ordering metadata. */
+    }
     memcpy(&a->u.use.pos, &v->pos, 4);
     if (!walk_prop_index(v->area_ptr, prop, &a->u.use.prop) || !safe_read((uintptr_t)prop + 0x0c, &a->u.use.prop_kind, 4)) return 0;
     if (door != 2 && door != 6 && !walk_hero_rank(v->raid, hero, &a->u.use.hero)) return 0;
+    if (door!=2 && door!=6 && (!safe_read((uintptr_t)hero+0x137c,&a->u.use.actor_id,4) || !a->u.use.actor_id))return 0;
     return dd_action_valid(a);
 }
 /* A key held down clicks every frame, and the guest's click does not change its screen, so the next frame clicks again (owner's run: 23 door requests in 100 ms). */
 static int walk_use_repeat(const dd_action *a) {
     uint64_t now = GetTickCount64();
     if (g_cfg.role != DD_ROLE_GUEST) return 0;
-    if (g_walk_asked_at && now - g_walk_asked_at < 1000 && g_walk_asked_prop == a->u.use.prop && g_walk_asked_door == a->u.use.door) return 1;
+    if (g_walk_asked_at && now - g_walk_asked_at < 1000 && g_walk_asked_prop == a->u.use.prop && g_walk_asked_revision == a->u.use.revision && (a->u.use.door>=3 || g_walk_asked_door == a->u.use.door)) return 1;
     g_walk_asked_prop = a->u.use.prop;
-    g_walk_asked_door = a->u.use.door;
+    g_walk_asked_door = a->u.use.door;g_walk_asked_revision=a->u.use.revision;
     g_walk_asked_at = now;
     return 0;
 }
@@ -338,38 +355,16 @@ static int walk_overlay_matches(const walk_view *v, uint64_t prop, uint8_t opera
 /* 714270: curio X; 714540: obstacle X, also clears its completion flag.
  * Both start the native fade and record previous state without Interact.
  * Keep their callbacks and prop fields distinct. No event reset by us. */
-static int walk_cancel_matches(const walk_view *v, const dd_action *a, uint64_t prop, uint32_t mode) {
-    uint64_t shown = 0;
-    if (mode == 2 || mode == 3) return safe_read((uintptr_t)v->display + DD_WALK_OVERLAY + (a->u.use.option ? 0xd70 : 0x6a0), &shown, 8) && shown == prop;
-    return !mode && g_prop_cancelled && g_prop_cancel_area == a->u.use.area && g_prop_cancel_index == a->u.use.prop && g_prop_cancel_type == a->u.use.option;
-}
-static int walk_cancel_apply(const walk_view *v, const dd_action *a, uint64_t prop) {
-    uint32_t mode = 0;
-    overlay_use_fn native = a->u.use.option ? g_prop_cancel : g_curio_cancel;
-    if (!native || !walk_overlay_state(v, &mode) || !walk_cancel_matches(v, a, prop, mode)) return 0;
-    if (mode == 2) {
-        uint64_t functor[2] = {0, v->display + DD_WALK_OVERLAY};
-        native(functor);
-    }
-    g_prop_cancelled = 1; g_prop_cancel_area = a->u.use.area; g_prop_cancel_index = a->u.use.prop;
-    g_prop_cancel_type = a->u.use.option;
-    dd_log("Walk: prop %u cancelled together (role=%s)", a->u.use.prop, dd_role_name(g_cfg.role));
-    return 1;
-}
 static void walk_cancel_choice(void *functor, overlay_use_fn native, int obstacle) {
-    walk_view v;
-    uint64_t panel = 0, prop = 0;
-    uint32_t mode = 0;
-    dd_action a;
-    if (!native) return;
-    if (g_game_apply_depth || !walk_shared()) { native(functor); return; }
-    if (!g_walk_view(&v) || !safe_read((uintptr_t)functor + 8, &panel, 8) || panel != v.display + DD_WALK_OVERLAY || v.battle) {
-        native(functor); return; /* An unrelated/passive native screen. */
-    }
-    if (!walk_overlay_state(&v, &mode) || mode != 2) return;
-    if (!safe_read((uintptr_t)panel + (obstacle ? 0xd70 : 0x6a0), &prop, 8) || !prop || !walk_use_order(&v, prop, 0, obstacle, 0, 6, &a)) return;
-    walk_use_send(&a);
-    if (g_cfg.role == DD_ROLE_HOST && !walk_cancel_apply(&v, &a, prop)) runtime_sync_stop(1);
+    walk_view v;uint64_t panel=0,prop=0;uint32_t mode=0;dd_action a;
+    if(!native)return;
+    if(g_game_apply_depth || !walk_coop_active()){native(functor);return;}
+    if(!walk_shared() || runtime_shared_blocked() || !g_walk_view(&v) || v.battle ||
+       !safe_read((uintptr_t)functor+8,&panel,8) || panel!=v.display+DD_WALK_OVERLAY ||
+       !walk_overlay_state(&v,&mode) || mode!=2 ||
+       !safe_read((uintptr_t)panel+(obstacle?0xd70:0x6a0),&prop,8) || !prop ||
+       !walk_use_order(&v,prop,0,obstacle,0,6,&a))return;
+    walk_choice_dispatch(&a);
 }
 static void __fastcall hook_prop_cancel(void *functor) { walk_cancel_choice(functor, g_prop_cancel, 1); }
 static void __fastcall hook_curio_cancel(void *functor) { walk_cancel_choice(functor, g_curio_cancel, 0); }
@@ -382,7 +377,8 @@ static uint8_t __fastcall hook_raid_use(void *display, void *prop, int32_t optio
     dd_action a;
     if (!g_raid_use) return 0;
     if (!g_game_apply_depth && walk_shared() && formation_busy()) return 0;
-    if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)prop + 0x124, &overlay, 1)) return g_raid_use(display, prop, option, flag);
+    if(g_game_apply_depth || !walk_coop_active())return g_raid_use(display,prop,option,flag);
+    if(!walk_shared() || runtime_shared_blocked() || !safe_read((uintptr_t)prop+0x124,&overlay,1))return 0;
     uint32_t mode = 0;
     if (!g_walk_view(&v) || !walk_overlay_state(&v,&mode)) return 0;
     if (mode) {
@@ -406,8 +402,8 @@ static uint8_t __fastcall hook_raid_use(void *display, void *prop, int32_t optio
         return 1;
     }
     if (!g_walk_view(&v) || !safe_read((uintptr_t)v.raid + 0x438, &hero, 8) || !walk_use_order(&v, (uintptr_t)prop, hero, option, flag, 0, &a)) {
-        dd_log("Walk: use not readable; left to the game alone");
-        return g_raid_use(display, prop, option, flag);
+        dd_log("Walk: shared OPEN not readable; native local fallback refused");
+        return 0;
     }
     if (g_cfg.role == DD_ROLE_GUEST) {
         walk_use_send(&a);
@@ -415,7 +411,7 @@ static uint8_t __fastcall hook_raid_use(void *display, void *prop, int32_t optio
     }
     walk_rules_send(&v);
     uint8_t done = g_raid_use(display, prop, option, flag);
-    if (done) { g_prop_cancelled = 0; walk_use_send(&a); }
+    if (done) { g_prop_cancelled = 0;g_prop_resolved.valid=0;walk_use_send(&a); }
     return done;
 }
 /* 774410: RaidDisplay::InteractWithTrap, clicking a trap to disarm it. The overlay then draws the attempt by itself, so the click is the order, like a curio's.
@@ -425,7 +421,8 @@ static uint8_t __fastcall hook_raid_trap(void *display, void *prop) {
     dd_action a;
     uint64_t hero = 0;
     if (!g_raid_trap) return 0;
-    if (g_game_apply_depth || !walk_shared()) return g_raid_trap(display, prop);
+    if(g_game_apply_depth || !walk_coop_active())return g_raid_trap(display,prop);
+    if(!walk_shared() || runtime_shared_blocked())return 0;
     uint32_t mode = 0;
     if (!g_walk_view(&v) || !walk_overlay_state(&v,&mode) || mode) return 0;
     if (!g_walk_view(&v) || !safe_read((uintptr_t)v.raid + 0x438, &hero, 8) || !walk_use_order(&v, (uintptr_t)prop, hero, 0, 0, 1, &a)) {
@@ -443,72 +440,43 @@ static uint8_t __fastcall hook_raid_trap(void *display, void *prop) {
 }
 /* 714770: the overlay's button, a functor with the overlay at +8. The prop is at +d70 and the hero at +d78 while +d88 is 2. */
 static void __fastcall hook_overlay_use(void *functor) {
-    walk_view v;
-    uint64_t panel = 0, prop = 0, hero = 0;
-    uint32_t mode = 0;
-    dd_action a;
-    if (!g_overlay_use) return;
-    if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)functor + 8, &panel, 8) || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 ||
-        !safe_read((uintptr_t)panel + 0xd70, &prop, 8) || !safe_read((uintptr_t)panel + 0xd78, &hero, 8) || !g_walk_view(&v) ||
-        !walk_use_order(&v, prop, hero, 0, 0, 5, &a)) {
-        g_overlay_use(functor);
-        return;
-    }
-    walk_rules_send(&v);
-    walk_use_send(&a);
-    if (g_cfg.role == DD_ROLE_HOST) g_overlay_use(functor); /* The guest's overlay closes when the order comes back. */
+    walk_view v;uint64_t panel=0,prop=0,hero=0;uint32_t mode=0;dd_action a;
+    if(!g_overlay_use)return;
+    if(g_game_apply_depth || !walk_coop_active()){g_overlay_use(functor);return;}
+    if(!walk_shared() || runtime_shared_blocked() || !g_walk_view(&v) || v.battle ||
+       !safe_read((uintptr_t)functor+8,&panel,8) || panel!=v.display+DD_WALK_OVERLAY ||
+       !walk_overlay_state(&v,&mode) || mode!=2 ||
+       !safe_read((uintptr_t)panel+0xd70,&prop,8) || !prop ||
+       !safe_read((uintptr_t)panel+0xd78,&hero,8) || !walk_use_order(&v,prop,hero,0,0,5,&a))return;
+    walk_choice_dispatch(&a);
 }
-/* 714360: the curio overlay's button, once an item or the hand is picked: a functor with the overlay at +8. Prop at +6a0, hero at +d78, item at +76c and +770. */
 static void __fastcall hook_curio_button(void *functor) {
-    walk_view v;
-    uint64_t panel = 0, prop = 0, hero = 0;
-    uint32_t mode = 0;
-    dd_action a;
-    if (!g_curio_button) return;
-    if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)functor + 8, &panel, 8) || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 ||
-        !safe_read((uintptr_t)panel + 0x6a0, &prop, 8) || !prop || !safe_read((uintptr_t)panel + 0xd78, &hero, 8) || !g_walk_view(&v)) {
-        g_curio_button(functor);
-        return;
-    }
-    if (!hero) safe_read((uintptr_t)v.raid + 0x438, &hero, 8);
-    if (!walk_use_order(&v, prop, hero, 0, 0, 0, &a)) {
-        g_curio_button(functor);
-        return;
-    }
-    a.u.use.door = 3;
-    safe_read((uintptr_t)panel + 0x76c, &a.u.use.item_type, 4);
-    safe_read((uintptr_t)panel + 0x770, &a.u.use.item_id, 4);
-    dd_log("Walk: curio button, item type %u id %u", a.u.use.item_type, a.u.use.item_id);
-    walk_rules_send(&v);
-    walk_use_send(&a);
-    if (g_cfg.role == DD_ROLE_HOST) g_curio_button(functor);
+    walk_view v;uint64_t panel=0,prop=0,hero=0;uint32_t mode=0;dd_action a;
+    if(!g_curio_button)return;
+    if(g_game_apply_depth || !walk_coop_active()){g_curio_button(functor);return;}
+    if(!walk_shared() || runtime_shared_blocked() || !g_walk_view(&v) || v.battle ||
+       !safe_read((uintptr_t)functor+8,&panel,8) || panel!=v.display+DD_WALK_OVERLAY ||
+       !walk_overlay_state(&v,&mode) || mode!=2 ||
+       !safe_read((uintptr_t)panel+0x6a0,&prop,8) || !prop ||
+       !safe_read((uintptr_t)panel+0xd78,&hero,8) || !walk_use_order(&v,prop,hero,0,0,3,&a) ||
+       !safe_read((uintptr_t)panel+0x76c,&a.u.use.item_type,4) ||
+       !safe_read((uintptr_t)panel+0x770,&a.u.use.item_id,4))return;
+    walk_choice_dispatch(&a);
 }
-/* 70ff50: the overlay's button for a tool of the party's (a shovel on rubble), its functor's call 714640 jumps here. It takes one from the bag and interacts: both must happen on both copies, and
- * nothing shared them (owner's run of 6 Nov: each copy cleared the rubble by itself, 19 s apart). Capture: the overlay at +0, a copy of the item at +8 (kind at +4c, id at +90). */
 typedef void(__fastcall *curio_tool_fn)(void *);
 static curio_tool_fn g_curio_tool;
 static void __fastcall hook_curio_tool(void *capture) {
-    walk_view v;
-    uint64_t panel = 0, prop = 0, hero = 0;
-    uint32_t mode = 0;
-    dd_action a;
-    if (!g_curio_tool) return;
-    if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)capture, &panel, 8) || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 ||
-        !safe_read((uintptr_t)panel + 0xd70, &prop, 8) || !prop || !safe_read((uintptr_t)panel + 0xd78, &hero, 8) || !g_walk_view(&v)) {
-        g_curio_tool(capture);
-        return;
-    }
-    if (!hero) safe_read((uintptr_t)v.raid + 0x438, &hero, 8);
-    if (!walk_use_order(&v, prop, hero, 0, 0, 4, &a)) {
-        dd_log("Walk: tool button not readable; left to the game alone");
-        g_curio_tool(capture);
-        return;
-    }
-    safe_read((uintptr_t)capture + 0x4c, &a.u.use.item_type, 4);
-    safe_read((uintptr_t)capture + 0x90, &a.u.use.item_id, 4);
-    walk_rules_send(&v);
-    walk_use_send(&a);
-    if (g_cfg.role == DD_ROLE_HOST) g_curio_tool(capture);
+    walk_view v;uint64_t panel=0,prop=0,hero=0;uint32_t mode=0;dd_action a;
+    if(!g_curio_tool)return;
+    if(g_game_apply_depth || !walk_coop_active()){g_curio_tool(capture);return;}
+    if(!walk_shared() || runtime_shared_blocked() || !g_walk_view(&v) || v.battle ||
+       !safe_read((uintptr_t)capture,&panel,8) || panel!=v.display+DD_WALK_OVERLAY ||
+       !walk_overlay_state(&v,&mode) || mode!=2 ||
+       !safe_read((uintptr_t)panel+0xd70,&prop,8) || !prop ||
+       !safe_read((uintptr_t)panel+0xd78,&hero,8) || !walk_use_order(&v,prop,hero,0,0,4,&a) ||
+       !safe_read((uintptr_t)capture+0x4c,&a.u.use.item_type,4) ||
+       !safe_read((uintptr_t)capture+0x90,&a.u.use.item_id,4))return;
+    walk_choice_dispatch(&a);
 }
 /* Selecting a hero on this copy: the display sets the selection from its own field every frame (75a5f3). Writes down what is now selected, so it is not sent back. */
 static void walk_select(const walk_view *v, uint8_t rank) {
@@ -520,7 +488,10 @@ static void walk_select(const walk_view *v, uint8_t rank) {
     g_walk_selected = (int)rank;
 }
 static uint64_t item_in_bag(uint64_t raid, uint32_t type, uint32_t id);
+#include "dd_prop_choice_bridge.inc"
 static int walk_use_apply(const dd_action *a) {
+    if(a->u.use.door>=3)return walk_choice_apply(a);
+    if(!a->u.use.door && a->u.use.revision!=g_prop_revision)return 0;
     walk_view v;
     uint64_t prop = 0, begin = 0, end = 0, hero = 0;
     uint32_t kind = 0;
@@ -529,7 +500,6 @@ static int walk_use_apply(const dd_action *a) {
         dd_log("Walk: prop %u of area %08x is not here", a->u.use.prop, a->u.use.area);
         return 0;
     }
-    if (a->u.use.door == 6) return !v.battle && walk_cancel_apply(&v, a, prop);
     if (a->u.use.door==1 || a->u.use.door==2) {
         uint32_t event=0;
         if (!walk_overlay_state(&v,&event) || event) {
@@ -537,7 +507,6 @@ static int walk_use_apply(const dd_action *a) {
             return 0;
         }
     }
-    if (a->u.use.door != 2) walk_rules_send(&v); /* A guest's wish: the numbers go first, then the order itself. */
     if (a->u.use.door == 2) {
         if (g_cfg.role == DD_ROLE_GUEST) {
             /* The door runs here too, so the walk through it shows and its numbers are drawn. Its callback then comes to hook_raid_travel, where it ends: the host's travel order moves
@@ -561,51 +530,15 @@ static int walk_use_apply(const dd_action *a) {
     if (!safe_read((uintptr_t)v.raid + 8, &begin, 8) || !safe_read((uintptr_t)v.raid + 0x10, &end, 8) || end < begin ||
         (uint64_t)a->u.use.hero >= (end - begin) / 8 || !safe_read((uintptr_t)(begin + (uint64_t)a->u.use.hero * 8), &hero, 8) || !hero || !g_party_select)
         return 0;
+    if(a->u.use.actor_id) {uint32_t id=0;if(!safe_read((uintptr_t)hero+0x137c,&id,4) || id!=a->u.use.actor_id)return 0;}
+    walk_rules_send(&v); /* Only after read-only area/actor preflight. */
     /* The same hero acts on both copies: the display sets the selection from its own field every frame (75a5f3). */
     walk_select(&v, a->u.use.hero);
-    uint64_t panel = v.display + DD_WALK_OVERLAY, open_prop = 0;
     uint32_t mode = 0;
     if (a->u.use.door == 1) {
         uint8_t disarming = g_raid_trap ? g_raid_trap((void *)(uintptr_t)v.display, (void *)(uintptr_t)prop) : 0;
         if (!disarming) dd_log("Walk: the game declined trap %u here (position %f)", a->u.use.prop, v.pos);
         return g_cfg.role == DD_ROLE_HOST ? disarming : 1;
-    }
-    if (a->u.use.door == 3) {
-        uint64_t functor[2] = {0, panel};
-        if (!safe_read((uintptr_t)panel + 0x6a0, &open_prop, 8) || open_prop != prop || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 || !g_curio_button) {
-            dd_log("Walk: the curio overlay is not open here");
-            return 0;
-        }
-        memcpy((void *)(uintptr_t)(panel + 0x76c), &a->u.use.item_type, 4);
-        memcpy((void *)(uintptr_t)(panel + 0x770), &a->u.use.item_id, 4);
-        memcpy((void *)(uintptr_t)(panel + 0xd78), &hero, 8);
-        g_curio_button(functor);
-        return 1;
-    }
-    if (a->u.use.door == 4) {
-        static uint8_t capture[8 + 0x5a8];
-        uint64_t item = item_in_bag(v.raid, a->u.use.item_type, a->u.use.item_id);
-        if (!safe_read((uintptr_t)panel + 0xd70, &open_prop, 8) || open_prop != prop || !safe_read((uintptr_t)panel + 0xd88, &mode, 4) || mode != 2 || !item || !g_curio_tool) {
-            dd_log("Walk: no overlay or tool for prop %u here (overlay prop %llx, mode %u, item %llx)", a->u.use.prop, (unsigned long long)open_prop, mode, (unsigned long long)item);
-            return 0;
-        }
-        memcpy(capture, &panel, 8);
-        memcpy(capture + 8, (void *)(uintptr_t)item, 0x5a8);
-        memcpy((void *)(uintptr_t)(panel + 0xd78), &hero, 8);
-        dd_log("Walk: tool %08x on prop %u (role=%s)", a->u.use.item_type, a->u.use.prop, dd_role_name(g_cfg.role));
-        g_curio_tool(capture);
-        return 1;
-    }
-    if (a->u.use.door == 5) {
-        if (!safe_read((uintptr_t)panel+0xd88,&mode,4) || mode!=2 ||
-            !walk_overlay_matches(&v,prop,5) || !g_overlay_use) {
-            dd_log("Walk: obstacle confirmation has no matching ready overlay");
-            return 0;
-        }
-        uint64_t functor[2] = {0, panel};
-        memcpy((void *)(uintptr_t)(panel + 0xd78), &hero, 8);
-        g_overlay_use(functor); /* It interacts, runs the result and closes itself. */
-        return 1;
     }
     if (!walk_overlay_state(&v,&mode)) return 0;
     if (mode) {
@@ -618,7 +551,7 @@ static int walk_use_apply(const dd_action *a) {
     }
     /* The game's own click, here too: it opens the same overlay or interacts, and decides by its own draws. */
     uint8_t done = g_raid_use ? g_raid_use((void *)(uintptr_t)v.display, (void *)(uintptr_t)prop, (int32_t)a->u.use.option, a->u.use.flag) : 0;
-    if (done) g_prop_cancelled = 0;
+    if (done) {g_prop_cancelled = 0;g_prop_resolved.valid=0;}
     if (!done) dd_log("Walk: the game declined prop %u here (position %f)", a->u.use.prop, v.pos);
     return done;
 }
@@ -797,6 +730,7 @@ static void __fastcall hook_raid_travel(void *display, const uint32_t *dest, voi
                 }
             }
         }
+        if(!prop_choice_scene())return;
         dd_town_host_observed(&g_town, &a);
         dd_log("Walk: host travels to area %08x tile %u", a.u.travel.dest[0], a.u.travel.dest[1]);
     }
@@ -823,10 +757,30 @@ static int walk_area_pointer(uint64_t raid, uint32_t id, uint64_t *out) {
 static int walk_gate(const dd_msg *m) {
     walk_view v = {0};
     int go;
-    if (g_cfg.role != DD_ROLE_GUEST || m->type != DD_MSG_TOWN_APPLY || g_town.applied_seq == UINT32_MAX || m->seq != g_town.applied_seq + 1 ||
+    int host_choice=g_cfg.role==DD_ROLE_HOST && m->type==DD_MSG_TOWN_REQUEST &&
+        m->u.town.action.kind==DD_ACT_USE && m->u.town.action.u.use.door>=3;
+    if ((!host_choice && (g_cfg.role != DD_ROLE_GUEST || m->type != DD_MSG_TOWN_APPLY || g_town.applied_seq == UINT32_MAX || m->seq != g_town.applied_seq + 1)) ||
         !dd_action_valid(&m->u.town.action))
         return 0;
     const dd_action *a = &m->u.town.action;
+    if(a->kind==DD_ACT_USE && !a->u.use.door && a->u.use.revision!=g_prop_revision){g_walk_use_wait_until=0;return 0;}
+    if(a->kind==DD_ACT_USE && a->u.use.door>=3) {
+        if(a->u.use.revision!=g_prop_revision){g_walk_use_wait_until=0;g_walk_gate_told=0;return 0;} /* reject stale before any effect */
+        if(g_prop_resolved.valid && g_prop_resolved.area==a->u.use.area &&
+           g_prop_resolved.prop==a->u.use.prop && g_prop_resolved.kind==a->u.use.prop_kind) {
+            g_walk_use_wait_until=0;g_walk_gate_told=0;return 0;
+        }
+        uint64_t now=GetTickCount64(),prop=0;uint32_t mode=0;
+        if(!g_walk_use_wait_until)g_walk_use_wait_until=now+15000;
+        int panel_ready=g_walk_view(&v) && !v.battle && v.area==a->u.use.area &&
+            (prop=walk_prop_at(v.area_ptr,a->u.use.prop)) && walk_overlay_state(&v,&mode) && mode==2 &&
+            walk_overlay_matches(&v,prop,a->u.use.door==7?3:a->u.use.door==6?(a->u.use.option?5:3):a->u.use.door);
+        if(!panel_ready && now<=g_walk_use_wait_until) {
+            if(!g_walk_gate_told){g_walk_gate_told=1;dd_log("Prop choice: FIFO waits for ready shared panel op=%u revision=%u",a->u.use.door,a->u.use.revision);}
+            return 1;
+        }
+        g_walk_use_wait_until=0;g_walk_gate_told=0;return 0;
+    }
     if (a->kind == DD_ACT_TRAVEL) {
         if (!g_raid_travel) return 0;
         go = g_walk_view(&v);
@@ -843,16 +797,8 @@ static int walk_gate(const dd_msg *m) {
             if (!g_walk_use_wait_until) g_walk_use_wait_until = now + 3000;
             /* It may already have walked on past that spot behind the host. */
             go = (delta < DD_WALK_USE_NEAR && delta > -DD_WALK_USE_NEAR) || now > g_walk_use_wait_until;
-            /* Confirms wait for their own ready panel, independent of the
-             * walking pixel. Never turn a confirm into another OPEN. */
-            if (a->u.use.door == 6) {
-                uint32_t mode = 0; uint64_t prop = walk_prop_at(v.area_ptr, a->u.use.prop);
-                go = (prop && walk_overlay_state(&v, &mode) && walk_cancel_matches(&v, a, prop, mode)) || now > g_walk_use_wait_until + 12000;
-            } else if (a->u.use.door == 3 || a->u.use.door == 4 || a->u.use.door == 5) {
-                uint32_t mode = 0;
-                uint64_t prop = walk_prop_at(v.area_ptr,a->u.use.prop);
-                go = (walk_overlay_state(&v,&mode) && mode==2 && prop && walk_overlay_matches(&v,prop,a->u.use.door)) || now > g_walk_use_wait_until+12000;
-            } else if (a->u.use.door==0) {
+            /* Terminal choices have their own revision/readiness gate above. */
+            if (a->u.use.door==0) {
                 uint32_t mode = 0; uint64_t prop = walk_prop_at(v.area_ptr,a->u.use.prop);
                 if (walk_overlay_state(&v,&mode) && mode) go = (prop && walk_overlay_matches(&v,prop,0)) || now > g_walk_use_wait_until+12000;
             } else {
@@ -880,7 +826,8 @@ static int walk_travel_apply(const dd_action *a) {
     if (!g_raid_travel || !g_walk_view(&v)) return 0;
     if (v.area == a->u.travel.dest[0]) { /* The game's own call got here first. */
         dd_log("Walk: already in area %08x", v.area);
-        return g_cfg.role==DD_ROLE_GUEST ? walk_party_compare(v.raid,a) : 1;
+        int same=g_cfg.role==DD_ROLE_GUEST ? walk_party_compare(v.raid,a) : 1;
+        return same && prop_choice_scene();
     }
     /* On the host this is the guest's wish. The game's call would do nothing in these states while the order still went out. */
     if (g_cfg.role == DD_ROLE_HOST && (v.battle || v.state <= 1 || v.state == 6 || v.state == 7)) return 0;
@@ -928,6 +875,7 @@ static int walk_travel_apply(const dd_action *a) {
         }
         if (!walk_party_compare(v.raid, a)) return 0;
     }
+    if(!prop_choice_scene())return 0;
     g_raid_travel((void *)(uintptr_t)v.display, a->u.travel.dest, (void *)(uintptr_t)from, a->u.travel.flip, a->u.travel.extra);
     return 1;
 }
@@ -980,6 +928,7 @@ static void walk_poll(void) {
     uint32_t bits;
     int in_raid = g_walk_view(&v);
     walk_busy_poll(in_raid ? &v : NULL);
+    if(g_prop_resolved.valid) {uint32_t mode=0;if(!in_raid || v.area!=g_prop_resolved.area || (walk_overlay_state(&v,&mode)&&!mode))g_prop_resolved.valid=0;}
     if (!in_raid) {
         g_walk_free_at = 0;
         party_publish(NULL);
@@ -1026,6 +975,7 @@ static void walk_poll(void) {
 }
 #include "dd_battle_bridge.inc"
 #include "dd_items_bridge.inc"
+#include "dd_prop_item_bridge.inc"
 /* 28fcd0: the wrapped generator's step. Which code draws a Rules number is what the logs could not say when two copies part (owner's run, 15:42:32: one draw more on the host). */
 typedef float(__fastcall *rules_uniform_fn)(void *, uint64_t, uint64_t, uint64_t);
 static rules_uniform_fn g_rules_uniform;
@@ -1077,6 +1027,7 @@ static const hamlet_hook_spec g_walk_hooks[] = {
     {"prop_cancel", (uintptr_t)hook_prop_cancel, &g_prop_cancel, 10},
     {"curio_cancel", (uintptr_t)hook_curio_cancel, &g_curio_cancel, 10},
     {"curio_tool", (uintptr_t)hook_curio_tool, &g_curio_tool, 13},
+    {"prop_item_drop", (uintptr_t)hook_prop_item_drop, &g_prop_item_drop, 8},
     {"game_assert", (uintptr_t)hook_game_assert, &g_game_assert, 14},
     {"raid_travel", (uintptr_t)hook_raid_travel, &g_raid_travel, 12},
     {"battle_skill_button", (uintptr_t)hook_battle_skill_button, &g_battle_skill_button, 10},

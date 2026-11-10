@@ -274,6 +274,7 @@ static void departure_send(uint32_t quest, uint32_t index, const uint32_t heroes
         dd_log("Departure: no valid party to share");
         return;
     }
+    if(!prop_choice_scene())return;
     g_departure_seed = value;
     g_departure_rules = rules;
     hero_owners_set(heroes, a.u.departure.owners);
@@ -366,6 +367,7 @@ static int departure_apply(const dd_action *a) {
         shop_notice("The host departed, but this copy could not prepare the party. Close both games and send the logs.");
         return 0;
     }
+    if(!prop_choice_scene())return 0;
     dd_log("Departure: following the host");
     g_embark_request = 0;
     g_embark_leaving = 1;

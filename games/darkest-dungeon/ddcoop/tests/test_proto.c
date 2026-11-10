@@ -399,6 +399,7 @@ static void test_desync_wire(void) {
     CHECK(!dd_encode(&m,wire,sizeof wire),"duplicate formation ID refused");
     m=town(DD_MSG_TOWN_APPLY,act(DD_ACT_USE));
     m.u.town.action.u.use.door=5;
+    m.u.town.action.u.use.revision=1;m.u.town.action.u.use.actor_id=13;
     n=dd_encode(&m,wire,sizeof wire);
     CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.u.use.door==5,"obstacle confirm round trip");
     m.u.town.action.u.use.door=6;
@@ -414,7 +415,7 @@ static void test_desync_wire(void) {
     m.u.town.action.u.use.item_id=0;m.u.town.action.u.use.hero=1;
     CHECK(!dd_encode(&m,wire,sizeof wire),"cancel has no hero choice");
     m.u.town.action.u.use.hero=0;
-    m.u.town.action.u.use.door=7;
+    m.u.town.action.u.use.door=8;
     CHECK(!dd_encode(&m,wire,sizeof wire),"unknown prop operation refused");
 }
 static void test_selection_identity(void) {
@@ -439,6 +440,31 @@ static void test_selection_identity(void) {
     }
     puts("Selection packet: four ranks carry persistent identity; missing/sentinel hero, combat phase and unrelated flags refused");
 }
+static void test_prop_choice_packets(void) {
+    uint8_t wire[256];dd_msg out={0};size_t used=0;
+    for(unsigned op=3;op<=7;op++)for(unsigned rank=0;rank<(op==6?1u:4u);rank++)for(unsigned nullable=0;nullable<(op==6?1u:2u);nullable++) {
+        dd_action a={0};a.kind=DD_ACT_USE;a.u.use.area=100;a.u.use.prop=1;a.u.use.prop_kind=2;
+        a.u.use.door=(uint8_t)op;a.u.use.hero=(uint8_t)rank;a.u.use.flag=(uint8_t)nullable;
+        a.u.use.revision=17;a.u.use.actor_id=op==6?0:11+rank;
+        if(op==4 || op==7){a.u.use.item_type=41;a.u.use.item_id=42;}
+        dd_msg m=town(DD_MSG_TOWN_APPLY,a);size_t n=dd_encode(&m,wire,sizeof wire);
+        CHECK(n==DD_PROTO_HEADER+44 && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && used==n &&
+            out.u.town.action.u.use.revision==17 && out.u.town.action.u.use.actor_id==a.u.use.actor_id &&
+            out.u.town.action.u.use.flag==nullable,"prop choice33 exact revision/identity/NULL actor wire");
+        for(unsigned bad=0;bad<(op==6?3u:5u);bad++) {
+            dd_msg invalid=m;
+            if(bad==0)invalid.u.town.action.u.use.revision=0;
+            if(bad==1)invalid.u.town.action.u.use.revision=UINT32_MAX;
+            if(bad==2)invalid.u.town.action.u.use.door=8;
+            if(bad==3)invalid.u.town.action.u.use.actor_id=0;
+            if(bad==4)invalid.u.town.action.u.use.actor_id=UINT32_MAX;
+            CHECK(!dd_encode(&invalid,wire,sizeof wire),"invalid prop revision/actor/op refused");
+        }
+    }
+    dd_action old={0};old.kind=DD_ACT_ITEM;old.u.item.op=DD_ITEM_OP_CURIO;old.u.item.hero=255;
+    CHECK(!dd_action_valid(&old),"optimistic curio item opcode is reserved/disabled in33");
+    puts("Prop choices protocol33: all terminal operations, four actors/nullable arguments, exact revision/identity length and legacy bypass refusal verified");
+}
 int main(void) {
     test_desync_wire();
     test_roundtrip();
@@ -447,6 +473,7 @@ int main(void) {
     test_camp_skill_rank_bounds();
     test_activity_packets();
     test_selection_identity();
+    test_prop_choice_packets();
     fuzz();
     printf("%s (%d failure%s)\n", failures ? "FAILED" : "OK", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

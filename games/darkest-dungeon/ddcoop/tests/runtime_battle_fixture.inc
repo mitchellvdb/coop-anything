@@ -173,11 +173,11 @@ static uint8_t __fastcall it_curio(void *overlay, void *item) {
     it_curio_panel = overlay, it_curio_item = item;
     return 1;
 }
-static int it_curio_yes(uintptr_t rva) { (void)rva; return 1; }
-static int it_curio_no(uintptr_t rva) { (void)rva; return 0; }
 static int it_caller_yes(uintptr_t rva) { (void)rva; return 1; }
 static int it_caller_no(uintptr_t rva) { (void)rva; return 0; }
+static uint8_t __fastcall it_curio_route_none(void *c,uint32_t t,uint32_t i){(void)c;(void)t;(void)i;return 0;}
 static void it_reset(int role) {
+    g_item_curio_route=it_curio_route_none;
     uint32_t closed = 0;
     bt_reset(role);
     items_reset();
@@ -196,7 +196,6 @@ static void it_reset(int role) {
     g_item_controller = it_controller;
     g_item_torch_caller = it_caller_yes;
     g_curio_item = it_curio;
-    g_item_curio_caller = it_curio_yes;
     it_curios = 0;
     it_curio_panel = it_curio_item = NULL;
     it_uses = it_torches = it_alls = it_closes = it_items = 0;
@@ -659,7 +658,9 @@ static void second_copy_checks(void) {
         CHECK(queue_push(&g_incoming, &m));
         dd_runtime_poll();
     }
-    CHECK(!it_tools && g_town.rejected == 1);
+    CHECK(!it_tools && !g_town.rejected && g_incoming.count==1);
+    g_walk_use_wait_until=1;dd_runtime_poll();
+    CHECK(!it_tools && g_town.rejected==1);
     /* The host's number goes before a use, from the place of the use. */
     it_reset(DD_ROLE_HOST);
     SC_BAG();
@@ -705,66 +706,15 @@ static void second_copy_checks(void) {
         hook_item_use((void *)(uintptr_t)0x1234, (void *)(uintptr_t)sc_hero(), bag, 3, 1);
         CHECK(sent == 2);
     }
-    /* The curio's item: the copy without the drag takes one from its bag. */
+    /* Legacy optimistic curio mutation is closed. Count/debit/last-item tests
+     * now use the real early typed drop and source cleanup in prop_choice_checks. */
     {
-        dd_action curio;
         static uint8_t dragged[0x5a8];
-        memcpy(dragged + 0x44, &type, 4);
-        memcpy(dragged + 0x88, &id, 4);
-        it_reset(DD_ROLE_HOST);
-        SC_BAG();
-        SC_OPEN(mode);
-        CHECK(hook_curio_item(panel, dragged) == 1);
-        curio = last_message.u.town.action;
-        /* Host's own drag: its count is the game's business. */
-        memcpy(&count, bag_items + 0x5a8, 4);
-        CHECK(count == 2);
-        it_reset(DD_ROLE_GUEST);
-        SC_BAG();
-        SC_OPEN(mode);
-        wk_push(1, &curio);
-        dd_runtime_poll();
-        memcpy(&count, bag_items + 0x5a8, 4);
-        CHECK(it_curios == 1 && count == 1 && it_curio_item == (void *)(bag_items + 0x5a8));
-        /* The guest's own drag: already taken here, by the game. */
-        it_reset(DD_ROLE_GUEST);
-        SC_BAG();
-        SC_OPEN(mode);
-        CHECK(!hook_curio_item(panel, dragged) && !it_curios && sent == 1);
-        wk_push(1, &curio);
-        dd_runtime_poll();
-        memcpy(&count, bag_items + 0x5a8, 4);
-        CHECK(it_curios == 1 && count == 2);
-        /* Its last one: only the overlay's hand still has it. */
-        it_reset(DD_ROLE_GUEST);
-        SC_BAG();
-        memset(bag_items, 0, sizeof bag_items);
-        SC_OPEN(mode);
-        memcpy(panel + 0x7c0 + 0x44, &type, 4);
-        memcpy(panel + 0x7c0 + 0x88, &id, 4);
-        CHECK(!hook_curio_item(panel, dragged));
-        wk_push(1, &curio);
-        dd_runtime_poll();
-        CHECK(it_curios == 1 && it_curio_item == (void *)(panel + 0x7c0));
-        memset(panel + 0x7c0, 0, 0x90);
-        /* The host, for a guest's drag: it has no drag, so it takes one; the last one empties its slot. */
-        it_reset(DD_ROLE_HOST);
-        SC_BAG();
-        SC_OPEN(mode);
-        {
-            int32_t one = 1;
-            dd_msg m;
-            memcpy(bag_items + 0x5a8, &one, 4);
-            it_cleared = 0;
-            memset(&m, 0, sizeof m);
-            m.type = DD_MSG_TOWN_REQUEST;
-            m.u.town.request_id = 9;
-            m.u.town.action = curio;
-            CHECK(queue_push(&g_incoming, &m));
-            dd_runtime_poll();
+        for(int role=DD_ROLE_HOST;role<=DD_ROLE_GUEST;role++) {
+            it_reset(role);SC_BAG();SC_OPEN(mode);
+            CHECK(!hook_curio_item(panel,dragged) && !it_curios && !sent);
+            memcpy(&count,bag_items+0x5a8,4);CHECK(count==2);
         }
-        memcpy(&count, bag_items + 0x5a8, 4);
-        CHECK(it_curios == 1 && !count && it_cleared == 1);
     }
     /* Asked for the bag: the host sends every slot, filled first, and the guest ends up with the host's. */
     {
@@ -1422,59 +1372,17 @@ static void item_transactions(void) {
         hook_loot_take_item(button);
         CHECK(it_items == 1 && !sent);
     }
-    /* A curio's item slot: the drop is the order, by kind; the guest finds that kind in its own bag, once its curio is open. */
+    /* Native nesting is allowed only inside a committed apply/passive game.
+     * A late user callback may not start a local-only curio action. */
     {
-        static uint8_t dragged[0x100], bag_items[3 * 0x5a8];
-        uint64_t begin = (uintptr_t)bag_items, end = (uintptr_t)(bag_items + sizeof bag_items), prop = 0x77;
-        uint32_t type = 41, id = 42, mode = 2, none = 0, one = 1, other = 7;
-        CHECK(item_curio_caller(DD_ITEM_CURIO_DROP_RVA) && !item_curio_caller(0x4298d6));
-        memcpy(dragged + 0x44, &type, 4);
-        memcpy(dragged + 0x88, &id, 4);
-        it_reset(DD_ROLE_HOST);
-        CHECK(hook_curio_item(wk_display + DD_WALK_OVERLAY, dragged) == 1 && it_curios == 1 && sent == 1 && last_message.u.town.action.u.item.op == DD_ITEM_OP_CURIO && last_message.u.town.action.u.item.type == 41 && last_message.u.town.action.u.item.id == 42);
-        dd_action curio = last_message.u.town.action;
+        static uint8_t dragged[0x100];
         it_reset(DD_ROLE_GUEST);
-        CHECK(!hook_curio_item(wk_display + DD_WALK_OVERLAY, dragged) && !it_curios && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
-        /* From inside the game's item use it is no new order. */
-        it_reset(DD_ROLE_GUEST);
-        g_item_curio_caller = it_curio_no;
-        CHECK(hook_curio_item(wk_display + DD_WALK_OVERLAY, dragged) == 1 && it_curios == 1 && !sent);
-        /* The guest: a used-up stack and another kind are passed over. */
-        memset(bag_items, 0, sizeof bag_items);
-        memcpy(bag_items + 0x44, &type, 4);
-        memcpy(bag_items + 0x88, &id, 4); /* Right kind, empty. */
-        memcpy(bag_items + 0x5a8, &one, 4);
-        memcpy(bag_items + 0x5a8 + 0x44, &type, 4);
-        memcpy(bag_items + 0x5a8 + 0x88, &other, 4);
-        memcpy(bag_items + 2 * 0x5a8, &one, 4);
-        memcpy(bag_items + 2 * 0x5a8 + 0x44, &type, 4);
-        memcpy(bag_items + 2 * 0x5a8 + 0x88, &id, 4);
-        it_reset(DD_ROLE_GUEST);
-        memcpy(wk_raid_lists + DD_WALK_RAID_INVENTORY + 8, &begin, 8);
-        memcpy(wk_raid_lists + DD_WALK_RAID_INVENTORY + 0x10, &end, 8);
-        memcpy(wk_display + DD_WALK_OVERLAY + 0x6a0, &none, 4);
-        memset(wk_display + DD_WALK_OVERLAY + 0x6a0, 0, 8);
-        wk_push(1, &curio);
-        dd_runtime_poll();
-        CHECK(!it_curios && g_incoming.count == 1); /* Its curio is not open yet. */
-        memcpy(wk_display + DD_WALK_OVERLAY + 0x6a0, &prop, 8);
-        memcpy(wk_display + DD_WALK_OVERLAY + 0xd88, &mode, 4);
-        dd_runtime_poll();
-        CHECK(it_curios == 1 && it_curio_panel == (void *)(wk_display + DD_WALK_OVERLAY) && it_curio_item == (void *)(bag_items + 2 * 0x5a8) && g_town.applied_seq == 1);
-        /* Not in its bag: nothing runs and all peers are stopped before ACK. */
-        memset(bag_items, 0, sizeof bag_items);
-        it_reset(DD_ROLE_GUEST);
-        memcpy(wk_raid_lists + DD_WALK_RAID_INVENTORY + 8, &begin, 8);
-        memcpy(wk_raid_lists + DD_WALK_RAID_INVENTORY + 0x10, &end, 8);
-        memcpy(wk_display + DD_WALK_OVERLAY + 0x6a0, &prop, 8);
-        memcpy(wk_display + DD_WALK_OVERLAY + 0xd88, &mode, 4);
-        wk_push(1, &curio);
-        dd_runtime_poll();
-        CHECK(!it_curios && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
-        memset(wk_display + DD_WALK_OVERLAY + 0x6a0, 0, 8);
-        memset(wk_display + DD_WALK_OVERLAY + 0xd88, 0, 4);
-        g_curio_item = NULL;
-        g_item_curio_caller = item_curio_caller;
+        CHECK(!hook_curio_item(wk_display+DD_WALK_OVERLAY,dragged) && !it_curios && !sent);
+        g_game_apply_depth=1;
+        CHECK(hook_curio_item(wk_display+DD_WALK_OVERLAY,dragged)==1 && it_curios==1 && !sent);
+        g_game_apply_depth=0;
+        dd_action old={0};old.kind=DD_ACT_ITEM;old.u.item.op=DD_ITEM_OP_CURIO;old.u.item.hero=255;
+        CHECK(!dd_action_valid(&old) && !item_apply(&old));
     }
     selection_and_popup_checks();
     results_and_bag_checks();

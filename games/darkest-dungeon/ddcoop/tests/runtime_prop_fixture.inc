@@ -51,17 +51,18 @@ static void prop_cancel_checks(void) {
             cancel = last_message.u.town.action;
             CHECK(pcx_cancels == 1 && g_town.accepted == 1);
             /* A concurrent cancellation after native close has reset the event
-             * is acknowledged without a second native call or prop result. */
+             * is rejected without a second native call or prop result. */
             pcx_panel(0, 1); request.u.town.request_id++;
             CHECK(queue_push(&g_incoming, &request)); dd_runtime_poll();
-            CHECK(pcx_cancels == 1 && g_town.accepted == 2 && !pcx_confirms);
+            CHECK(pcx_cancels == 1 && g_town.accepted == 1 && g_town.rejected == 1 && !pcx_confirms);
         }
         for (unsigned player = 1; player < 4; player++) {
             pcx_reset(DD_ROLE_GUEST); g_cfg.player = player; pcx_panel(2, 1);
             wk_push(1, &cancel); dd_runtime_poll();
             CHECK(pcx_cancels == 1 && g_town.applied_seq == 1 && !g_town.needs_resync && !pcx_confirms && !pcx_opens);
+            /* A fabricated second committed APPLY with an old revision is invalid. */
             pcx_panel(0, 1); wk_push(2, &cancel); dd_runtime_poll();
-            CHECK(pcx_cancels == 1 && g_town.applied_seq == 2);
+            CHECK(pcx_cancels == 1 && g_town.applied_seq == 1 && g_town.needs_resync);
         }
     }
     pcx_reset(DD_ROLE_GUEST); pcx_panel(1, 1);
@@ -72,7 +73,7 @@ static void prop_cancel_checks(void) {
     /* Reopening clears the completion record. A different panel and an unseen
      * closed prop cannot consume this order silently; timeout stops the FIFO. */
     pcx_panel(0, 1);
-    {dd_action open = cancel; open.u.use.door = 0; CHECK(walk_use_apply(&open)); CHECK(!g_prop_cancelled);}
+    {dd_action open = cancel; open.u.use.door = 0;open.u.use.revision=g_prop_revision; CHECK(walk_use_apply(&open)); CHECK(!g_prop_cancelled);}
     pcx_reset(DD_ROLE_GUEST); pcx_panel(2, 1);
     {uint64_t wrong = (uintptr_t)wk_props[0]; memcpy((void *)(uintptr_t)(panel + 0x6a0), &wrong, 8);}
     wk_push(1, &cancel); dd_runtime_poll(); CHECK(!pcx_cancels && g_incoming.count == 1);

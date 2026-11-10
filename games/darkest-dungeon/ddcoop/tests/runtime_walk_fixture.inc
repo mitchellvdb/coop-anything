@@ -140,7 +140,7 @@ static void wk_reset(int role) {
         wk_prop_list[1] = (uintptr_t)wk_props[1];
         memcpy(wk_areas[0] + 0x118, &prop_begin, 8);
         memcpy(wk_areas[0] + 0x120, &prop_end, 8);
-        for (unsigned i = 0; i < 4; i++) wk_party[i] = (uintptr_t)wk_heroes[i];
+        for (unsigned i = 0; i < 4; i++) {wk_party[i] = (uintptr_t)wk_heroes[i];uint32_t id=11+i;memcpy(wk_heroes[i]+0x137c,&id,4);}
         memcpy(wk_raid_lists + 8, &party_begin, 8);
         memcpy(wk_raid_lists + 0x10, &party_end, 8);
         selected = wk_party[2];
@@ -443,10 +443,10 @@ static void use_transactions(void) {
         wk_push(1, &button);
         dd_runtime_poll();
         CHECK(!wk_overlays && !wk_uses && g_incoming.count==1);
-        /* Not this overlay state: the game alone. */
+        /* An active co-op overlay in the wrong phase must not mutate locally. */
         wk_reset(DD_ROLE_HOST);
         hook_overlay_use(functor);
-        CHECK(wk_overlays == 1 && !sent);
+        CHECK(!wk_overlays && !sent);
     }
     /* Disarming a trap: the guest asks and does nothing itself; the host does it; then the guest does it too, with the same hero. */
     wk_reset(DD_ROLE_GUEST);
@@ -480,6 +480,7 @@ static void use_transactions(void) {
         /* The host's game declines the guest's click: no order goes out. */
         wk_reset(DD_ROLE_HOST);
         wk_trap_done = 0;
+        {uint32_t known[4]={11,12,13,14};memcpy(g_hero_owner_ids,known,sizeof known);}
         CHECK(queue_push(&g_incoming, &trap));
         dd_runtime_poll();
         CHECK(wk_traps == 1 && sent == 1 && last_message.type == DD_MSG_TOWN_REJECT);
@@ -793,7 +794,7 @@ static void walk_transactions(void) {
     wk_target(100, 2000.0f);
     hook_raid_move(wk_display, way);
     CHECK(wk_natives == 1 && !wk_moves && way[0] == 1.0f);
-    CHECK(hook_raid_trap(wk_display, wk_props[1]) == 1);
+    CHECK(!hook_raid_trap(wk_display, wk_props[1]) && !wk_traps);
     wk_reset(DD_ROLE_HOST);
     wk_target(100, 2000.0f);
     hook_raid_move(wk_display, way);

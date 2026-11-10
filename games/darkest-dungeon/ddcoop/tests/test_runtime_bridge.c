@@ -505,6 +505,7 @@ static void hook_machine_code(void) {
 #include "runtime_formation_fixture.inc"
 #include "runtime_fresh_raid_fixture.inc"
 #include "runtime_prop_fixture.inc"
+#include "runtime_prop_choice_fixture.inc"
 #include "runtime_input_phase_fixture.inc"
 #include "runtime_review_fixture.inc"
 #include "runtime_selection_fixture.inc"
@@ -747,6 +748,7 @@ int main(void) {
     formation_checks();
     fresh_raid_checks();
     prop_lifecycle_checks();
+    prop_choice_checks();
     prop_cancel_checks();
     battle_input_phase_checks();
     runtime_review_checks();

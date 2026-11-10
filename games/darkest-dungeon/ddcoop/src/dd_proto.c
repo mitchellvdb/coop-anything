@@ -58,7 +58,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_SUPPLIES: return 1+1+2+4*4+32;
     case DD_ACT_DEPARTURE: return 1+4*10+1;
     case DD_ACT_TRAVEL: return 1+4*24+3;
-    case DD_ACT_USE: return 1+4*7+3;
+    case DD_ACT_USE: return 1+4*9+3;
     case DD_ACT_BATTLE: return 1+4*6+6;
     case DD_ACT_ITEM: return 1+4*9+5;
     case DD_ACT_OWNERS: return 1+4*5+1;
@@ -137,7 +137,8 @@ int dd_action_valid(const dd_action *a) {
     }
     case DD_ACT_TRAVEL: return a->u.travel.dest[1]<4096 && a->u.travel.has_from<=1 && a->u.travel.flip<=1 && a->u.travel.extra<=1 &&
         (a->u.travel.has_from || !a->u.travel.from_area);
-    case DD_ACT_USE: return a->u.use.prop<4096 && a->u.use.option<16 && a->u.use.hero<4 && a->u.use.flag<=1 && a->u.use.door<=6 &&
+    case DD_ACT_USE: return a->u.use.prop<4096 && a->u.use.option<16 && a->u.use.hero<4 && a->u.use.flag<=1 && a->u.use.door<=7 &&
+        (a->u.use.door<3 || (a->u.use.revision && a->u.use.revision!=UINT32_MAX && (a->u.use.door==6 || (a->u.use.actor_id && a->u.use.actor_id!=UINT32_MAX)))) &&
                            (a->u.use.door!=6 || (a->u.use.option<=1 && !a->u.use.hero && !a->u.use.flag && !a->u.use.item_type && !a->u.use.item_id)) &&
         (a->u.use.pos & 0x7f800000u) != 0x7f800000u;
     case DD_ACT_BATTLE: return a->u.battle.actor_id && a->u.battle.actor_id!=UINT32_MAX && a->u.battle.target_id!=UINT32_MAX &&
@@ -148,7 +149,7 @@ int dd_action_valid(const dd_action *a) {
     case DD_ACT_PREPARE: return a->u.prepare.index<4096 && a->u.prepare.key;
     case DD_ACT_OWNERS: return party_ids_valid(a->u.owners.heroes) &&
         (a->u.owners.heroes[0] || a->u.owners.heroes[1] || a->u.owners.heroes[2] || a->u.owners.heroes[3]);
-    case DD_ACT_ITEM: return a->u.item.op<=DD_ITEM_OP_BAG_CHECK && (a->u.item.hero<4 || a->u.item.hero==255) && a->u.item.inv<=1 && a->u.item.flag<=1 &&
+    case DD_ACT_ITEM: return a->u.item.op<=DD_ITEM_OP_BAG_CHECK && a->u.item.op!=DD_ITEM_OP_CURIO && (a->u.item.hero<4 || a->u.item.hero==255) && a->u.item.inv<=1 && a->u.item.flag<=1 &&
         (a->u.item.op!=DD_ITEM_OP_SELECT || (!a->u.item.state && a->u.item.hero<4 && a->u.item.id && a->u.item.id!=UINT32_MAX && !a->u.item.inv && !a->u.item.flag)) &&
         (a->u.item.op!=DD_ITEM_OP_BAG_CHECK || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.inv)) &&
         (a->u.item.op!=DD_ITEM_OP_QUEST_RETURN || (!a->u.item.state && a->u.item.hero==255 && !a->u.item.flag)) &&
@@ -214,7 +215,7 @@ static void w_action(wr *w, const dd_action *a) {
         for(unsigned i=0;i<4;i++){w_u32(w,a->u.travel.ids[i]);w_u32(w,a->u.travel.hp[i]);w_u32(w,a->u.travel.stress[i]);w_u32(w,a->u.travel.trinkets[i]);}
         w_u8(w,a->u.travel.has_from);w_u8(w,a->u.travel.flip);w_u8(w,a->u.travel.extra);break;
     case DD_ACT_USE:
-        w_u32(w,a->u.use.area);w_u32(w,a->u.use.prop);w_u32(w,a->u.use.prop_kind);w_u32(w,a->u.use.pos);w_u32(w,a->u.use.option);w_u32(w,a->u.use.item_type);w_u32(w,a->u.use.item_id);
+        w_u32(w,a->u.use.area);w_u32(w,a->u.use.prop);w_u32(w,a->u.use.prop_kind);w_u32(w,a->u.use.pos);w_u32(w,a->u.use.option);w_u32(w,a->u.use.item_type);w_u32(w,a->u.use.item_id);w_u32(w,a->u.use.revision);w_u32(w,a->u.use.actor_id);
         w_u8(w,a->u.use.hero);w_u8(w,a->u.use.flag);w_u8(w,a->u.use.door);break;
     case DD_ACT_BATTLE:
         w_u32(w,a->u.battle.round);w_u32(w,a->u.battle.turn);w_u32(w,a->u.battle.rules);w_u32(w,(uint32_t)a->u.battle.value);w_u32(w,a->u.battle.actor_id);w_u32(w,a->u.battle.target_id);
@@ -279,7 +280,7 @@ static void r_action(rd *r, dd_action *a) {
         for(unsigned i=0;i<4;i++){a->u.travel.ids[i]=r_u32(r);a->u.travel.hp[i]=r_u32(r);a->u.travel.stress[i]=r_u32(r);a->u.travel.trinkets[i]=r_u32(r);}
         a->u.travel.has_from=r_u8(r);a->u.travel.flip=r_u8(r);a->u.travel.extra=r_u8(r);break;
     case DD_ACT_USE:
-        a->u.use.area=r_u32(r);a->u.use.prop=r_u32(r);a->u.use.prop_kind=r_u32(r);a->u.use.pos=r_u32(r);a->u.use.option=r_u32(r);a->u.use.item_type=r_u32(r);a->u.use.item_id=r_u32(r);
+        a->u.use.area=r_u32(r);a->u.use.prop=r_u32(r);a->u.use.prop_kind=r_u32(r);a->u.use.pos=r_u32(r);a->u.use.option=r_u32(r);a->u.use.item_type=r_u32(r);a->u.use.item_id=r_u32(r);a->u.use.revision=r_u32(r);a->u.use.actor_id=r_u32(r);
         a->u.use.hero=r_u8(r);a->u.use.flag=r_u8(r);a->u.use.door=r_u8(r);break;
     case DD_ACT_BATTLE:
         a->u.battle.round=r_u32(r);a->u.battle.turn=r_u32(r);a->u.battle.rules=r_u32(r);a->u.battle.value=(int32_t)r_u32(r);a->u.battle.actor_id=r_u32(r);a->u.battle.target_id=r_u32(r);

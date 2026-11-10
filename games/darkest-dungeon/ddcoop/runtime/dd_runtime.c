@@ -73,6 +73,10 @@ static int departure_apply(const dd_action *);
 static int embark_apply(const dd_action *);
 static int walk_travel_apply(const dd_action *);
 static int walk_use_apply(const dd_action *);
+static int prop_choice_scene(void);
+static void prop_item_reset(void);
+static void prop_item_pickup(unsigned,void *,void *);
+static int prop_item_source_done(void *,void *);
 static void departure_reset(void);
 static void departure_poll(void);
 
@@ -122,7 +126,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
-static const char g_mod_version[] = "0.5.0-test72";
+static const char g_mod_version[] = "0.5.0-test73";
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;
@@ -1115,6 +1119,8 @@ static int install_hooks(void) {
     g_town_depart=(town_depart_fn)hamlet_address("town_depart");
     g_party_select=(party_select_fn)hamlet_address("party_select");
     g_item_clear=(item_clear_fn)hamlet_address("item_clear");
+    g_item_curio_route=(item_curio_route_fn)hamlet_address("item_curio_route");
+    g_prop_item_match=(prop_item_match_fn)hamlet_address("prop_item_match");
     return 1;
 fail:
     while (applied)

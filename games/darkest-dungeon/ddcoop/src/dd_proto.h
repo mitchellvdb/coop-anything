@@ -15,7 +15,7 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 32 /* shared provisional activity slots before Accept */
+#define DD_PROTO_VERSION 33 /* ordered prop choices with revision and persistent actor */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -83,7 +83,7 @@ typedef struct {
         struct {uint8_t op;uint16_t slot;uint32_t type,id,gold,shards;uint8_t before[32];} supplies;
         struct {uint32_t seed,rules,quest,quest_index,heroes[4],supplies,revision;uint8_t owners;} departure; /* owners: bit i, heroes[i] belongs to the guest */
         struct {uint32_t dest[4],from_area,rules,torch,bag,ids[4],hp[4],stress[4],trinkets[4];uint8_t has_from,flip,extra;} travel; /* rules, torch, bag and the party by rank (id 0: none; hp and stress the bits of a float; trinkets a hash): the host's state as it leaves, rules 0 unknown */
-        struct {uint32_t area,prop,prop_kind,pos,option,item_type,item_id;uint8_t hero,flag,door;} use; /* door: 0 open, 1 trap, 2 door, 3 curio, 4 tool, 5 obstacle confirm, 6 cancel (option0 curio/1 obstacle) */
+        struct {uint32_t area,prop,prop_kind,pos,option,item_type,item_id,revision,actor_id;uint8_t hero,flag,door;} use; /* door: 0 open, 1 trap, 2 door, 3 curio, 4 tool, 5 obstacle confirm, 6 cancel (option0 curio/1 obstacle), 7 direct curio item; choices3..7 use revision; flag preserves NULL native actor */
         struct {uint32_t round,turn,rules,actor_id,target_id;int32_t value;uint8_t op,state,hero,flag,side,place;} battle; /* value: skill slot or -1, or a rank; side and place: the target */
         struct {uint32_t area,pos,round,turn,rules,amount,type,id;int32_t slot;uint8_t op,state,hero,inv,flag;} item; /* state 0: outside a fight; hero 255: none; inv 0 the bag, 1 the loot */
         struct {uint32_t heroes[4],revision;uint8_t mask;} owners;

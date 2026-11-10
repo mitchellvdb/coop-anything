@@ -13,7 +13,7 @@ static curio_item_fn g_curio_item;
 static uint64_t g_item_wait_until, g_loot_done_at, g_loot_asked_at;
 static uint32_t g_loot_request, g_loot_asked_key;
 static int g_item_gate_told;
-static uint64_t g_item_use_asked_at, g_curio_mine_at;
+static uint64_t g_item_use_asked_at;
 static void g_tutorial_panel_reset(void);
 static uint8_t g_loot_dummy_widget[0x40]; /* 7eda80 only plays the item's sound, and skips that when +30 is empty. */
 static uint64_t item_controller(void) {
@@ -38,7 +38,7 @@ static void items_reset(void) {
     g_item_wait_until = g_loot_done_at = g_loot_asked_at = 0;
     g_loot_request = g_loot_asked_key = 0;
     g_item_gate_told = 0;
-    g_item_use_asked_at = g_curio_mine_at = 0;
+    g_item_use_asked_at = 0;
 }
 /* The torch's click (782d20): 783d26 snuffs it; reducing is a stored function called at 783dd3, which is 4328d0 and jumps to 6155f0, so it returns behind that call.
  * Not 430dbb: that is inside using a torch item, which is an order already (owner's run: the torch went up twice on the guest). */
@@ -91,7 +91,8 @@ static uint64_t __fastcall hook_item_use(void *controller, void *hero, void *inv
     walk_view v;
     dd_action a;
     if (!g_item_use) return 0;
-    if (g_game_apply_depth || !walk_shared()) return g_item_use(controller, hero, inventory, slot, flag);
+    if(g_game_apply_depth || !walk_coop_active())return g_item_use(controller,hero,inventory,slot,flag);
+    if(!walk_shared())return 0;
     if (runtime_shared_blocked()) return 0;
     if (!item_order(DD_ITEM_OP_USE, &a, &v)) return 0;
     if ((uintptr_t)inventory == v.raid + DD_WALK_RAID_INVENTORY) a.u.item.inv = 0;
@@ -108,6 +109,9 @@ static uint64_t __fastcall hook_item_use(void *controller, void *hero, void *inv
         dd_log("Item: this hero belongs to the other player; dropped");
         return 0;
     }
+    dd_action choice={0};
+    int route=prop_item_route(&v,controller,inventory,slot,&choice);
+    if(route) {if(route>0)walk_choice_dispatch(&choice);return 0;}
     a.u.item.slot = slot;
     a.u.item.flag = flag != 0;
     if (g_cfg.role == DD_ROLE_GUEST) {
@@ -249,32 +253,13 @@ static void __fastcall hook_loot_take_item(void *button) {
     loot_send(&a);
     if (g_cfg.role == DD_ROLE_HOST) g_loot_take_item(button);
 }
-/* 712e40: an item goes into the curio's slot (overlay, item; its kind at +44 and +88). The drop at 710fc7 passes a copy that is being dragged; the overlay's next update then runs the
- * curio with it by itself (7107c0, 7111e0). So the drop is the order. Using an item from the bag gets here from inside 429750, which is an order already. */
-#define DD_ITEM_CURIO_DROP_RVA 0x710fccu
-static int item_curio_caller(uintptr_t rva) { return rva == DD_ITEM_CURIO_DROP_RVA; }
-static int (*g_item_curio_caller)(uintptr_t) = item_curio_caller;
+/* Late native curio item mutation is allowed only within ordered apply.
+ * Player drags are intercepted earlier at70bf70; clicks route through USE7. */
 static uint8_t __fastcall hook_curio_item(void *overlay, void *item) {
-#ifdef _MSC_VER
-    uintptr_t caller = (uintptr_t)_ReturnAddress();
-#else
-    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
-#endif
-    walk_view v;
-    dd_action a;
-    if (!g_curio_item) return 0;
-    if (g_game_apply_depth || !walk_shared() || !g_item_curio_caller(caller - image_base())) return g_curio_item(overlay, item);
-    uint64_t chooser = 0;
-    if (!item_order(DD_ITEM_OP_CURIO, &a, &v) || !safe_read((uintptr_t)item + 0x44, &a.u.item.type, 4) || !safe_read((uintptr_t)item + 0x88, &a.u.item.id, 4)) {
-        dd_log("Item: curio item not readable; dropped");
-        return 0;
-    }
-    /* The hero who does it (7111e0): the overlay's own choice, or the selected one. */
-    if ((safe_read((uintptr_t)overlay + 0xd78, &chooser, 8) && chooser) || safe_read((uintptr_t)v.raid + 0x438, &chooser, 8)) walk_hero_rank(v.raid, chooser, &a.u.item.hero);
-    if (g_cfg.role == DD_ROLE_GUEST) g_curio_mine_at = GetTickCount64();
-    walk_rules_send(&v);
-    item_send(&a);
-    return g_cfg.role == DD_ROLE_HOST ? g_curio_item(overlay, item) : 0;
+    if(!g_curio_item)return 0;
+    if(g_game_apply_depth || !walk_coop_active())return g_curio_item(overlay,item);
+    dd_log("Prop choice: late local curio item mutation refused; use the shared drop/click path");
+    return 0;
 }
 static uint64_t item_in_bag(uint64_t raid, uint32_t type, uint32_t id) {
     uint64_t begin = 0, end = 0;
@@ -1359,33 +1344,7 @@ static int item_apply(const dd_action *a) {
         if (g_cfg.role == DD_ROLE_HOST) bag_send_all(&v);
         return 1;
     }
-    if (a->u.item.op == DD_ITEM_OP_CURIO) {
-        uint64_t item = item_in_bag(v.raid, a->u.item.type, a->u.item.id);
-        /* The player's drag already took one out of this copy's bag: the last one is only in the overlay's hand (+7c0), where hook_curio_item got it from. */
-        int mine = g_cfg.role == DD_ROLE_GUEST && g_curio_mine_at && GetTickCount64() - g_curio_mine_at < 15000;
-        int taken = 0;
-        g_curio_mine_at = 0;
-        if (!item && mine) {
-            uint32_t type = 0, id = 0;
-            uint64_t hand = v.display + DD_WALK_OVERLAY + 0x7c0;
-            if (safe_read((uintptr_t)hand + 0x44, &type, 4) && safe_read((uintptr_t)hand + 0x88, &id, 4) && type == a->u.item.type && id == a->u.item.id) item = hand, taken = 1;
-        }
-        if (!g_curio_item || !item || !curio_open(&v)) {
-            dd_log("Item: no such item or no curio open here (type=%08x id=%08x)", a->u.item.type, a->u.item.id);
-            return refused;
-        }
-        dd_log("Item: curio slot gets type=%08x id=%08x hero=%u (role=%s)", a->u.item.type, a->u.item.id, a->u.item.hero, dd_role_name(g_cfg.role));
-        if (a->u.item.hero != 255) {
-            uint64_t doer = battle_target_at(v.raid, 0, a->u.item.hero);
-            walk_select(&v, a->u.item.hero);
-            if (doer) memcpy((void *)(uintptr_t)(v.display + DD_WALK_OVERLAY + 0xd78), &doer, 8);
-        }
-        if (g_cfg.role == DD_ROLE_HOST) walk_rules_send(&v);
-        g_curio_item((void *)(uintptr_t)(v.display + DD_WALK_OVERLAY), (void *)(uintptr_t)item);
-        /* A drag on the curio takes one out of the bag before this call; the copy without the drag must do that too (owner's run of 6 Nov: 4 holy water here, 3 on the host, from then on). */
-        if (!mine && !taken) item_take_one(&v, item);
-        return 1;
-    }
+    if (a->u.item.op == DD_ITEM_OP_CURIO) return 0; /* Removed optimistic legacy path in protocol33. */
     if (a->u.item.op == DD_ITEM_OP_TORCH) {
         float amount;
         memcpy(&amount, &a->u.item.amount, 4);
@@ -1403,6 +1362,10 @@ static int item_apply(const dd_action *a) {
         dd_log("Item: guest player %d asked for a hero that is not theirs", g_request_player);
         return 0;
     }
+    dd_action choice={0};
+    int curio_route=prop_item_route(&v,(void *)(uintptr_t)controller,
+        (void *)(uintptr_t)(v.raid+(a->u.item.inv?DD_WALK_RAID_LOOT:DD_WALK_RAID_INVENTORY)),a->u.item.slot,&choice);
+    if(curio_route) {dd_log("Item: ordinary use now routes to a shared curio choice; refused without effects");return 0;}
     if (g_cfg.role == DD_ROLE_HOST) walk_rules_send(&v);
     g_item_use_asked_at = 0;
     dd_log("Item: use slot=%d inv=%u hero=%u (role=%s)", a->u.item.slot, a->u.item.inv, a->u.item.hero, dd_role_name(g_cfg.role));
