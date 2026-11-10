@@ -30,6 +30,29 @@ static void runtime_sync_stop(uint32_t reason);
 static int bag_repair_busy(void);
 static void bag_templates_clear(void);
 static int formation_busy(void);
+static int activity_apply(const dd_action *);
+static int activity_shared(void);
+static uintptr_t activity_accept_input(void *,void *,uint32_t);
+static void activity_register(void *);
+static void activity_reset(void);
+static int activity_release_drafts(void);
+static int activity_has_draft(uint32_t);
+static void activity_new_epoch(uint32_t);
+static int g_activity_constructing;
+static uint8_t (__fastcall *g_activity_blocked)(void *);
+static uint8_t (__fastcall *g_activity_slot_blocked)(void *,uint32_t);
+static void (__fastcall *g_activity_set)(void *,void *);
+static int (__fastcall *g_activity_drop)(void *,void *,void *);
+static uintptr_t (__fastcall *g_activity_destroy)(void *,uint32_t);
+static void (__fastcall *g_activity_pickup)(void *,void *,void *,void *);
+static void (__fastcall *g_activity_source_finish)(void *,void *);
+static void (__fastcall *g_activity_source_remove)(void *,void *);
+static void __fastcall hook_activity_set(void *,void *);
+static int __fastcall hook_activity_drop(void *,void *,void *);
+static uintptr_t __fastcall hook_activity_destroy(void *,uint32_t);
+static void __fastcall hook_activity_pickup(void *,void *,void *,void *);
+static void __fastcall hook_activity_source_finish(void *,void *);
+static void __fastcall hook_activity_source_remove(void *,void *);
 static int formation_apply(const dd_action *a);
 static int hamlet_apply(const dd_action *a);
 static void hamlet_reset(void);
@@ -99,7 +122,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
-static const char g_mod_version[] = "0.5.0-test70";
+static const char g_mod_version[] = "0.5.0-test71";
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;
@@ -878,6 +901,7 @@ static int item_apply(const dd_action *a);
 static int hero_owners_apply(const dd_action *a);
 static int prepare_apply(const dd_action *a);
 static int runtime_apply_inner(void *unused, const dd_action *a) {
+    if(a->kind==DD_ACT_ACTIVITY)return activity_apply(a);
     (void)unused;
     if (!a || !dd_action_valid(a)) return 0;
     if(a->kind==DD_ACT_FORMATION_RESET)return formation_apply(a);
@@ -936,6 +960,10 @@ static int runtime_apply(void *unused,const dd_action *a) {
 
 static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint32_t hero_id) {
     if (!g_original_assign) return 0;
+    if(!g_game_apply_depth && activity_shared()) {
+        int kind=g_activity_kind(activity);
+        if(kind>=0 && kind<6)return activity_accept_input(activity,result,hero_id);
+    }
     if (runtime_shared_blocked() || runtime_waiting_for_peer()) return 0;
     if (g_cfg.role == DD_ROLE_GUEST && InterlockedCompareExchange(&g_campaign_active, 0, 0)) {
         int kind = activity_kind(activity), slot = -1;
@@ -1012,7 +1040,10 @@ static int __fastcall hook_buy_upgrade(const void *request) {
 }
 
 static uintptr_t __fastcall hook_slot_widget_ctor(void *widget, void *activity, int slot_index) {
+    g_activity_constructing++;
     uintptr_t ret = g_original_widget_ctor ? g_original_widget_ctor(widget, activity, slot_index) : 0;
+    g_activity_constructing--;
+    activity_register(widget);
     if (InterlockedCompareExchange(&g_campaign_active, 0, 0) && slot_index >= 0 && slot_index < DD_ACTIVITY_SLOTS) {
         int kind = activity_kind(activity);
         if (kind >= 0 && kind < DD_ACTIVITY_COUNT_) {
@@ -1030,6 +1061,7 @@ static void supply_drag_pickup(void *ui);
 static int supply_drag_finish(void *ui);
 static void bag_drag_done(void);
 #include "dd_hamlet_bridge.inc"
+#include "dd_activity_bridge.inc"
 #include "dd_supplies_bridge.inc"
 #include "dd_departure_bridge.inc"
 #include "dd_frontend_bridge.inc"
@@ -1438,6 +1470,7 @@ static void runtime_poll_once(void) {
         g_shop_request = 0;
         g_sell_request = 0;
         hamlet_reset();
+        activity_reset();
         provisions_reset();
         departure_reset();
         walk_reset();
@@ -1472,6 +1505,7 @@ static void runtime_poll_once(void) {
     while (queue_peek(&g_incoming, &m)) {
         if (formation_gate(&m)) break;
         if (prepare_gate(&m)) break;
+        if (departure_follow_gate(&m)) break;
         if (hero_owners_gate(&m)) break;
         if (walk_gate(&m)) break;
         if (battle_gate(&m)) break;

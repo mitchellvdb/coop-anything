@@ -15,7 +15,7 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 31 /* normal prop X is an ordered, idempotent cancel */
+#define DD_PROTO_VERSION 32 /* shared provisional activity slots before Accept */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -57,6 +57,7 @@ typedef enum {
     DD_ACT_PREPARE = 21, /* open normal provisions together, same selected mission */
     DD_ACT_EMBARK = 22, /* request normal departure; only the host supplies seeds via DEPARTURE */
     DD_ACT_FORMATION_RESET = 23, /* dungeon default order, same stable IDs before/after */
+    DD_ACT_ACTIVITY = 24, /* shared reserve/clear/accept, exact per-slot revision */
     DD_ACT_COUNT_
 } dd_action_kind;
 
@@ -69,6 +70,7 @@ typedef enum {
 typedef struct {
     uint8_t kind; /* dd_action_kind */
     union {
+        struct {uint8_t op,activity,slot;uint32_t hero_id,revision,epoch;} activity;
         struct { uint8_t activity, slot; uint32_t hero_id; } assign;              /* activity: dd_activity */
         struct { uint32_t tree; uint8_t code; uint32_t hero_id; } upgrade;        /* tree = hash("class.item"), hero 0 = building */
         struct { uint32_t hero_id; } hero;                                         /* recruit, dismiss */

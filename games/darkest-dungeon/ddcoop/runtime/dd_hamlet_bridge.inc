@@ -275,6 +275,7 @@ static const char *hamlet_dismiss_problem(const dd_hamlet *s, uint32_t id, dd_ha
     uint32_t party[4];
     if (dd_hamlet_find(s, id, hero) != 1)
         return "DDCoop could not verify this hero in the roster. Reopen the roster.";
+    if (activity_has_draft(id))return "Clear this hero from the shared activity slot before dismissing them.";
     if (hero->location > 1)
         return "This hero is in a building or unavailable and cannot be dismissed now.";
     if (!dd_hamlet_party(s, party))
@@ -748,7 +749,7 @@ static int hamlet_party_selectable(const dd_hamlet *s, const uint32_t ids[4], ui
     for (unsigned i = 0; i < 4; i++) if (ids[i]) {
         dd_hamlet_hero hero;
         if (dd_hamlet_find(s, ids[i], &hero) != 1) return 0;
-        if (hero.location > 1) out[i] = 0;
+        if (hero.location > 1 || activity_has_draft(ids[i])) out[i] = 0;
     }
     return 1;
 }
@@ -1049,6 +1050,12 @@ typedef struct {
     size_t length;
 } hamlet_hook_spec;
 static const hamlet_hook_spec g_hamlet_hooks[] = {
+    {"activity_slot_set_hero",(uintptr_t)hook_activity_set,&g_activity_set,10},
+    {"activity_slot_drop",(uintptr_t)hook_activity_drop,&g_activity_drop,10},
+    {"activity_slot_destruct",(uintptr_t)hook_activity_destroy,&g_activity_destroy,10},
+    {"activity_slot_source_pickup",(uintptr_t)hook_activity_pickup,&g_activity_pickup,11},
+    {"activity_slot_source_remove",(uintptr_t)hook_activity_source_remove,&g_activity_source_remove,10},
+    {"activity_slot_source_finish",(uintptr_t)hook_activity_source_finish,&g_activity_source_finish,11},
     {"hero_toggle_combat", (uintptr_t)hook_hamlet_combat, &g_hamlet_toggle[0], 13},
     {"hero_toggle_camping", (uintptr_t)hook_hamlet_camping, &g_hamlet_toggle[1], 16},
     {"hero_commit_name", (uintptr_t)hook_hamlet_name, &g_hamlet_name, 16},
@@ -1074,6 +1081,8 @@ static uintptr_t hamlet_address(const char *name) {
     return a ? (uintptr_t)a->resolved_va : 0;
 }
 static int hamlet_bind_native(void) {
+    g_activity_blocked=(uint8_t (__fastcall *)(void *))hamlet_address("activity_blocked");
+    g_activity_slot_blocked=(uint8_t (__fastcall *)(void *,uint32_t))hamlet_address("activity_slot_blocked");
     g_hamlet_skills_refresh = (hamlet_skills_refresh_fn)hamlet_address("character_refresh_skills");
     g_hamlet_roster_update = (hamlet_roster_update_fn)hamlet_address("roster_list_update");
     g_recruit_event = (recruit_event_fn)hamlet_address("recruit_event_send");
@@ -1092,6 +1101,6 @@ static int hamlet_bind_native(void) {
     g_hamlet_actor_refresh = (hamlet_notify_fn)hamlet_address("actor_refresh_trinkets");
     g_hero_equipment = (hamlet_notify_fn)hamlet_address("hero_equipment_levels");
     g_hero_skills = (hamlet_notify_fn)hamlet_address("hero_skill_levels");
-    return g_hero_equipment && g_hero_skills && g_hamlet_add && g_hamlet_deduct && g_hamlet_notify && g_hamlet_swap && g_hamlet_copy &&
+    return g_activity_blocked && g_activity_slot_blocked && g_hero_equipment && g_hero_skills && g_hamlet_add && g_hamlet_deduct && g_hamlet_notify && g_hamlet_swap && g_hamlet_copy &&
            g_hamlet_clear && g_hamlet_destroy && g_hamlet_actor_refresh && g_hamlet_skills_refresh;
 }

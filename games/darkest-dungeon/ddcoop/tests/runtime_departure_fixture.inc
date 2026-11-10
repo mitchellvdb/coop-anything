@@ -305,17 +305,22 @@ static void departure_transactions(void) {
         sw_push_apply(1, 0, &leave);
         dd_runtime_poll();
         CHECK(!dp_departs && g_town.needs_resync && alerts);
-        /* Not in the Hamlet, or the host's other mission unknown: told, nothing started. */
+        /* Native town not ready: keep the shared departure pending and follow
+         * automatically once ready, never ACK a manual-local fallback. */
         dp_reset(DD_ROLE_GUEST);
         dp_in_raid = 1;
         sw_push_apply(1, 0, &leave);
         dd_runtime_poll();
-        CHECK(!dp_departs && !dp_party_calls && alerts == 1 && g_departure_seed == leave.u.departure.seed && !g_town.needs_resync);
+        CHECK(!dp_departs && !dp_party_calls && !alerts && !g_departure_seed && !g_town.applied_seq && g_incoming.count == 1 && !g_town.needs_resync);
+        dp_in_raid = 0; dd_runtime_poll();
+        CHECK(dp_departs == 1 && g_town.applied_seq == 1 && !g_incoming.count && !g_town.needs_resync);
         dp_reset(DD_ROLE_GUEST);
         dp_view_fail = 1;
         sw_push_apply(1, 0, &leave);
         dd_runtime_poll();
-        CHECK(!dp_departs && alerts == 1 && !g_town.needs_resync);
+        CHECK(!dp_departs && !alerts && !g_town.applied_seq && g_incoming.count == 1 && !g_town.needs_resync);
+        dp_view_fail = 0; dd_runtime_poll();
+        CHECK(dp_departs == 1 && g_town.applied_seq == 1 && !g_incoming.count && !g_town.needs_resync);
     }
     /* The mission lookup, on its bounds, and the single quest of +12c0. */
     dp_reset(DD_ROLE_HOST);

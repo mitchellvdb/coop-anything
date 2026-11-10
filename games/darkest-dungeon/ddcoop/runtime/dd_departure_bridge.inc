@@ -27,7 +27,7 @@ static void *g_rules_object;
 static uint32_t g_departure_seed, g_departure_rules, g_departure_open_supplies;
 static int depart_clock(float *out) { return safe_read(image_base() + 0x2a6e178, out, 4); }
 static int (*g_depart_clock)(float *) = depart_clock;
-static uint64_t g_departure_poll_at;
+static uint64_t g_departure_poll_at, g_departure_follow_until;
 static int g_departure_forcing, g_departure_have_host;
 static void quest_return_reset(void);
 static departure_view g_departure_host;
@@ -39,7 +39,7 @@ static void departure_reset(void) {
     prepare_reset();
     embark_reset();
     g_departure_seed = g_departure_rules = g_departure_open_supplies = 0;
-    g_departure_poll_at = 0;
+    g_departure_poll_at = g_departure_follow_until = 0;
     g_departure_forcing = g_departure_have_host = 0;
     memset(&g_departure_host, 0, sizeof g_departure_host);
 }
@@ -324,9 +324,34 @@ static uintptr_t __fastcall hook_raid_start(void *app) {
 /* Guest only: stores the seeds and leaves too. Everything before this order has already been applied. */
 #include "dd_prepare_bridge.inc"
 #include "dd_embark_bridge.inc"
+/* A guest can still be leaving results/closing another native town screen.
+ * Keep the ordered departure at the FIFO head until its town exists; no user
+ * must click a second departure or invent a map without the shared seeds. */
+static int departure_follow_gate(const dd_msg *m) {
+    if (g_cfg.role != DD_ROLE_GUEST || m->type != DD_MSG_TOWN_APPLY ||
+        m->u.town.action.kind != DD_ACT_DEPARTURE || !dd_action_valid(&m->u.town.action) ||
+        g_town.applied_seq == UINT32_MAX || m->seq != g_town.applied_seq + 1) return 0;
+    depart_view v;
+    if (!g_town_depart || (g_depart_view(&v) && v.town && !v.raid)) {
+        g_departure_follow_until = 0; return 0;
+    }
+    uint64_t now = GetTickCount64();
+    if (!g_departure_follow_until) {
+        g_departure_follow_until = now + 30000;
+        dd_log("Departure: shared order waits for this copy's town; no local departure click required");
+    }
+    if (now <= g_departure_follow_until) return 1;
+    g_departure_follow_until = 0;
+    dd_log("Departure: town did not become ready within the shared wait; apply must refuse");
+    return 0;
+}
 static int departure_apply(const dd_action *a) {
     depart_view view;
     if (g_cfg.role != DD_ROLE_GUEST) return 0;
+    if (!g_town_depart || !g_depart_view(&view) || !view.town || view.raid) {
+        dd_log("Departure: shared order cannot follow from this state; not acknowledged");
+        return 0;
+    }
     g_departure_seed = a->u.departure.seed;
     g_departure_rules = a->u.departure.rules;
     g_departure_host.quest = a->u.departure.quest;
@@ -335,11 +360,6 @@ static int departure_apply(const dd_action *a) {
     g_departure_have_host = 1;
     hero_owners_set(a->u.departure.heroes, a->u.departure.owners);
     dd_log("Departure: host embarked; map seed %u and Rules seed %u stored", g_departure_seed, g_departure_rules);
-    if (!g_town_depart || !g_depart_view(&view) || !view.town || view.raid) {
-        dd_log("Departure: cannot follow from here");
-        shop_notice("The host has departed. Click OK, select the same mission and party, then depart too.");
-        return 1;
-    }
     if (!depart_set_quest(&view, a->u.departure.quest_index, a->u.departure.quest)) return 0;
     if (!g_depart_party()) {
         dd_log("Departure: the party could not be prepared; not following");

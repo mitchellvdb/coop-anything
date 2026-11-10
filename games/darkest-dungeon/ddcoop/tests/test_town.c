@@ -91,6 +91,7 @@ static dd_action random_action(void) {
     memset(&a, 0, sizeof a);
     a.kind = (uint8_t)(1 + rnd() % (DD_ACT_COUNT_ - 1));
     switch (a.kind) {
+    case DD_ACT_ACTIVITY: a.u.activity.op=1;a.u.activity.activity=DD_ACTIVITY_BAR;a.u.activity.slot=0;a.u.activity.hero_id=7;a.u.activity.revision=1;a.u.activity.epoch=1;break;
     case DD_ACT_ASSIGN_HERO:
         a.u.assign.activity = (uint8_t)(rnd() % DD_ACTIVITY_COUNT_);
         a.u.assign.slot = (uint8_t)(rnd() % 3);

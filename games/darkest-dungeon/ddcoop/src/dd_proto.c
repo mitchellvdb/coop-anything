@@ -40,6 +40,7 @@ static void r_text(rd *r, char *dst, size_t len, int *invalid) {
 
 static size_t action_body_size(uint8_t kind) {
     switch (kind) {
+    case DD_ACT_ACTIVITY: return 1 + 1 + 1 + 1 + 4 + 4 + 4;
     case DD_ACT_ASSIGN_HERO: return 1 + 1 + 1 + 4;
     case DD_ACT_BUY_UPGRADE: return 1 + 4 + 1 + 4;
     case DD_ACT_RECRUIT:
@@ -92,6 +93,9 @@ int dd_action_valid(const dd_action *a) {
         }
         return count>0;
     }
+    case DD_ACT_ACTIVITY:
+        return a->u.activity.op>=1 && a->u.activity.op<=4 && a->u.activity.activity<DD_ACTIVITY_COUNT_ &&
+            a->u.activity.slot<3 && a->u.activity.hero_id && a->u.activity.hero_id!=UINT32_MAX && a->u.activity.revision && a->u.activity.epoch;
     case DD_ACT_ASSIGN_HERO:
         return a->u.assign.activity < DD_ACTIVITY_COUNT_ && a->u.assign.slot < 3 && a->u.assign.hero_id != 0;
     case DD_ACT_BUY_UPGRADE: {
@@ -169,6 +173,9 @@ static void w_action(wr *w, const dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)w_u32(w,a->u.owners.heroes[i]);
         w_u32(w,a->u.owners.revision);w_u8(w,a->u.owners.mask);break;
+    case DD_ACT_ACTIVITY:
+        w_u8(w,a->u.activity.op);w_u8(w,a->u.activity.activity);w_u8(w,a->u.activity.slot);
+        w_u32(w,a->u.activity.hero_id);w_u32(w,a->u.activity.revision);w_u32(w,a->u.activity.epoch);break;
     case DD_ACT_ASSIGN_HERO: w_u8(w, a->u.assign.activity); w_u8(w, a->u.assign.slot); w_u32(w, a->u.assign.hero_id); break;
     case DD_ACT_BUY_UPGRADE: w_u32(w, a->u.upgrade.tree); w_u8(w, a->u.upgrade.code); w_u32(w, a->u.upgrade.hero_id); break;
     case DD_ACT_RECRUIT:
@@ -231,6 +238,9 @@ static void r_action(rd *r, dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)a->u.owners.heroes[i]=r_u32(r);
         a->u.owners.revision=r_u32(r);a->u.owners.mask=r_u8(r);break;
+    case DD_ACT_ACTIVITY:
+        a->u.activity.op=r_u8(r);a->u.activity.activity=r_u8(r);a->u.activity.slot=r_u8(r);
+        a->u.activity.hero_id=r_u32(r);a->u.activity.revision=r_u32(r);a->u.activity.epoch=r_u32(r);break;
     case DD_ACT_ASSIGN_HERO: a->u.assign.activity = r_u8(r); a->u.assign.slot = r_u8(r); a->u.assign.hero_id = r_u32(r); break;
     case DD_ACT_BUY_UPGRADE: a->u.upgrade.tree = r_u32(r); a->u.upgrade.code = r_u8(r); a->u.upgrade.hero_id = r_u32(r); break;
     case DD_ACT_RECRUIT:

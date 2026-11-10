@@ -1047,6 +1047,8 @@ static void town_check_poll(void) {
     a.u.item.type = d[0];
     a.u.item.id = d[1];
     a.u.item.round = d[2];
+    a.u.item.amount = g_town.next_apply_seq;
+    activity_new_epoch(a.u.item.amount);
     dd_log("Town: back from the raid; currencies %08x, heroes %08x, %u heroes", d[0], d[1], d[2]);
     dd_town_host_observed(&g_town, &a);
 }
@@ -1059,6 +1061,7 @@ static int town_check_apply(const dd_action *a) {
         return 0;
     }
     if (d[0] == a->u.item.type && d[1] == a->u.item.id && d[2] == a->u.item.round) {
+        activity_new_epoch(a->u.item.amount);
         dd_log("Town: same as the host after the raid (%u heroes)", d[2]);
         return 1;
     }

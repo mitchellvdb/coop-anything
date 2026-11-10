@@ -41,6 +41,7 @@ static dd_action act(uint8_t kind) {
     memset(&a, 0, sizeof a);
     a.kind = kind;
     switch (kind) {
+    case DD_ACT_ACTIVITY: a.u.activity.op=1;a.u.activity.activity=DD_ACTIVITY_BAR;a.u.activity.slot=0;a.u.activity.hero_id=7;a.u.activity.revision=1;a.u.activity.epoch=1;break;
     case DD_ACT_ASSIGN_HERO: a.u.assign.activity = DD_ACTIVITY_MEDITATION; a.u.assign.slot = 2; a.u.assign.hero_id = 7; break;
     case DD_ACT_BUY_UPGRADE: a.u.upgrade.tree = 0x3fb36379; a.u.upgrade.code = '0'; a.u.upgrade.hero_id = 1; break;
     case DD_ACT_RECRUIT: a.u.hero.hero_id = 30; break;
@@ -302,6 +303,31 @@ static void test_camp_skill_rank_bounds(void) {
     printf("Camping packet: four actor ranks/eight selected skills bounded; native target sentinel preserved\n");
 }
 
+static void test_activity_packets(void) {
+    uint8_t bytes[DD_PROTO_HEADER+DD_PROTO_MAX_BODY];dd_msg out;size_t used=0;
+    for(unsigned op=1;op<=4;op++)for(unsigned activity=0;activity<DD_ACTIVITY_COUNT_;activity++)
+        for(unsigned slot=0;slot<3;slot++) {
+            dd_action a=act(DD_ACT_ACTIVITY);a.u.activity.op=(uint8_t)op;
+            a.u.activity.activity=(uint8_t)activity;a.u.activity.slot=(uint8_t)slot;
+            a.u.activity.revision=UINT32_MAX;
+            dd_msg m=town(DD_MSG_TOWN_REQUEST,a);size_t n=dd_encode(&m,bytes,sizeof bytes);
+            CHECK(n && dd_decode(bytes,n,&out,&used)==DD_DECODE_OK && same_msg(&m,&out),"activity shape %u/%u/%u",op,activity,slot);
+            /* A malformed payload may not reach the model/native adapter. */
+            size_t at=DD_PROTO_HEADER+4+1;
+            uint8_t saved=bytes[at];bytes[at]=5;
+            CHECK(dd_decode(bytes,n,&out,&used)==DD_DECODE_BAD_VALUE,"activity opcode bound");bytes[at]=saved;
+            saved=bytes[at+1];bytes[at+1]=DD_ACTIVITY_COUNT_;
+            CHECK(dd_decode(bytes,n,&out,&used)==DD_DECODE_BAD_VALUE,"activity kind bound");bytes[at+1]=saved;
+            saved=bytes[at+2];bytes[at+2]=3;
+            CHECK(dd_decode(bytes,n,&out,&used)==DD_DECODE_BAD_VALUE,"activity slot bound");bytes[at+2]=saved;
+            memset(bytes+at+3+4,0,4);
+            CHECK(dd_decode(bytes,n,&out,&used)==DD_DECODE_BAD_VALUE,"activity revision zero");
+        }
+    dd_action a=act(DD_ACT_ACTIVITY);a.u.activity.hero_id=0;CHECK(!dd_action_valid(&a),"activity no empty hero");
+    a.u.activity.hero_id=UINT32_MAX;CHECK(!dd_action_valid(&a),"activity sentinel hero refused");
+    puts("Activity protocol32: reserve/clear/accept shapes, per-slot revision, malformed opcode/slot/hero/activity and full boundaries verified");
+}
+
 static void fuzz(void) {
     uint8_t buf[DD_PROTO_HEADER + DD_PROTO_MAX_BODY + 32];
     dd_msg out;
@@ -397,6 +423,7 @@ int main(void) {
     test_invalid_encode();
     test_decode_errors();
     test_camp_skill_rank_bounds();
+    test_activity_packets();
     fuzz();
     printf("%s (%d failure%s)\n", failures ? "FAILED" : "OK", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

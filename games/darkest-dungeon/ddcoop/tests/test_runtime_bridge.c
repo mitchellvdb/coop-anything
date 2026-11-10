@@ -81,7 +81,7 @@ static void reset(int role) {
     g_recruit_waiting = 0;
     g_shop_notice[0] = 0;
     g_sell_request = 0;
-    g_game_apply_depth=0;hamlet_reset();
+    g_game_apply_depth=0;hamlet_reset();activity_reset();
     g_recruit_panel = 0;
     g_recruit_can_apply = can_apply;
     ready = applied_count = sent = alerts = 0;
@@ -495,6 +495,7 @@ static void hook_machine_code(void) {
 #include "runtime_departure_fixture.inc"
 #include "runtime_prepare_fixture.inc"
 #include "runtime_embark_fixture.inc"
+#include "runtime_guest_afk_fixture.inc"
 #include "runtime_frontend_fixture.inc"
 #include "runtime_walk_fixture.inc"
 #include "runtime_party_fixture.inc"
@@ -506,6 +507,7 @@ static void hook_machine_code(void) {
 #include "runtime_prop_fixture.inc"
 #include "runtime_input_phase_fixture.inc"
 #include "runtime_review_fixture.inc"
+#include "runtime_activity_fixture.inc"
 #include "runtime_hunger_fixture.inc"
 #include "runtime_quest_return_fixture.inc"
 #include "dd_focus.h"
@@ -732,6 +734,7 @@ int main(void) {
     sw_drags();
     sw_stock_slot_drops();
     departure_transactions();
+    guest_afk_transactions();
     prepare_transactions();
     embark_transactions();
     frontend_transactions();
@@ -749,6 +752,7 @@ int main(void) {
     hunger_transactions();
     quest_return_transactions();
     activity_transactions();
+    activity_bridge_checks();
     duo_checks();
     guard_transactions();
     reset(DD_ROLE_HOST);

@@ -32,7 +32,7 @@ static int prepare_apply(const dd_action *a) {
     if (state >= 1 && state <= 4) return v.quest == (int32_t)a->u.prepare.index && v.key == a->u.prepare.key;
     int own = g_prepare_host_click || GetTickCount64() < g_prepare_own_until;
     if (own) g_prepare_own_until = 0;
-    if (!depart_set_quest(&v, a->u.prepare.index, a->u.prepare.key)) return 0;
+    if (!activity_release_drafts() || !depart_set_quest(&v, a->u.prepare.index, a->u.prepare.key)) return 0;
     g_supply_quest_known = 1;
     g_supply_quest_index = a->u.prepare.index;
     g_supply_quest_key = a->u.prepare.key;
