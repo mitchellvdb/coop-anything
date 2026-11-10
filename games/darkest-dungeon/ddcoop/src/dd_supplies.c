@@ -57,33 +57,34 @@ static int64_t currency(const dd_provisions_snapshot *s,uint32_t type) {
     for(unsigned i=0;i<s->currencies;i++)if(s->wallet[i].type==type)return s->wallet[i].quantity;
     return 0;
 }
-int dd_supplies_before(const dd_provisions_snapshot *s,const dd_action *a) {
+int dd_supplies_before_with_shards(const dd_provisions_snapshot *s,const dd_action *a,uint32_t shard_type) {
     uint8_t hash[32];
-    if(!a || a->kind!=DD_ACT_SUPPLIES || !dd_action_valid(a) || a->u.supplies.shards ||
+    if(!a || a->kind!=DD_ACT_SUPPLIES || !dd_action_valid(a) || shard_type==DD_SUPPLIES_GOLD || (a->u.supplies.shards && !shard_type) ||
        !dd_supplies_digest(s,hash) || memcmp(hash,a->u.supplies.before,32))return 0;
     int64_t gold=currency(s,DD_SUPPLIES_GOLD),price=a->u.supplies.gold;
-    if(a->u.supplies.op==DD_SUPPLY_BUY) {if(gold<price)return 0;}
-    else if(gold+price>INT32_MAX)return 0;
+    int64_t shards=currency(s,shard_type),shard_price=a->u.supplies.shards;
+    if(a->u.supplies.op==DD_SUPPLY_BUY) {if(gold<price || shards<shard_price)return 0;}
+    else if(gold+price>INT32_MAX || shards+shard_price>INT32_MAX)return 0;
     if(a->u.supplies.op==DD_SUPPLY_CANCEL)return 1;
     unsigned slots=a->u.supplies.op==DD_SUPPLY_BUY?s->stock_slots:s->bag_slots;
     const dd_provisions_item *items=a->u.supplies.op==DD_SUPPLY_BUY?s->stock:s->bag;
     unsigned i=a->u.supplies.slot;
     return i<slots && items[i].quantity>0 && items[i].type==a->u.supplies.type && items[i].id==a->u.supplies.id;
 }
-int dd_supplies_quote(const dd_provisions_snapshot *s,unsigned op,unsigned slot,uint32_t gold,uint32_t shards,
-                      dd_action *out) {
+int dd_supplies_quote_with_shards(const dd_provisions_snapshot *s,unsigned op,unsigned slot,uint32_t gold,uint32_t shards,
+                      uint32_t shard_type,dd_action *out) {
     if(!out)return 0;
     memset(out,0,sizeof *out);
-    if(op<DD_SUPPLY_BUY || op>DD_SUPPLY_CANCEL || shards || gold>INT32_MAX || !valid(s))return 0;
+    if(op<DD_SUPPLY_BUY || op>DD_SUPPLY_CANCEL || (shards && !shard_type) || shard_type==DD_SUPPLIES_GOLD || gold>INT32_MAX || shards>INT32_MAX || !valid(s))return 0;
     dd_action a={0};a.kind=DD_ACT_SUPPLIES;a.u.supplies.op=(uint8_t)op;
-    a.u.supplies.gold=gold;
+    a.u.supplies.gold=gold;a.u.supplies.shards=shards;
     if(op!=DD_SUPPLY_CANCEL) {
         unsigned n=op==DD_SUPPLY_BUY?s->stock_slots:s->bag_slots;
         const dd_provisions_item *p=op==DD_SUPPLY_BUY?s->stock:s->bag;
         if(slot>=n || !p[slot].quantity)return 0;
         a.u.supplies.slot=(uint16_t)slot;a.u.supplies.type=p[slot].type;a.u.supplies.id=p[slot].id;
     } else if(slot)return 0;
-    if(!dd_supplies_digest(s,a.u.supplies.before) || !dd_supplies_before(s,&a))return 0;
+    if(!dd_supplies_digest(s,a.u.supplies.before) || !dd_supplies_before_with_shards(s,&a,shard_type))return 0;
     *out=a;return 1;
 }
 static int64_t quantity(const dd_provisions_item *p,unsigned n,uint32_t type,uint32_t id) {
@@ -103,9 +104,9 @@ static int inventory_delta(const dd_provisions_item *a,const dd_provisions_item 
     }
     return 1;
 }
-int dd_supplies_after(const dd_provisions_snapshot *before,const dd_provisions_snapshot *after,
-                      const dd_action *a) {
-    if(!dd_supplies_before(before,a) || !valid(after) || before->stock_slots!=after->stock_slots ||
+int dd_supplies_after_with_shards(const dd_provisions_snapshot *before,const dd_provisions_snapshot *after,
+                      const dd_action *a,uint32_t shard_type) {
+    if(!dd_supplies_before_with_shards(before,a,shard_type) || !valid(after) || before->stock_slots!=after->stock_slots ||
        before->bag_slots!=after->bag_slots || before->context_1838!=after->context_1838)return 0;
     int sign=a->u.supplies.op==DD_SUPPLY_BUY?-1:1;
     if(a->u.supplies.op==DD_SUPPLY_CANCEL) {
@@ -116,9 +117,23 @@ int dd_supplies_after(const dd_provisions_snapshot *before,const dd_provisions_s
         const dd_provisions_snapshot *s=pass?after:before;
         for(unsigned i=0;i<s->currencies;i++) {
             uint32_t type=s->wallet[i].type;
-            int64_t expected=currency(before,type)+(type==DD_SUPPLIES_GOLD?(int64_t)sign*a->u.supplies.gold:0);
+            int64_t expected=currency(before,type)+(type==DD_SUPPLIES_GOLD?(int64_t)sign*a->u.supplies.gold:
+                shard_type && type==shard_type?(int64_t)sign*a->u.supplies.shards:0);
             if(currency(after,type)!=expected)return 0;
         }
     }
-    return currency(after,DD_SUPPLIES_GOLD)==currency(before,DD_SUPPLIES_GOLD)+(int64_t)sign*a->u.supplies.gold;
+    return currency(after,DD_SUPPLIES_GOLD)==currency(before,DD_SUPPLIES_GOLD)+(int64_t)sign*a->u.supplies.gold &&
+        (!shard_type || currency(after,shard_type)==currency(before,shard_type)+(int64_t)sign*a->u.supplies.shards);
+}
+
+/* Ordinary runtime remains gold-only until the native shard binding and live
+ * price/refund path are validated. Explicit policy APIs are DLC groundwork. */
+int dd_supplies_before(const dd_provisions_snapshot *s,const dd_action *a) {
+    return dd_supplies_before_with_shards(s,a,0);
+}
+int dd_supplies_quote(const dd_provisions_snapshot *s,unsigned op,unsigned slot,uint32_t gold,uint32_t shards,dd_action *out) {
+    return dd_supplies_quote_with_shards(s,op,slot,gold,shards,0,out);
+}
+int dd_supplies_after(const dd_provisions_snapshot *before,const dd_provisions_snapshot *after,const dd_action *a) {
+    return dd_supplies_after_with_shards(before,after,a,0);
 }

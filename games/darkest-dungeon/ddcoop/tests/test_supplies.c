@@ -1,6 +1,7 @@
 #include "dd_supplies.h"
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 static unsigned failures;
 #define CHECK(c) do{if(!(c)){printf("FAIL line %d: %s\n",__LINE__,#c);failures++;}}while(0)
 #include "provisions_observed.inc"
@@ -29,7 +30,9 @@ static void observed_move(unsigned from,unsigned to) {
     wrong=*b;wrong.wallet[1].quantity++;CHECK(!dd_supplies_after(a,&wrong,&command));
     CHECK(!dd_supplies_before(b,&command)); /* Request replay/stale before-state. */
 }
+#include "supplies_dlc_fixture.inc"
 int main(void) {
+    dlc_supply_checks();
     for(unsigned i=1;i<19;i++)observed_move(i,i+1); /* Nine actual buys, nine actual returns. */
     observed_move(21,22);observed_move(22,23); /* Torch then food in Back observation. */
     dd_action a;

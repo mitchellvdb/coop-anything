@@ -1,67 +1,71 @@
-# DLC groundwork: CoM, Shieldbreaker and Musketeer (Codex, 8 Nov 2026)
+# Campaign DLC groundwork — test70 / duo53 (10 Nov 2026)
 
-Owner selected The Color of Madness first, plus Shieldbreaker and Musketeer now.
-This authorizes
-research/groundwork beyond the former base-game scope. Installed game/DLC/save files
-remain untouched. Butcher's Circus/arena_mp stays excluded.
+The owner authorized work toward all campaign DLC. Installed files/saves remain
+untouched. Passive arena_mp save flags stay readable, but Circus/PlayFab native
+paths are never activated or used by this co-op.
 
-## What already exists
+## Current coverage and limits
 
-- Launcher parses campaign `base_root.dlc`, including separate Crimson Court
-  features. GAST checks installed feature folders before backup or replacing its
-  campaign. Existing launcher tests verify missing-DLC refusal before writes.
-- Runtime prices/snapshots already carry shard fields and enumerate wallet types.
-  This is not full shard support: `dd_supplies_before/quote` explicitly reject
-  nonzero shard costs. The current fixture verifies that refusal.
-- Base combat, hero-ID ownership, skills and item identity are data-driven. Their
-  reuse for DLC is a candidate to test, not a live compatibility claim.
+| Feature | Prepared | Still needs native integration / live validation |
+|---|---|---|
+| Musketeer | class data, skills/upgrades/ownership paths and shared base camping witness | real recruit/skills/equipment/trinkets/ownership in both directions |
+| Shieldbreaker | class/skill codec and campaign data | camping nightmare, dream transitions and rewards |
+| Flagellant | class, combat/camping definitions and codec bounds | special stress/death/skill restrictions and camping effects |
+| Crimson Court | feature-specific data, curse/quest witnesses, campaign metadata | blood/curse/invitations, long Courtyard/persistent mission transitions |
+| Districts | nonempty district data and save compatibility checks | native district purchases, costs and weekly effects |
+| Color of Madness | campaign/provision data, mixed gold/shard transaction model | native shard binding/prices/refunds, separate shard shops/recruitment, waves/results |
+| Fire's Edge | own district feature, package-common data | native district transactions and their effects |
+| Runaway | class definitions, upgrades, camping and codec bounds | burn/stealth interactions and real ownership/combat/camping |
+| Duelist | class definitions, upgrades, camping and codec bounds | stance/counter interactions and real ownership/combat/camping |
 
-## Read-only first step delivered
+The legal local build contains all nine features. The five DLC heroes each have
+seven distinct combat skills at levels 0..4; measured camping definitions fit the
+existing codec. Data inspection is evidence for testing, not proof that those
+scenarios currently synchronize. The runtime still uses the exact supported EXE.
 
-`testkit/dlc-readiness/readiness.py GAME_ROOT --enabled color_of_madness shieldbreaker musketeer` produces
-a deterministic fingerprint of the selected official DLC data directory, a file
-count and required test groups. It prints JSON only: no activation, native calls,
-save writes, copying game content or Steam changes. Synthetic tests cover missing
-and feature-specific data, stable/change-sensitive fingerprints, subset selection,
-arena exclusion and no mutation. It does not verify entitlements or Workshop mods.
-No runtime/launcher wire contract is changed for this source-only tool.
+## Read-only inspection and comparison
 
-Shieldbreaker and Musketeer have no hard-coded class rejection in the normal
-recruit/skill/upgrade/ownership paths audited here. The data check deduplicates
-their levelled combat-skill definitions and compares counts/levels against the
-existing32-skill/level4 codec. Generic trinket validation uses the native class-ID
-restriction vector. This supports testing both heroes through the existing native
-paths; it does not prove their live layouts or extra transitions. In the next live
-run test both heroes' recruitment, Guild/Blacksmith, active/camping skills, class
-trinkets and ownership in both directions. For Shieldbreaker also test a camping
-nightmare and the return to the camp/dungeon. Do not infer that an automatic event
-needs a new command until both logs show where the copies diverge.
+    python -I testkit/dlc-readiness/readiness.py <game root> > host-dlc.json
+    python -I testkit/dlc-readiness/readiness.py --compare host-dlc.json guest-dlc.json
 
-The local legitimate build28385 has CoM data under `dlc/735730_color_of_madness`.
-Its actual inventory files define a `shard` currency and `spice` supply with
-`purchase_shard_value3`; a gold-only bridge therefore cannot fully handle it.
-The exact EXE RTTI also exposes distinct ShardTrinketSupply, ShardHeroRecruit and
-WaveLogic/WaveDungeon types, plus RaidResultsDisplay::ShowWaveItemsState callbacks.
-These are research leads, not approved native endpoints or verified ABI layouts.
-No addresses from these leads are hooked or called in this release.
+Optionally select required features using --enabled followed by feature names.
+The tool never activates DLC, writes saves, copies content or changes Steam.
+It rejects missing/empty witnessfiles, fingerprints feature and shared-package
+text data, and includes Musketeer's shared base camping data. Comparison reports
+known EXE/build parity, missing/changed/unknown features, duplicates and invalid
+schemas. Matching reports are not entitlements or live co-op compatibility.
+This comparison is not yet an automatic cross-launcher DLC-data handshake.
 
-## Next implementation steps
+Synthetic regression tests cover all nine features, five hero codecs, missing
+witnesses, shared data changes, subset comparison, no mutation, schema/build
+mismatch and link guards. One real Windows symlink creation is skipped if the
+OS denies it; mocked link checks remain mandatory. Arena data is excluded.
 
-1. Prove the native shard wallet key and purchase/refund semantics in this exact
-   EXE. Extend canonical pre/post validation to shard balances and native pricing,
-   including insufficient funds, mixed currency quotes, refunds, duplication and
-   concurrent HOST/GAST purchases. Never silently drop a shard price.
-2. Audit the separate shard trinket/recruit stores; the ordinary Nomad and Stagecoach
-   hooks must not be assumed to cover those classes.
-3. Verify first Farmstead departure through normal TownDisplay: one mission/party,
-   one map/Rules seed on both copies. The new symmetric embark path is a reusable
-   foundation, but Farmstead itself is not live tested.
-4. Measure wave boundaries, continue/retreat/reward choices, camping and the special
-   wave-results inventory. Add ordered actions for explicit player decisions after
-   proving captures/readiness. Keep automatic wave logic native and compare RNG.
-5. Test HOST then GAST initiation and cross-session persistence from a disposable
-   CoM campaign; compare shards, rewards, roster and week after returning to Hamlet.
+## Shard transaction foundation
 
-First target is both DLC heroes in a normal short raid, then an initial Farmstead
-run. Endless mode and complete DLC support remain separate validation milestones.
-Other DLC profiles are inventoried only.
+src/dd_supplies.c now provides explicit *_with_shards APIs taking a proved shard
+currency key. They check both balances and exact conservation of stock, bag,
+gold, shards and every unrelated currency. Buy/return/refund, stale/crossed
+commands, shortages and integer overflow are modeled through the actual codec:
+5,000 four-copy sequences plus an independent 1,200-case extreme-value matrix.
+
+The normal wrappers and native supply bridge deliberately remain gold-only.
+Shard costs cannot be ignored. This is no native shard shop or wave integration.
+Read-only analysis of the supported EXE confirms separate price_gold/price_shards
+and refund totals. Purchase reads a shard key from RVA2bb5e80; cancel/refund reads
+RVA2bc9a60. These are initialized globals, not proven constant values: validate
+their meaning/equality and native payment/refund effects before enabling calls.
+Existing native prices remain the source of truth; never invent DLC prices.
+
+## Next work
+
+1. Bind/prove shard currency identity and native prices/refunds in a disposable
+   campaign; extend runtime post-checks with that exact key and measured effects.
+2. Audit separate shard-trinket/recruit store ABI instead of assuming ordinary
+   Nomad/Stagecoach hooks cover them.
+3. Exercise each hero in an ordinary raid, then Shieldbreaker nightmares,
+   Courtyard persistence/curse/blood, District purchases and Farmstead waves.
+4. At explicit player choices, prove hooks/readiness and add ordered commands.
+   Keep automatic engine events native; compare state and RNG at stable endpoints.
+5. Validate both host and guest initiation, all ownership values and checkpoint
+   recovery. Full live DLC support remains unconfirmed until these tests pass.

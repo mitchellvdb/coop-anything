@@ -18,4 +18,13 @@ int dd_supplies_before(const dd_provisions_snapshot *, const dd_action *);
  * Cancel must clear stock AND bag, preserving all funds except the exact quoted native refund. */
 int dd_supplies_after(const dd_provisions_snapshot *before, const dd_provisions_snapshot *after,
                       const dd_action *);
+/* DLC model groundwork: caller must prove the engine shard currency type.
+ * Both balances must afford a buy; refunds cannot overflow; every unrelated
+ * currency/item is conserved. shard_type=0 retains gold-only refusal. These
+ * explicit APIs do not enable a native DLC shop, mutate data or change wire. */
+int dd_supplies_quote_with_shards(const dd_provisions_snapshot *,unsigned op,unsigned physical,
+                                  uint32_t gold,uint32_t shards,uint32_t shard_type,dd_action *out);
+int dd_supplies_before_with_shards(const dd_provisions_snapshot *,const dd_action *,uint32_t shard_type);
+int dd_supplies_after_with_shards(const dd_provisions_snapshot *,const dd_provisions_snapshot *,
+                                  const dd_action *,uint32_t shard_type);
 #endif
