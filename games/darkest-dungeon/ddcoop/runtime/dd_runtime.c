@@ -32,6 +32,8 @@ static void bag_templates_clear(void);
 static int formation_busy(void);
 static int activity_apply(const dd_action *);
 static int activity_shared(void);
+static int activity_native_assign_caller(uintptr_t);
+static int (*g_activity_native_assign_caller)(uintptr_t)=activity_native_assign_caller;
 static uintptr_t activity_accept_input(void *,void *,uint32_t);
 static void activity_register(void *);
 static void activity_reset(void);
@@ -126,7 +128,7 @@ typedef struct {
 } guest_link;
 static guest_link g_guests[3];
 static uint8_t g_build_id[8];
-static const char g_mod_version[] = "0.5.0-test73";
+static const char g_mod_version[] = DD_RUNTIME_VERSION;
 static uintptr_t g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va;
 static assign_hero_fn g_original_assign;
 static slot_widget_ctor_fn g_original_widget_ctor;
@@ -964,11 +966,24 @@ static int runtime_apply(void *unused,const dd_action *a) {
 
 static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint32_t hero_id) {
     if (!g_original_assign) return 0;
-    if(!g_game_apply_depth && activity_shared()) {
+    /* Finish a native effect already admitted by the ordered apply. Never
+     * emit another request or observed assignment from that nested call. */
+    if(g_game_apply_depth)return g_original_assign(activity,result,hero_id);
+    if (runtime_shared_blocked() || runtime_waiting_for_peer()) return 0;
+    if(activity_shared()) {
+#ifdef _MSC_VER
+        uintptr_t caller=(uintptr_t)_ReturnAddress();
+#else
+        uintptr_t caller=(uintptr_t)__builtin_return_address(0);
+#endif
+        /* The game reassigns activities during its deterministic week update.
+         * That exact pinned caller is not a second click on shared Accept.
+         * Return directly: the legacy host/guest branch must not re-emit it. */
+        if(g_activity_native_assign_caller(caller-image_base()))
+            return g_original_assign(activity,result,hero_id);
         int kind=g_activity_kind(activity);
         if(kind>=0 && kind<6)return activity_accept_input(activity,result,hero_id);
     }
-    if (runtime_shared_blocked() || runtime_waiting_for_peer()) return 0;
     if (g_cfg.role == DD_ROLE_GUEST && InterlockedCompareExchange(&g_campaign_active, 0, 0)) {
         int kind = activity_kind(activity), slot = -1;
         if (kind < 0 || kind >= DD_ACTIVITY_COUNT_ ||

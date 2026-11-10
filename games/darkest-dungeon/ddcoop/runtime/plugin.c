@@ -10,6 +10,7 @@
 #include "dd_config.h"
 #include "dd_log.h"
 #include "dd_runtime.h"
+#include "dd_proto.h"
 #include "dd_overlay.h"
 #include "dd_saves.h"
 #include "dd_focus.h"
@@ -18,7 +19,7 @@
 #include "dd_duo.h"
 #endif
 
-#define DD_FW_VERSION "0.5.0-test69"
+#define DD_FW_VERSION DD_RUNTIME_VERSION
 /* Save storage (runtime test 8): global StorageManager*; the loaded campaign is the device mounted in
  * device slot 5 (manager + 0x10 + slot * 8, StorageManager::IO_MountDevice 0x14024a820); a device's name
  * is at device + 0x20 (StorageDevice constructor). Valid for the known build only. */
@@ -172,7 +173,7 @@ static DWORD WINAPI startup(void *unused) {
                      g_cfg.role == DD_ROLE_HOST ? "ddcoop-fw-host.log" : g_cfg.player == 3 ? "ddcoop-fw-guest3.log" :
                      g_cfg.player == 2 ? "ddcoop-fw-guest2.log" : "ddcoop-fw-guest.log");
     dd_log_open(path);
-    dd_log("=== Darkest Dungeon co-op framework %s starting ===", DD_FW_VERSION);
+    dd_log("=== Darkest Dungeon co-op framework %s starting (protocol %u) ===", DD_FW_VERSION,(unsigned)DD_PROTO_VERSION);
 #ifdef DD_DUO
     dd_log("TWO WINDOWS TEST BUILD: this copy is the %s", dd_role_name(g_cfg.role));
     dd_log("DUO graphics pacing: minimum 16 ms per frame (about 60 FPS per window)");

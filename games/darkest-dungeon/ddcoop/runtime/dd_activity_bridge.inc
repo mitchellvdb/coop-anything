@@ -7,6 +7,8 @@ typedef uintptr_t (__fastcall *activity_destroy_fn)(void *,uint32_t);
 static dd_activity_reservations g_activity_res;
 static uintptr_t g_activity_widgets[6][3];
 static uint32_t g_activity_epoch=1;
+/* Exact native weekly caller; UI accept has a different pinned return site. */
+static int activity_native_assign_caller(uintptr_t rva) {return rva==0x53cbef;}
 static int g_activity_seeded;
 static struct {uintptr_t widget;uint32_t hero,revision,epoch;} g_activity_drag;
 

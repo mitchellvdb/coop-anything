@@ -2,6 +2,8 @@
 #ifndef DD_RUNTIME_H
 #define DD_RUNTIME_H
 
+#define DD_RUNTIME_VERSION "0.5.0-test74"
+
 #include <stdint.h>
 
 #include "dd_config.h"

@@ -50,4 +50,4 @@ for name, n in hooks:
     for va, body in copied:
         mnemonic = body.split()[0].lower()
         assert not (mnemonic == 'call' or mnemonic.startswith(('j', 'loop')) or re.search(r'\[0[0-9A-Fa-f]{8,}h\]', body)), (name, hex(va), 'PC-relative copied instruction', body)
-print(f'PASS hook ABI: {len(addresses)} uniquely named signatures/{len(set(addresses.values()))} native entrypoints; {len(hooks)} distinct live/early hook targets, whole instructions and no PC-relative trampoline copies; pinned EXE, read-only')
+print(f'PASS hook ABI: {len(addresses)} uniquely named signatures/{len(set(addresses.values()))} distinct native addresses; {len(hooks)} distinct live/early hook targets, whole instructions and no PC-relative trampoline copies; pinned EXE, read-only')

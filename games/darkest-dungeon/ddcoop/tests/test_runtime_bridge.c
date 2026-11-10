@@ -510,6 +510,7 @@ static void hook_machine_code(void) {
 #include "runtime_review_fixture.inc"
 #include "runtime_selection_fixture.inc"
 #include "runtime_activity_fixture.inc"
+#include "runtime_activity_weekly_fixture.inc"
 #include "runtime_hunger_fixture.inc"
 #include "runtime_quest_return_fixture.inc"
 #include "dd_focus.h"
@@ -757,6 +758,7 @@ int main(void) {
     quest_return_transactions();
     activity_transactions();
     activity_bridge_checks();
+    activity_weekly_checks();
     duo_checks();
     guard_transactions();
     reset(DD_ROLE_HOST);
