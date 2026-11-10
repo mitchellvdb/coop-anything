@@ -1,3 +1,12 @@
+# Current contract — test71 / runtime32
+
+All participants use the new matching runtime. Shared activity drafts/accept/X
+use persistent hero ID, exact slot revision and town epoch. Any connected player
+may start them, provisions or embark; the host does not approve them manually.
+A host game/launcher must remain running to order shared actions/save truth.
+No file/mapping/lobby schema changes. PREPARE clears drafts atomically; confirmed
+treatments remain. See runtime/ACTIVITY.md for the six-activity scope and tests.
+
 # Current contract — test70
 
 All participants use runtime test70 (normal or duo variant), protocol31 and

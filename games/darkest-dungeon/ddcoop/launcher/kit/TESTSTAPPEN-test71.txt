@@ -1,0 +1,25 @@
+DDCoop test71 - shared activity drafts and autonomous guests
+===========================================================
+
+Close old games, let guest recovery finish, install SAME71 on all participants.
+1. Host opens Tavern. Place a hero in Bar/Gambling/Brothel but DO NOT Accept.
+   Every open copy should show that hero. Open another copy's Tavern afterwards:
+   it should show the same draft. Try another hero in the same slot: first stays.
+2. From a guest, use X then reserve a different hero. Accept from another guest;
+   all copies should show one paid treatment and the same gold. Test Abbey too.
+3. Try removing the confirmed treatment with X from a guest. All copies should
+   clear it consistently, using the game's actual funds behavior.
+4. Leave host idle on another Hamlet screen. From each guest compose the party,
+   select a mission, open provisions, buy/return supplies and embark. All follow
+   automatically; no second host click should be needed. Unaccepted drafts clear
+   together when provisions opens; confirmed treatments remain.
+5. Copy logs after success or immediately on any error/stop. For a conflict keep
+   the shared state; do not continue privately after a sync-stop.
+
+Six stress activities are covered. Extra Sanitarium choices are not newly
+integrated. To move a reserved hero, clear with X then place it; no new atomic
+slot-to-slot drag behavior is claimed. Host must keep game/launcher running.
+No forced crash/disconnect or destructive test is required. Guests remain
+-nosave; host checkbox is retained. Resync uses host checkpoint and may lose
+unsaved progress; solo .bat guests restart manually. Full DLC/direct-loot equip
+and prior provisions crash remain open. Read ACTIVITY.md and DLC.md.

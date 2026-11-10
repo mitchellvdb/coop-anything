@@ -1,5 +1,14 @@
 DDCoop - development test kit {VERSION}
 
+New in test71 / duo54
+--------------------
+Tavern/Abbey provisional hero placement is shared BEFORE Accept. The first
+choice reserves the slot; every player can accept or clear it. Other screens
+hydrate the same hero when opened. Provisions/embark may start from any guest;
+the host needs no manual click. Keep its game and launcher running.
+All peers need this kit (runtime protocol32). Read ACTIVITY.md for scope/tests.
+
+
 New in test70 / duo53
 --------------------
 Independent fault simulations found and repaired lost STOP messages under full

@@ -14,6 +14,19 @@ PATTERN_LEN = 48  # 32 was not unique for provisions_buy (also at 0x1404fa480)
 
 # name, virtual address, what it is (see games/darkest-dungeon/NOTES.md in coop-anything)
 FUNCTIONS = [
+    ("activity_blocked",0x140536300,"Normal activity disabled predicate, read by genuine slot constructor"),
+    ("activity_slot_blocked",0x1405363a0,"Normal per-slot disabled predicate, read by genuine slot constructor"),
+    ("activity_slot_source_remove", 0x1407e2630, "Pinned normal activity source lifecycle"),
+    ("activity_slot_source_finish", 0x1407e2740, "Pinned normal activity source lifecycle"),
+    ("activity_slot_source_pickup", 0x1407e2530, "Pinned normal activity source lifecycle"),
+
+    ("activity_slot_set_hero", 0x1407e1dc0, "Pinned normal stress-building activity UI/native adapter"),
+    ("activity_slot_drop", 0x1407e1fd0, "Pinned normal stress-building activity UI/native adapter"),
+    ("activity_slot_destruct", 0x1407e1c90, "Pinned normal stress-building activity UI/native adapter"),
+    ("activity_slot_resolve", 0x1407e32d0, "Pinned normal stress-building activity UI/native adapter"),
+    ("hero_drag_cast", 0x14043aa10, "Pinned normal stress-building activity UI/native adapter"),
+    ("activity_check_hero", 0x140535e50, "Pinned normal stress-building activity UI/native adapter"),
+
     ("activity_assign_hero", 0x1405360c0, "Building::Activity assign hero (activity, result, heroId); slot in activity+0x90"),
     ("activity_slot_widget_ctor", 0x1407e1790, "ActivityHeroSlotInterface ctor (widget, activity, slotIndex); activity discovery for placement sync"),
     ("buy_upgrade", 0x14059ad80, "Upgrade purchase (request {u32 tree, u8 code, u32 heroId}) -> 1 on success"),
