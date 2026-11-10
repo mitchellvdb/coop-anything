@@ -1,3 +1,14 @@
+# Test72 selection transition addendum
+
+Runtime byte protocol32/launcher3 remain. Exact runtime hello72 is mandatory:
+SELECT now uses existing item.id for the selected persistent hero ID, requires
+outside-combat shape/rank0..3, and waits at the expected FIFO head up to30s for
+a readable non-battle view in the same area. It checks bounded party membership
+and actual native selection before success. No launcher mapping/ownership-file
+change. All4 players may initiate; wrong identity/area never silently ACKs.
+The owner confirmed the71 Tavern drafts and provisions in a four-window test.
+See runtime/SELECTION-TRANSITION.md for the new post-combat timing repair.
+
 # Current contract — test71 / runtime32
 
 All participants use the new matching runtime. Shared activity drafts/accept/X

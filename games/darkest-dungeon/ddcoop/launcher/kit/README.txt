@@ -1,5 +1,13 @@
 DDCoop - development test kit {VERSION}
 
+New in test72 / duo55
+--------------------
+Post-combat hero selection waits for every receiving copy to finish its native
+combat transition. Persistent hero identity and native selection are verified
+before success. Tavern/Abbey and provisions from71 are retained and owner-tested.
+All peers need this kit; do not mix with71 despite unchanged wire protocol32.
+Read SELECTION-TRANSITION.md and TESTSTAPPEN-test72.txt.
+
 New in test71 / duo54
 --------------------
 Tavern/Abbey provisional hero placement is shared BEFORE Accept. The first
