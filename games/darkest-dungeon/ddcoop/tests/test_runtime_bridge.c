@@ -488,6 +488,7 @@ static void hook_machine_code(void) {
 }
 
 #include "runtime_hamlet_fixture.inc"
+#include "runtime_party_return_fixture.inc"
 #include "runtime_supplies_fixture.inc"
 #include "runtime_supply_order_fixture.inc"
 #include "runtime_departure_fixture.inc"
@@ -730,6 +731,7 @@ int main(void) {
     hook_machine_code();
     hook_targets_unique();
     hamlet_transactions();
+    party_return_checks();
     supplies_transactions();
     supply_initial_order_checks();
     sw_drags();

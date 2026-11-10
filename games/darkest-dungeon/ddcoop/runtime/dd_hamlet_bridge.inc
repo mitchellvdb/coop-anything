@@ -747,6 +747,19 @@ static void __fastcall hook_hamlet_dismiss(void *panel, uint32_t id) {
     a.u.hero.hero_id = id;
     hamlet_submit(&a);
 }
+/* The campaign remembers last expedition IDs even after several of those
+ * heroes enter buildings. Prune the proposed destination, not its strict
+ * pre-state. Native apply already preserves removed heroes' building locations.
+ * All players may edit this selection; combat ownership is unrelated. */
+static int hamlet_party_selectable(const dd_hamlet *s, const uint32_t ids[4], uint32_t out[4]) {
+    memcpy(out, ids, 4 * sizeof *out);
+    for (unsigned i = 0; i < 4; i++) if (ids[i]) {
+        dd_hamlet_hero hero;
+        if (dd_hamlet_find(s, ids[i], &hero) != 1) return 0;
+        if (hero.location > 1) out[i] = 0;
+    }
+    return 1;
+}
 static void __fastcall hook_hamlet_party_slot(void *slot, void *pointer) {
 #ifdef _MSC_VER
     uintptr_t caller = (uintptr_t)_ReturnAddress();
@@ -787,9 +800,18 @@ static void __fastcall hook_hamlet_party_slot(void *slot, void *pointer) {
     g_party_failure = 0;
     if (pointer) id = hero.id;
     int party_input = g_hamlet_party_input(caller);
+    int cleanup = 0;
+    if (party_input && InterlockedCompareExchange(&g_session_ready, 0, 0) && !runtime_shared_blocked()) {
+        uint32_t selectable[4];
+        if ((pointer && hero.location > 1) || !hamlet_party_selectable(&s, current, selectable)) {
+            shop_notice("This hero is unavailable, or the party could not be verified. Choose an available hero and try again.");
+            return;
+        }
+        cleanup = memcmp(current, selectable, sizeof current) != 0;
+    }
     int restoring_intent =
         g_cfg.role == DD_ROLE_GUEST && g_party_intent_valid && g_party_intent[rank] != id && party_input;
-    if (current[rank] == id && !restoring_intent) {
+    if (current[rank] == id && !restoring_intent && !cleanup) {
         /* The screen opens empty while the party is remembered (slot+28 holds what is shown). Dragging a hero back to the rank it is remembered at changed nothing in
          * memory, so nothing was sent, and the other copy stayed empty until a real change (owner's runs: "after a few seconds and changes"). */
         uint64_t shown = 0;
@@ -825,6 +847,12 @@ static void __fastcall hook_hamlet_party_slot(void *slot, void *pointer) {
         for (unsigned i = 0; i < 4; i++)
             if (a.u.party.after[i] == id) a.u.party.after[i] = 0;
     a.u.party.after[rank] = id;
+    uint32_t selectable[4];
+    if (!hamlet_party_selectable(&s, a.u.party.after, selectable) || (id && selectable[rank] != id)) {
+        shop_notice("This hero is unavailable, or the party could not be verified. Choose an available hero and try again.");
+        return;
+    }
+    memcpy(a.u.party.after, selectable, sizeof selectable);
     if (!memcmp(a.u.party.before, a.u.party.after, sizeof current)) return;
     if (hamlet_submit(&a) && g_cfg.role == DD_ROLE_GUEST) {
         memcpy(g_party_intent, a.u.party.after, sizeof g_party_intent);
@@ -905,6 +933,7 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
             g_trinket_drag.type = type;
             g_trinket_drag.id = id;
             g_trinket_drag.valid = 1;
+            dd_log("Trinket: drag pickup kind=%u owner=%u slot=%u type=%08x item=%08x", kind, owner, slot, type, id);
         }
         if (!g_trinket_drag.valid) {
             selected = 0;
@@ -916,6 +945,7 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
                 g_trinket_drag.ui = (uintptr_t)ui;
                 g_trinket_drag.data = (uintptr_t)data;
                 g_trinket_drag.valid = 3;
+                dd_log("Trinket: source refused kind=%u model=%d endpoint=%d slot=%u type=%08x item=%08x quantity=%u", kind, model, endpoint, slot, type, id, q);
                 shop_notice("DDCoop could not verify this trinket source. Cancel the drag and send "
                             "the logs.");
             }
@@ -965,8 +995,10 @@ static int hamlet_trinket_drop(unsigned kind, void *ui, void *position, void *da
     unsigned count = 0;
     if (!g_hamlet_open_model(&s) || !safe_read((uintptr_t)ui + 0x18, &inventory, 8) ||
         !dd_hamlet_inventory_owner(&s, inventory, &owner) ||
-        !dd_hamlet_inventory(&s, owner, &inventory, &count))
+        !dd_hamlet_inventory(&s, owner, &inventory, &count)) {
+        dd_log("Trinket: drop refused kind=%u stage=destination-inventory source=%u:%u item=%08x", kind, g_trinket_drag.owner, g_trinket_drag.slot, g_trinket_drag.id);
         return 0;
+    }
     if (kind < 2) {
         if (!safe_read((uintptr_t)ui + 0xa8, &slot, 4)) return 0;
     } else {
@@ -988,7 +1020,8 @@ static int hamlet_trinket_drop(unsigned kind, void *ui, void *position, void *da
     a.u.move.dst_slot = (uint16_t)slot;
     a.u.move.dst_type = type;
     a.u.move.dst_id = id;
-    hamlet_submit(&a);
+    int submitted = hamlet_submit(&a);
+    dd_log("Trinket: drag submit kind=%u source=%u:%u destination=%u:%u item=%08x accepted=%d", kind, a.u.move.src_hero, a.u.move.src_slot, owner, slot, a.u.move.src_id, submitted);
     return 0; /* Finish through the native cancellation path, whose source mutation is suppressed above. */
 }
 static int __fastcall hook_trinket_drop_hero(void *a, void *b, void *c) {
