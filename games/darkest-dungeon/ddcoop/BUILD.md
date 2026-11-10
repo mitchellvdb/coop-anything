@@ -1,4 +1,4 @@
-# DDCoop build and validation — test69 / duo52
+# DDCoop build and validation — test70 / duo53
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -27,7 +27,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test69"
+    set "DDC_VERSION=0.5.0-test70"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -48,22 +48,34 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_fresh_raid_layout.py "%DD_GAME_EXE%"
     python -I tests/test_prop_layout.py "%DD_GAME_EXE%"
     python -I tests/test_supply_init_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_camping_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
 actual instruction boundaries/relative instructions for all live and early hooks.
 The optional old test_game_build.py additionally uses Capstone 5 for model/RTTI
 checks; it is not required by the dumpbin proof. Do not infer live success from
-fake native functions. See runtime/REVIEW-2026-11-10.md for findings and open work.
+fake native functions. See runtime/RECHECK-2026-11-10.md for findings and open work.
 
 MSVC ASan: compile the runtime-bridge test using the same source list as
 runtime/test-windows-msvc.cmd with /fsanitize=address /Zi /Od /MT. Run that test
 binary. Static /analyze is additional evidence, not native engine execution.
 
+Additional isolated tests (never launch the game):
+
+    set "DNG_ASAN=1"
+    runtime\test-dungeon-msvc.cmd
+
+The main runtime suite also runs real localhost bounded-send/crypto checks,
+5,000 four-copy mixed-currency model sequences and 1,200 currency edge cases.
+The full launcher suite includes 10,000 four-controller restart simulations.
+DLC groundwork and data-comparison CLI are documented in runtime/DLC.md.
+Native supply integration remains gold-only; the shard APIs are model groundwork.
+
 ## Variants and packaging
 
-For duo52, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo52. Gameplay source remains identical. Source
+For duo53, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo53. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:

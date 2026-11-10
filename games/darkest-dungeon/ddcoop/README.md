@@ -1,32 +1,35 @@
 # DDCoop — Darkest Dungeon co-op
 
-Development snapshot **0.5.0-test69 / duo52**, runtime protocol 31 and launcher
-wire/lobby 3. Work stays on `game/darkest-dungeon-ddcoop` under this subtree;
-the repository's shared playbook and other projects are unchanged.
+Current development snapshot **test70 / duo53**, runtime protocol31 and launcher
+wire/lobby3. Source lives on `game/darkest-dungeon-ddcoop` under this subtree;
+other projects and the repository's shared playbook remain unchanged.
 
-Players each run their own copy. Supported shared actions are ordered through
-the host; any player may initiate them. Combat ownership is per persistent hero
-ID, while Hamlet party composition is shared. Guest campaign replacement is
-backed up/restored; guests always use -nosave. Host saving follows its checkbox.
-Only selected slots 1..9 are used; profile_9/the game's restore slot is forbidden.
+Players each run their own copy. Any connected player may initiate supported
+shared choices, ordered through the host. Combat ownership uses persistent hero
+IDs. Guest campaign replacement is backed up/restored; guests always -nosave.
+Host saving follows its checkbox. Selected slots1..9 only; profile_9 forbidden.
 
-Test69 follows a broad source/test review. It corrects a native hook instruction
-boundary, removes false shared-success/private-progress fallbacks, stops combat
-RNG mismatch, separates three guest movement votes, checks exact runtime hello
-version and redacts known secrets from exported logs. All peers need this kit.
+This independent recheck fixes queue-full STOP loss, unbounded transport sends,
+unsafe camping indices and false town-state ACKs. Metadata/DLC preflight now
+rejects corrupted campaigns and empty/incomplete required feature data before
+backup/replacement, while preserving valid basegame saves without a DLC object.
 
-Read [runtime/REVIEW-2026-11-10.md](runtime/REVIEW-2026-11-10.md) for concrete
-findings, evidence and remaining priorities. [BUILD.md](BUILD.md) gives current
-commands; [KIT.md](KIT.md) and [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) describe
-the release. RELEASES.json pins both variants; ordinary runtime pin is canonical.
+Read [runtime/RECHECK-2026-11-10.md](runtime/RECHECK-2026-11-10.md) for findings,
+proof and remaining risks. [BUILD.md](BUILD.md), [KIT.md](KIT.md) and
+[HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) are the current starting documents.
+RELEASES.json records both variants' exact hashes. All peers need the same kit.
 
-Hamlet/provisions, travel, combat, hunger, loot and return are development
-features, not a claim that every live scenario is validated. Direct loot equip,
-full post-combat state checks, live four-PC restart and complete DLC remain open.
-Color of Madness, Shieldbreaker and Musketeer have compatibility/data groundwork.
+Campaign-DLC groundwork covers nine features: Musketeer, Shieldbreaker,
+CC/Flagellant/Districts, CoM and Fire's Edge/Runaway/Duelist. The read-only data
+checker supports feature/common fingerprints and report comparison. Shard-aware
+transaction APIs are modeled and tested; native provisioning remains gold-only.
+See [runtime/DLC.md](runtime/DLC.md). Full live DLC support is NOT claimed.
 
-Native bridge fixtures use modeled engine effects. Real game, installer, saves,
-Steam Cloud and multi-PC recovery were not run in this review. No game assets,
-Steam DLL, executable, saves, private raw logs or mascot artwork are published.
-Never use Circus/PlayFab or bypass TamperingManager. Preserve pins and record
-validation when contributing. Prior Claude Code/Codex contributions retained.
+Native engine effects in tests are modeled. Local TCP/crypto, four-controller
+restart simulations and four-core fake-Steam transfer tests do not replace a
+real multi-PC game/Cloud test. Direct loot equip, complete combat-state digest,
+remaining rank-based item identity, prior provisions crash and live DLC remain
+open. No game assets, Steam DLL, binary, save, artwork or private log is published.
+Never activate Circus/PlayFab paths or bypass TamperingManager. Passive arena_mp
+save flags remain readable without such integration. Prior contributions by
+Claude Code/Codex retained; this source delivery written/published by Codex.

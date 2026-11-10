@@ -1,57 +1,52 @@
-# Current: test69 / duo52 (Codex, 10 Nov 2026)
+# Current: test70 / duo53 (Codex, 10 Nov 2026)
 
-- Based on delivered/published test68 / duo51; earlier Claude Code work retained.
-  Local Claude a48f117/test64 and Codex checkout/edits are preserved. Current
-  development source is this bundle or the dedicated GitHub branch/subtree.
-- Runtime protocol 31, launcher wire/lobby 3 unchanged; exact runtime hello
-  version is now required. Every participant must use 69. Native pins: 121 named
-  entries / 117 distinct engine entrypoints; 81 distinct live/early hook targets.
-- Thorough source review and baseline tests found a truncated native instruction
-  in tutorial_show: 10 bytes cut push r13, corrected to 11. A new dumpbin proof
-  reproduces the old failure and verifies all hook boundaries/relative operands.
-  No proven connection to any previously reported crash.
-- Failed shared item/trinket operations no longer receive false success ACKs.
-  Removed guest private item/results fallbacks; bounded waits/peer-wide stop
-  remain. Combat skill/item/retreat RNG mismatches stop before native mutation.
-- Each of three guests has its own atomic movement vote; idle does not erase
-  another guest, opposite directions stop, equal directions move once. Freshness,
-  message order and disconnect cleanup tested. Host has the same movement vote.
-- Copy logs redacts known auth ticket/token/password lines in exported copies
-  only. Original logs/saves untouched; this is not full path/name anonymization.
-  Launcher-area change is small and separately committed, including build lists.
-- Hook array capacity follows the actual count, with a compile-time upper limit.
-  Removed duplicate item_clear name, retained valid aliases; generator rejects
-  duplicate names. Remaining F9 labels translated. BUILD/tool expectations fixed.
-- Baseline 68 tests and before-fix failures preserved. Final native/fuzz/FIFO,
-  MSVC ASan, overlay, full normal/duo launcher/fake-Steam suites, nine read-only
-  native proofs, English/GIF/native layout and DLC readiness checks pass. Static
-  analysis of 13 major units has no new analyzer diagnostics; existing C4702
-  unreachable-code compiler warning remains noted separately.
-- 0.5.0-test69: C:\dev\ddcoop-handoff\0.5.0-test69\DDCoop-install.zip
-  Kit SHA256 e5f5bde623fd5f3ab5154f4423a609831c2b7f8cfc77c5bd3a6b440090cb89e8
-  Runtime 2f81663c78d354792d77fbc5a76945e8f20231a3c17818dc667a2b179e581023
-  Launcher f20ea86186a59e31a196a8f444ce7cfc4f18e1746f07be85639498e7125ea6ff
-- 0.5.0-duo52: C:\dev\ddcoop-handoff\0.5.0-duo52\DDCoop-install.zip
-  Kit SHA256 560077f2681be94095ac745bb6184b9a5a1c14759d39f785b1cee2dfe87f4402
-  Runtime f7d4ba6bf40a0c9f3babe64a20aa4427c69680d7a4bfad6a863c6665ef6a1793
-  Launcher 08b917fd5ccb29f794255743cef74bb3898372207c8d93f71f5054f4132127d2
-- Read runtime/REVIEW-2026-11-10.md for findings, evidence, priorities and next
-  player test. Direct loot-to-hero equip remains an unresolved live report; exact
-  error pending, diagnostic hooks retained. Missing items now stop honestly.
-- Next: same kit everywhere; curio, fight, inventory/HP/owners, shared results;
-  replace two treated former party members, embark again. Try each guest walking
-  while others idle and conflicting directions. Copy logs immediately on a stop.
-- Open: full post-combat state digest/persistent IDs for remaining rank actions,
-  real four-PC restart/Steam Cloud, live DLC waves/shards/dream transitions and
-  unsupported sort/unequip-all/arbitrary dungeon drags. Earlier provisions
-  C0000005 remains unresolved; tutorial-hook fix does not prove that crash fixed.
-- NOT RUN: live game/installer, real Steam storage, multi-PC restart, Linux/MinGW
-  or optional old Capstone model check. Fixtures use modeled native effects;
-  nine new/current dumpbin layout proofs were run. Guest always -nosave, host
-  save preference retained. Resync uses native host checkpoint and may lose
-  unsaved progress. Solo .bat guests restart manually.
-- Runtime, minimal launcher/log-export, ordinary runtime pin and release/report
-  source are separate commits per owner authorization. Full source and patches
-  versus test68 and Claude a48f117/test64 are byte-checked. No binaries, artwork,
-  game assets, saves or private logs are published. Written by Codex; prior
-  Claude Code contributions retained.
+- Based on delivered/published test69 / duo52. Earlier Claude/Codex work retained.
+  Claude local a48f117/test64 and Codex checkout/edits are preserved. Use this
+  source-full.zip or the dedicated GitHub branch/subtree as development baseline.
+- Runtime protocol31, launcher wire/lobby3 unchanged; exact hello version70 is
+  required. 121 named pin entries /117 native engine entrypoints;81 distinct
+  live/early hook targets. All participants must use the matching new kit.
+- Independent recheck found transport STOP lost behind full queues; now atomically
+  latched outside FIFO, sent first by every worker, followed by closing the link.
+  Native/ASan regressions reproduce four original failures, final suite passes.
+- A stalled/dribbling relay no longer blocks a send indefinitely: total5s budget,
+  terminal partial-frame failure, checked final handshake send. Actual localhost
+  regression1.5s budget versus old4.5s watchdog;8MiB and encrypted PING intact.
+- Known town mismatch/unreadable timeout no longer ACKs or processes next order.
+  Camping actor/selected skill bounded in codec AND validated against actual local
+  vectors/learned skill before native execution;18 old parser failures reproduced.
+- Launcher metadata is checked before backup/write; valid missing DLC list means
+  empty, damaged present lists refuse. Known campaign DLC needs nonempty witness
+  files, not an empty directory. Passive arena_mp flags remain readable, no PvP
+  path activated. Small launcher-area fixes/build lists are separately committed.
+-10,000 four-controller recovery interleavings;5,000 four-copy mixed-currency
+  sequences;1,200 independent extreme-value currency cases. Full native/ASan,
+  standalone dungeon model, overlay, both full launcher/fake-Steam suites and
+  ten exact read-only native proofs pass. See RECHECK-2026-11-10.md for evidence.
+- Nine campaign features: Musketeer, CC/Flagellant/Districts, Shieldbreaker, CoM,
+  Fire's Edge/Runaway/Duelist. Read-only witness/fingerprint/JSON comparison tool;
+  all five hero data sets fit codec.15 Python tests, one real symlink privilege
+  test skipped; mocked link guards run. Matching data is not live support.
+- Explicit shard-aware canonical model APIs conserve both currencies. The native
+  runtime remains gold-only until actual currency binding/prices/refunds are
+  validated. DLC.md lists remaining native shops/events/waves/dreams work.
+- 0.5.0-test70: C:\dev\ddcoop-handoff\0.5.0-test70\DDCoop-install.zip
+  Kit SHA256 23c8fa3c72a0d2b6a1e2217b6fdbbec497ed6c3cb40d2a2304c7f828a00a1da0
+  Runtime 9d9502c123b55b6364a9509a644ddf9513d67bc846171a67da45d865d15a9918
+  Launcher 60ee3944b7853021a729de05e3700749a6cc6d429b83388b0f3c82b448a19ab2
+- 0.5.0-duo53: C:\dev\ddcoop-handoff\0.5.0-duo53\DDCoop-install.zip
+  Kit SHA256 1b9dbdbf6a7379aa01a0e218e6c1530cd3ee12e67fe903f0f636258a1482dcb1
+  Runtime 377d8708e2cb5c378c79e1c709093c6acfad49ef5ac26b03c817795f80427c67
+  Launcher 2590b2d7a7ee29e2ae8ba3c10d381d3bfe50b4d1fc8b2ac1a81fde2b4031c18d
+- Direct loot equip, full combat-state digest/remaining rank-action hero IDs,
+  earlier provisions C0000005, live four-PC restart/Steam Cloud and full DLC
+  behavior remain open. No real game/installer/Steam write executed in this review.
+- Guests always-nosave; host save checkbox retained; selected slot1..9 only,
+  profile_9 forbidden. Resync resumes native checkpoint and may lose unsaved
+  progress. Solo .bat guests restart manually. Linux/MinGW/Capstone not run.
+- Next owner test: same kit everywhere, curio/camp/fight/items/loot, shared results,
+  next party/departure and same inventories/HP/owners. Copy logs immediately on
+  any stop; no unsupported local continuation. DLC hero/mission tests separately.
+- Source commits separate runtime safety, DLC model/readiness, minimal launcher,
+  ordinary runtime pin and release/report. Full source plus byte-reproducing
+  patches versus69 and Claude64. Written by Codex; Claude contributions retained.
