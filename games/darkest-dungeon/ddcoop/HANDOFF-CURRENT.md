@@ -1,3 +1,47 @@
+# Current: test82 / duo61 (Codex, 11 Nov 2026)
+
+Automatic private diagnostics to the host, as requested by the owner. Native
+Sync stop, resync/session events and Copy logs from any connected launcher
+coalesce into one host-coordinated report. Desktop ZIP contains host/player
+folders and REPORT/FILES status. Missing/failed/truncated data is explicit.
+Fixed log allowlist, no saves/ddcoop.ini/signing key; known secrets removed at
+sender and host. Names/paths may remain: reports are private, never published.
+Runtime gameplay remains test81; only its exact hello label changes to82 so
+old launchers receive the signed update before new diagnostic control types.
+Runtime wire36/launcher wire3 retained; use matching new kits on every copy.
+
+- 0.5.0-test82: C:\dev\ddcoop-handoff\0.5.0-test82\DDCoop-install.zip
+  Kit SHA256 444690abc9d4a0f961f1552d8928c359501c3ddeae0a9c3b14b7ea6e5edc8b12
+  Runtime fecf38a672c89b63f31e45202b09d7e0d523e8249626b32b391ceeb3c9ca326b
+  Launcher ff9c0b19e544bd024e7c1d5c24be3a6bf81d9c7456a65392b07614009041bf6a
+- 0.5.0-duo61: C:\dev\ddcoop-handoff\0.5.0-duo61\DDCoop-install.zip
+  Kit SHA256 303309745be7e387a8365e527fbbe9de95f8a47a776152ab7b88fc9f143992bd
+  Runtime 00eef369116d28af68d94a53ed5db1b848e0b303e5b69f6c78fda32f316e9575
+  Launcher a2f16aa6421cb99233c349e1b583aff85b75751b51266fa9de36cf152f56203d
+
+PASS full Windows runtime and both complete launcher suites, including snapshot/
+preparation/restore and normal+solo actual Windows diagnostics file adapters.
+PASS portable diagnostics/logpack MSVC ASan and real Windows adapter ASan;
+independent Python ZIP reader validates CRCs, folders, missing participants,
+allowlist and redaction. Four initiators/three receivers, simultaneous notices,
+backpressure/CRC/offset/size/auth/stale/collection/disk failure, disconnect and
+bounded deadlines covered. A lost receipt ACK overlapping the next report failed
+before receipt history, then passed. /analyze has no new finding (existing main
+unreachable-code warning); existing socket signedness build warnings remain.
+Actual ordinary bundle signature+all3 hashes verified by launcher owner-key CNG.
+Native hooks are unchanged, retaining test81's19 pinned read-only proofs.
+No live Steam diagnostics transfer or installed game/save/system change was
+performed. Linux/MinGW/Capstone not run. Owner next test: any guest Copy logs;
+verify one combined ZIP on host and correct per-player files, then retain tests
+for real desync/resync. Keep launchers open. Fully lost connection cannot send;
+local logs remain. Post-stop diagnostic transport drains for <=60s without
+blocking normal game close/recovery; active collection deadline120s. No public
+log upload. Stagecoach/earlier curio/loot causes remain open as documented in81.
+See launcher/DIAGNOSTICS.md and BUILD.md. Source-only GitHub step commits, no
+.git ACL bypass. Shared checkouts unchanged; final archive/branch are authoritative.
+
+## Previous state (retained history)
+
 # Current: test81 / duo60 (Codex, 11 Nov 2026)
 
 Built on Claude Code test80/local57a494b, retaining all intervening updates.

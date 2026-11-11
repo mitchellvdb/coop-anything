@@ -1,20 +1,31 @@
-# test81 / duo60
+# test82 / duo61 validation
 
-Both builds use the same gameplay source. Duo adds DD_DUO and its separate runtime
-pin; its launcher label is 0.5.0-duo60, while the runtime's exact hello remains81.
-Do not mix normal and duo builds. See RELEASES.json for exact hashes. The ordinary
-kit carries a verified owner-signed manifest, serial81; duo uses manual installs.
+Automatic private logs are sent over the existing co-op Steam control channel
+to the host, not to a website. One report id freezes player slots; selected or
+previously connected but missing slots remain explicit. Any player initiates;
+concurrent requests coalesce. The native Sync stop detector scans only new log
+bytes since this game's launch and latches once per game. Other player-facing
+gameplay is retained from81; no new engine hook. Exacthello82 makes new kits
+mandatory and enables the existing signed host updater. Duo serial0 is manual;
+its one launcher includes all locally present runtime logs under host/.
 
-PASS full Windows runtime suite (including protocol/fuzz/FIFO); final actual
-bridge ASan; all4 notice initiators/3 receivers; absent/late/duplicate/new loot,
-unrelated dialog/callback/caller/area/STOP/reset; all4 pending loot button cases;
-host/guest same-turn animation phases25..35, bounded timeout and stale round.
-PASS19 read-only native proofs:140 pins/136 native addresses/92 hooks and exact
-empty-callback confirmation ABI. PASS dungeon foundation under ASan, both full
-Windows launcher suites including isolated snapshot/preparation/restore, signed
-update transfer, CNG and embedded GIF tests. Actual ordinary signed bundle parsed
-and all three hashes verified by launcher owner-key CNG code. /analyze: no runtime
-warning, one existing launcher unreachable-code warning. Native effects modeled;
-not a claim of live engine or multi-PC/Steam Cloud QA. No installed game/save or
-system changes. Linux/MinGW/Capstone not run. Known Stagecoach/curio/loot causes
-remain in the review; guards were not removed to hide mismatches.
+PASS full Windows runtime/protocol/FIFO; both complete launcher suites including
+fake snapshot/prepare/restore and actual Windows diagnostic adapters for normal
+and solo. PASS portable diagnostics/log packet MSVC ASan and Windows adapter
+ASan. Four-node/all4 initiators, simultaneous requests, backpressure, CRC/offset/
+size/auth/stale/missing/disk/collection/deadline refusal; delayed old receipt
+ACK across a new report failed before fix, then passed. Actual adapter covers
+bounded tails/partial lines, sender+host secret filtering, excluded ini/save
+paths, grouped files, new-only desync and post-stop diagnostic transport drainage.
+Independent Python ZIP checks validate CRC/content/names, explicit missing roles
+and absence of synthetic secrets. /analyze: no new finding; existing main
+unreachable code and socket signedness build warnings retained. Native hooks
+unchanged;19 exact native proofs retained from81. Actual normal signed bundle
+verified with launcher's owner-key CNG/parser and all3 exact file hashes.
+
+No live Steam delivery, real engine execution or installed game/save/system
+mutation claimed. Linux/MinGW/Capstone not run. Keep launchers open for the next
+real two-PC Copy logs test. Fully lost links cannot forward; original logs and
+bounded guest snapshots remain local. Reports use fixed file ids, capped2MiB
+runtime/512KiB other logs, <=16MiB/player, CRC and exact offsets, paced16KB/100ms.
+They may retain names/paths and stay private. No public logs/keys/assets in Git.

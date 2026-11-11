@@ -203,3 +203,5 @@ changelog as a reference (lessons in NOTES.md) and copies no code.
 Test75: read [STAGECOACH-WEEK.md](runtime/STAGECOACH-WEEK.md) for native week-seed timing and the candidate-pool comparison.
 
 Current tested snapshot: test81 / duo60, protocol36/exacthello81. See BUILD.md and runtime/RECHECK-2026-11-11.md. Signed ordinary updates use launcher/UPDATE.md; solo duo remains manual.
+
+Current release: test82 / solo duo61, exact runtime82, wire36/launcher3. Private automatic report transfer and bounds are documented in launcher/DIAGNOSTICS.md; all participants use the matching kit.

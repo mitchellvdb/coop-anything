@@ -1,23 +1,27 @@
 # DDCoop - Darkest Dungeon co-op
 
-Current development kit: **test81 / solo duo60**, runtime protocol36/exacthello81,
-launcher wire3. All Claude Code changes through local test80/57a494b are retained,
-including signed host updates, shared weekly GUID generation and activity/skill
-persistence. Either player can initiate supported shared actions; combat remains
-limited to each hero's assigned player.
+Current development kit: **test82 / solo duo61**. Runtime gameplay is test81;
+exact runtime hello82 changes the kit id, so older update-capable launchers get
+the signed new kit before entering a session with diagnostic controls26..31.
+Runtime wire36 and launcher wire3 remain. Claude Code's prior work is retained.
 
-Test81 shares inventory-full informational dismissal by the causing loot order,
-waits for same-turn combat animations and bounds duplicate native loot clicks.
-Protective actor/RNG/content checks remain; some Stagecoach, curio and loot causes
-are still under investigation. It is a development build requiring live playtests.
-See [review](runtime/RECHECK-2026-11-11.md), [current handoff](HANDOFF-CURRENT.md),
-[BUILD.md](BUILD.md), [KIT.md](KIT.md) and [launcher updates](launcher/UPDATE.md).
+New: automatic private reports from all connected players to the host. Any
+player can click Copy logs; new native desync markers, resync and session events
+also collect. The host receives one grouped ZIP with explicit missing/failed
+players and missing/truncated files. No outside service/account or public log
+upload. See [diagnostics](launcher/DIAGNOSTICS.md), [current handoff](HANDOFF-CURRENT.md),
+[BUILD.md](BUILD.md), [KIT.md](KIT.md) and [updates](launcher/UPDATE.md).
 
-Windows/MSVC runtime/protocol/FIFO, final bridge ASan,19 exact native proofs and
-both full launcher suites including isolated backup/restore passed. Native engine
-effects are modeled in fixtures. No new real-client gameplay execution is claimed;
-Linux/MinGW/Capstone were not run. Full live DLC remains unvalidated.
+Windows runtime, both full launcher suites including isolated backup/restore,
+portable diagnostics and actual Windows file-adapter ASan tests pass. Four
+launchers, paced/backpressured transfer, integrity/auth/order/size/deadline
+failures and delayed receipt overlap are modeled. Independent Python ZIP checks
+real fixture output. Live Steam diagnostic delivery still needs the owner's
+next test. Native effects elsewhere are modeled; no real gameplay run, installed
+game/save mutation or Linux/MinGW/Capstone run claimed. Native hooks unchanged;
+full live DLC and older Stagecoach/curio/loot causes remain unvalidated/open.
 
-Sources only: no game files, binaries, saves, artwork, signing key or private logs.
-Use the dedicated game/darkest-dungeon-ddcoop branch; the playbook/main is untouched.
-Written/published by Codex; Claude Code and previous contributions retained.
+Sources only: no binaries, assets, saves, artwork, private keys or private logs.
+Private reports may contain names/paths; never commit or publicly upload them.
+Dedicated game/darkest-dungeon-ddcoop branch; main/playbook untouched.
+Written/published by Codex; prior Claude Code and Codex contributions retained.

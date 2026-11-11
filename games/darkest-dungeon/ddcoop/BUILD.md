@@ -1,4 +1,4 @@
-# DDCoop build and validation — test81 / duo60
+# DDCoop build and validation — test82 / duo61
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -13,7 +13,7 @@ f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
 Never relax pins for an unknown update. 140 named signatures cover 136 distinct
 native addresses:135 function entries plus one exact weekly caller witness
 (some deliberate alias names);92 live/early hook targets are distinct.
-Runtime protocol 36; exact runtime hello version81 also required. Launcher wire 3.
+Runtime protocol 36; exact runtime hello version82 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -28,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test81"
+    set "DDC_VERSION=0.5.0-test82"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -84,8 +84,8 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-For duo60, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo60. Gameplay source remains identical. Source
+For duo61, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo61. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:
@@ -162,3 +162,18 @@ Both variants passed the full Windows launcher suite including isolated
 preparation/restore after real games closed. Fixtures model engine effects;
 no live gameplay QA is claimed. Sign ordinary kits using the existing local
 owner key as described in launcher/UPDATE.md; never create a replacement key.
+
+Test82 keeps runtime gameplay from81 and changes only its exact hello label to82
+so signed updates happen before diagnostics messages26..31 enter a matching-kit
+session. Runtime wire36 and launcher wire3 remain; older kits cannot enter that
+same session. Launcher source lists add lr_diagnostics.c and lr_logpack.c.
+The complete Windows suite now includes portable transport/packet tests and
+actual Windows file-adapter fixtures in normal and solo modes, all with fake
+membership/transport and disposable workspace files. Portable Linux test
+commands are included in launcher/build-linux.sh; that toolchain was not run.
+MSVC ASan diagnostics and Windows-adapter variants pass; independent Python
+zipfile checks real grouped ZIP output/CRCs/allowlist/secret filtering. See
+launcher/DIAGNOSTICS.md. A blocked old receipt ACK followed by a new report
+failed before the receipt-history fix, then passed. Both full Windows launcher
+suites including isolated backup/restore passed on the final binaries. No live
+Steam diagnostic transfer or installed game/save modification is claimed.
