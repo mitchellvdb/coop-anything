@@ -159,3 +159,5 @@ the launcher reports campaign transfer success. This verifies byte integrity, no
 save; guest-load validation still requires a second PC. Before replacing an existing guest campaign, the
 launcher now compares every backup file byte-for-byte with the source and checks that the file counts match.
 If the backup is unreadable, incomplete, or differs, the transfer stops before it writes over the guest save.
+
+Automatic private diagnostics to the host (test82): see [DIAGNOSTICS.md](DIAGNOSTICS.md). Any connected player can request it; native desync markers, resync and session events also collect. The host receives a grouped ZIP with explicit participant/file status.

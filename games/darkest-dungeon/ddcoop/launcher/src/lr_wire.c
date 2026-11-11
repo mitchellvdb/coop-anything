@@ -80,12 +80,14 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
     case LR_ROSTER:
     case LR_KIT_OFFER:
     case LR_KIT_CHUNK:
+    case LR_DIAG_CHUNK:
+        if (m->type==LR_DIAG_CHUNK && !m->id) return 0;
         if (m->len == 0 || m->len > LR_CHUNK || !m->data) return 0;
         if ((m->type == LR_KIT_OFFER && !m->id) || (m->type == LR_KIT_CHUNK && m->id > 2)) return 0;
         put32(p, m->id);
         p += 4;
         if(m->type==LR_STREAM_DATA){put32(p,m->b);p+=4;}
-        if (m->type == LR_SAVE_CHUNK || m->type == LR_KIT_CHUNK) {
+        if (m->type == LR_SAVE_CHUNK || m->type == LR_KIT_CHUNK || m->type == LR_DIAG_CHUNK) {
             put32(p, m->a);
             p += 4;
         }
@@ -120,6 +122,17 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
         put32(p, m->a);
         p += 4;
         break;
+    case LR_DIAG_REQUEST:
+    case LR_DIAG_BEGIN:
+        if(!m->id || (m->type==LR_DIAG_REQUEST ? (!m->b || m->a<1 || m->a>4) : (!m->a || m->a>16u*1024*1024)))return 0;
+        put32(p,m->id);put32(p+4,m->a);put32(p+8,m->b);p+=12;break;
+    case LR_DIAG_NOTICE:
+        if(!m->b || m->a<1 || m->a>4)return 0;
+        put32(p,m->a);put32(p+4,m->b);p+=8;break;
+    case LR_DIAG_END:
+    case LR_DIAG_ACK:
+        if(!m->id || (m->type==LR_DIAG_ACK && m->a>1))return 0;
+        put32(p,m->id);p+=4;if(m->type==LR_DIAG_ACK){put32(p,m->a);p+=4;}break;
     case LR_RESTART:
         if (!m->id || !m->b || m->a<1 || m->a>5) return 0;
         put32(p,m->id);put32(p+4,m->a);put32(p+8,m->b);p+=12;break;
@@ -183,12 +196,14 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
         break;
     case LR_SAVE_CHUNK:
     case LR_KIT_CHUNK:
+    case LR_DIAG_CHUNK:
         if (n < 9 || n > 8 + LR_CHUNK) return 0;
         out->id = get32(p);
         out->a = get32(p + 4);
         out->data = p + 8;
         out->len = n - 8;
         if (t == LR_KIT_CHUNK && out->id > 2) return 0;
+        if(t==LR_DIAG_CHUNK && !out->id)return 0;
         break;
     case LR_HELLO:
         if (n != 8 && n != 12) return 0;
@@ -219,6 +234,20 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
         if (n != 4) return 0;
         out->a = get32(p);
         break;
+    case LR_DIAG_REQUEST:
+    case LR_DIAG_BEGIN:
+        if(n!=12)return 0;
+        out->id=get32(p);out->a=get32(p+4);out->b=get32(p+8);
+        if(!out->id || (t==LR_DIAG_REQUEST ? (!out->b || out->a<1 || out->a>4) : (!out->a || out->a>16u*1024*1024)))return 0;
+        break;
+    case LR_DIAG_NOTICE:
+        if(n!=8)return 0;out->a=get32(p);out->b=get32(p+4);
+        if(!out->b || out->a<1 || out->a>4)return 0;break;
+    case LR_DIAG_END:
+    case LR_DIAG_ACK:
+        if(n!=(t==LR_DIAG_END?4u:8u))return 0;
+        out->id=get32(p);if(t==LR_DIAG_ACK)out->a=get32(p+4);
+        if(!out->id || out->a>1)return 0;break;
     case LR_RESTART:
         if(n!=12)return 0;
         out->id=get32(p);out->a=get32(p+4);out->b=get32(p+8);

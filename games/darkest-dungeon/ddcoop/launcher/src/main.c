@@ -29,6 +29,8 @@
 #include "lr_steam.h"
 #include "lr_mascot.h"
 #include "lr_logs.h"
+#include "lr_diagnostics.h"
+#include "lr_logpack.h"
 #include "lr_dlc.h"
 #include "lr_kit.h"
 #include "lr_kitsig_win.h"
@@ -85,6 +87,12 @@ static struct {
     char prepare_bundle[LR_PATH_MAX]; /* the session snapshot, for another try while Steam still takes in a save */
     uint64_t prepare_retry_at, prepare_wait_since;
     char auto_logdir[LR_PATH_MAX];
+    lr_diagnostics diagnostics;
+    char diag_dir[LR_PATH_MAX];
+    uint32_t diag_folder_id;
+    unsigned diag_files[4];
+    int diag_open,diag_scan_ready,diag_seen_stop;
+    uint64_t diag_keep_until,diag_done_at,diag_scan_offset,diag_scan_at;
     int hosting_pending;         /* host: waiting for the lobby before starting the game */
     uint64_t hosting_since;
     char last_status[512];
@@ -373,6 +381,11 @@ static void check_slot(void);
 static int session_active(void);
 static int slot_cannot_host(int slot, char *why, size_t cap);
 static void stop_session(const char *why);
+static int diagnostics_request(unsigned reason,int open_folder);
+static void diagnostics_reset(void);
+static void diagnostics_sync(void);
+static void diagnostics_mark(void);
+static void diagnostics_tick(uint64_t now);
 static int spawn_game_process(const char *exe, const char *args, HANDLE *process);
 
 static void slot_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-slot.txt"); }
@@ -614,6 +627,7 @@ static int launch_game(int nosave) {
     check_install();
     if (!G.install_ok) return 0;
     G.auto_logdir[0]=0;
+    diagnostics_mark();
     if (G.prepare || G.game || darkest_running()) {
         message("Darkest Dungeon is running, or DDCoop is preparing/restoring a campaign. Please wait.",
                 MB_ICONWARNING);
@@ -651,12 +665,16 @@ static void stop_session(const char *why) {
     }
     memset(&G.restart,0,sizeof G.restart);
     if (session_active() || lr_steam_lobby()) logline("stop: %s", why);
-    if (G.core.role == LR_ROLE_HOST) {
-        for (int i = 0; i < LR_MAX_GUESTS; i++)
-            if (G.core.guests[i].peer) lr_steam_close_session(G.core.guests[i].peer);
-    } else if (G.core.peer) lr_steam_close_session(G.core.peer);
+    int keep_logs=(G.diagnostics.active || G.diagnostics.notice_pending) && strcmp(why,"new session")!=0;
+    if(keep_logs)G.diag_keep_until=now_ms()+60000;
+    else {
+        if (G.core.role == LR_ROLE_HOST) {
+            for (int i = 0; i < LR_MAX_GUESTS; i++)
+                if (G.core.guests[i].peer) lr_steam_close_session(G.core.guests[i].peer);
+        } else if (G.core.peer) lr_steam_close_session(G.core.peer);
+    }
     lr_core_stop(&G.core);
-    lr_steam_leave_lobby();
+    if(!keep_logs)lr_steam_leave_lobby();
     G.hosting_pending = 0;
     G.prepare_retry_at = G.prepare_wait_since = 0;
     snprintf(G.core.status, sizeof G.core.status, "%s", why);
@@ -755,6 +773,7 @@ static void do_host(void) {
             return;
         }
     }
+    diagnostics_reset();
     stop_session("new session");
     G.core.cfg.coop_slot = G.chosen_slot;
     G.core.cfg.max_guests = G.players >= 2 && G.players <= 4 ? G.players - 1 : 1;
@@ -790,6 +809,7 @@ static void join_lobby(uint64_t lobby) {
                 MB_ICONWARNING);
         return;
     }
+    diagnostics_reset();
     stop_session("new session");
     if (!lr_steam_join_lobby(lobby)) {
         message("Could not open the lobby.", MB_ICONWARNING);
@@ -877,6 +897,8 @@ static void do_copy_code(void) {
 }
 
 static void collect_logs(int open_folder) {
+    unsigned why=open_folder?LR_DIAG_MANUAL:lr_restart_active(&G.restart)?LR_DIAG_RESYNC:LR_DIAG_FAILURE;
+    if(diagnostics_request(why,open_folder))return;
     wchar_t desktop[MAX_PATH];
     if (SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktop) != S_OK) return;
     char d[LR_PATH_MAX], dir[LR_PATH_MAX], stamp[64];
@@ -925,6 +947,7 @@ static void collect_logs(int open_folder) {
     if (open_folder) ShellExecuteW(NULL, L"explore", W(dir), NULL, NULL, SW_SHOWNORMAL);
 }
 static void do_logs(void) { collect_logs(1); }
+#include "lr_diagnostics_win.inc"
 
 static BOOL CALLBACK close_game_window(HWND wnd, LPARAM pid) {
     DWORD owner = 0;
@@ -1066,7 +1089,12 @@ static int allowed_cb(void *ctx, uint64_t peer) {
 static void on_message(void *ctx, uint64_t peer, int channel, const uint8_t *buf, size_t len) {
     (void)ctx;
     lr_msg m;
-    if(lr_decode(buf,len,channel,&m) && m.type==LR_RESTART) {
+    int decoded=lr_decode(buf,len,channel,&m);
+    if(decoded && m.type>=LR_DIAG_REQUEST && m.type<=LR_DIAG_NOTICE) {
+        if(!lr_steam_is_member(peer))return;
+        diagnostics_sync();(void)lr_diag_message(&G.diagnostics,peer,&m,now_ms());return;
+    }
+    if(decoded && m.type==LR_RESTART) {
         if(!lr_steam_is_member(peer))return;
         if(!G.restart.kit) {
             if(m.a!=LR_R_BEGIN || G.core.role!=LR_ROLE_GUEST || peer!=G.core.peer || peer!=lr_steam_lobby_owner())return;
@@ -1107,6 +1135,7 @@ static void on_event(void *ctx, const lr_steam_event *ev) {
         logline("lobby: %llu joined", (unsigned long long)ev->user);
         break;
     case LR_EV_MEMBER_LEFT:
+        lr_diag_left(&G.diagnostics,ev->user);
         if(lr_restart_active(&G.restart)) {
             int participant=G.restart.role==LR_ROLE_GUEST?G.restart.host==ev->user:0;
             for(unsigned i=0;i<3;i++)if(G.restart.peers[i] && G.restart.peers[i]==ev->user)participant=1;
@@ -1421,6 +1450,7 @@ static void tick_body(void) {
     /* Steam callbacks may update last_rx with a newer timestamp than t captured above. */
     t = now_ms();
     lr_core_tick(&G.core, t);
+    diagnostics_tick(t);
     /* A guest session that fails on its own (missing DLC, lost host) gets a pop-up, not only the red status line.
      * Failures from a button (Host, Join) already show one there. */
     if(lr_restart_active(&G.restart) && G.core.state==LR_ST_FAILED)lr_restart_abort(&G.restart);
@@ -1461,6 +1491,7 @@ static void tick_body(void) {
         DWORD exit_code = 0;
         GetExitCodeProcess(G.game, &exit_code);
         logline("game exited with code %lu; guest recovery pending=%d", exit_code, guest);
+        if(!lr_restart_active(&G.restart))(void)diagnostics_request(LR_DIAG_FAILURE,0);
         CloseHandle(G.game);
         G.game = NULL;
         G.hotkey_ok=RegisterHotKey(G.wnd,ID_HOTKEY,MOD_NOREPEAT,VK_F9);
@@ -1739,6 +1770,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         DestroyWindow(h);
         return 0;
     case WM_DESTROY:
+        diagnostics_reset();
         live_party_close();
         overlay_close();
         if(G.party_font){DeleteObject(G.party_font);G.party_font=NULL;}

@@ -46,6 +46,12 @@ typedef enum {
     LR_MODS = 22,        /* host -> guest: the campaign's mods with fingerprints (count in id, lr_mods body in data, may be empty) */
     LR_KIT_OFFER = 23,   /* host -> a friend with another kit: the signed manifest (serial in id, lr_kit text in data) */
     LR_KIT_CHUNK = 24,   /* host -> that friend: kit file index (0..2) in id, offset in a, bytes */
+    LR_DIAG_REQUEST = 26, /* host report id, reason, kit */
+    LR_DIAG_BEGIN = 27,   /* guest report id, bytes, crc */
+    LR_DIAG_CHUNK = 28,   /* report id, exact offset, bytes; fixed log packet only */
+    LR_DIAG_END = 29,     /* report id */
+    LR_DIAG_ACK = 30,     /* report id, 0 success / 1 failed */
+    LR_DIAG_NOTICE = 31,  /* guest asks host for a report: reason, kit */
     LR_KIT_END = 25,     /* host -> that friend: all kit files sent */
 } lr_type;
 

@@ -1,6 +1,19 @@
 DDCoop - development test kit {VERSION}
 
-New in test80
+New in test82
+Desync reports are collected automatically on the host desktop as one ZIP,
+with a folder per player. Copy logs on any connected launcher also starts this.
+Keep launchers open until collection finishes. REPORT.txt shows missing or failed
+players; FILES.txt lists missing/truncated files. Saves and ddcoop.ini are not
+sent; known authentication/password lines are filtered. Reports remain private.
+New runtime label82 ensures every participant uses the same matching kit.
+
+Retained from test81
+Shared inventory-full OK, native pending loot click bounds and combat choices
+waiting for the other copy's animation/input boundary. Stagecoach and some
+previous curio/loot mismatch causes are still under investigation.
+
+Earlier changes: test80
 Everything from test79, plus: each player closes their own tutorial popups
 (a guest could get stuck on one the host did not have), and clicking an open
 curio again no longer puts the guests' dice out of step (that ended a session
@@ -69,7 +82,7 @@ need a fresh Host/Join or manual test-window restart. Do not rejoin an old runni
 session or copy a different campaign to work around a synchronization stop.
 
 Testing and logs
-Follow TESTSTAPPEN-test75.txt. Use Copy logs on every launcher if any check fails.
+Follow TESTSTAPPEN-test82.txt. Send the combined DDCoop-report ZIP from the host desktop.
 Copied logs redact known authentication secrets; review them before sharing.
 
 Scope
