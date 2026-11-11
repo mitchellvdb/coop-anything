@@ -4,14 +4,15 @@ static uint8_t fn_manager[0x60], fn_entries[2][0x340], fn_params[0x40];
 static uintptr_t fn_slots[4];
 static unsigned fn_enqueued, fn_shown, fn_acks;
 static int fn_click;
+static uint64_t fn_offset;
 static void __fastcall fn_enqueue(void *manager, const char *name, void *params) {
     (void)params;
-    uint64_t slots = (uintptr_t)fn_slots, tail = ++fn_enqueued, mask = 3, count = tail;
-    CHECK(tail <= 2);
-    strcpy((char *)fn_entries[tail-1], name);
-    fn_slots[(tail-1)&mask] = (uintptr_t)fn_entries[tail-1];
-    memcpy((uint8_t *)manager+8,&slots,8); memcpy((uint8_t *)manager+0x10,&tail,8);
-    memcpy((uint8_t *)manager+0x18,&mask,8); memcpy((uint8_t *)manager+0x20,&count,8);
+    uint64_t slots = (uintptr_t)fn_slots, count = ++fn_enqueued, capacity = 4;
+    CHECK(count <= 2);
+    strcpy((char *)fn_entries[count-1], name);
+    fn_slots[(fn_offset+count-1)&(capacity-1)] = (uintptr_t)fn_entries[count-1];
+    memcpy((uint8_t *)manager+8,&slots,8); memcpy((uint8_t *)manager+0x10,&capacity,8);
+    memcpy((uint8_t *)manager+0x18,&fn_offset,8); memcpy((uint8_t *)manager+0x20,&count,8);
 }
 static void __fastcall fn_ack(void *capture) {
     uintptr_t manager=0; uint32_t removals=0;
@@ -27,7 +28,7 @@ static void fn_reset(int role) {
     it_reset(role); it_loot(2);
     memset(fn_manager,0,sizeof fn_manager); memset(fn_entries,0,sizeof fn_entries);
     memset(fn_slots,0,sizeof fn_slots); memset(fn_params,0,sizeof fn_params);
-    fn_enqueued=fn_shown=fn_acks=0; fn_click=0;
+    fn_enqueued=fn_shown=fn_acks=0; fn_click=0;fn_offset=0;
     g_confirm_enqueue=fn_enqueue;g_confirm_ack=fn_ack;g_confirm_show_entry=fn_show;
     g_full_notice_caller=it_caller_yes;
     g_town.applied_seq=7; g_town.next_apply_seq=8; full_notice_loot(7,wk_view.area);
@@ -72,6 +73,14 @@ static void full_notice_checks(void) {
     fn_open();fn_render(0);CHECK(fn_acks==1);
     /* A new loot attempt in the same room has a different identity. */
     full_notice_loot(9,100);fn_open();fn_render(1);CHECK(fn_acks==1);
+    /* Native deque: +10 capacity, +18 front offset, +20 count. Test all
+     * physical offsets including wrap, with an unrelated modal ahead of ours. */
+    for(unsigned offset=0;offset<8;++offset) {
+        fn_reset(DD_ROLE_HOST);fn_offset=offset;
+        hook_confirm_enqueue(fn_manager,"unrelated_confirmation",fn_params);fn_open();
+        CHECK(!g_town.needs_resync && full_notice_apply(&close));
+        fn_render(0);CHECK(!fn_acks);fn_render(1);CHECK(fn_acks==1);
+    }
     /* Another named confirmation, or any supplied gameplay callback, remains
      * local and intact. Even an identically worded later popup is not enough. */
     fn_reset(DD_ROLE_HOST);hook_confirm_enqueue(fn_manager,"unrelated_confirmation",fn_params);

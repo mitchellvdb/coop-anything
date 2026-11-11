@@ -40,12 +40,16 @@ static int full_notice_name(uintptr_t address) {
     char name[sizeof g_full_name];
     return safe_read(address, name, sizeof name) && !memcmp(name, g_full_name, sizeof name);
 }
-static uintptr_t full_notice_tail(uintptr_t manager) {
-    uint64_t slots = 0, tail = 0, mask = 0, count = 0, entry = 0;
-    if (!safe_read(manager + 8, &slots, 8) || !slots || !safe_read(manager + 0x10, &tail, 8) ||
-        !safe_read(manager + 0x18, &mask, 8) || mask > 4095 || (mask & (mask + 1)) ||
-        !safe_read(manager + 0x20, &count, 8) || !count || count > mask + 1 ||
-        !safe_read(slots + ((tail - 1) & mask) * 8, &entry, 8)) return 0;
+static uintptr_t full_notice_newest(uintptr_t manager) {
+    uint64_t slots = 0, capacity = 0, offset = 0, count = 0, entry = 0;
+    /* Native deque of large Entry objects (one object per map slot): +10 is
+     * power-of-two map capacity, +18 its front offset, +20 live count. Show
+     * uses the front; Add appends at offset+count before incrementing count. */
+    if (!safe_read(manager + 8, &slots, 8) || !slots ||
+        !safe_read(manager + 0x10, &capacity, 8) || !capacity || capacity > 4096 || (capacity & (capacity-1)) ||
+        !safe_read(manager + 0x18, &offset, 8) ||
+        !safe_read(manager + 0x20, &count, 8) || !count || count > capacity ||
+        !safe_read(slots + ((offset + count - 1) & (capacity-1)) * 8, &entry, 8)) return 0;
     return (uintptr_t)entry;
 }
 static void __fastcall hook_confirm_enqueue(void *manager, const char *name, void *params) {
@@ -58,7 +62,7 @@ static void __fastcall hook_confirm_enqueue(void *manager, const char *name, voi
     if (!g_confirm_enqueue) return;
     g_confirm_enqueue(manager, name, params);
     if (!track) return;
-    uintptr_t entry = full_notice_tail((uintptr_t)manager);
+    uintptr_t entry = full_notice_newest((uintptr_t)manager);
     if (!entry || !full_notice_name(entry)) {
         dd_log("Inventory-full: native entry could not be identified"); runtime_sync_stop(3); return;
     }

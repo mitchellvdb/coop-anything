@@ -34,7 +34,13 @@ exact(0x1407c7014,'4c8bc3');exact(0x1407c7017,'ba00020000')
 exact(0x1407c701c,'488d8dd0000000');exact(0x1407c7105,'488d95d0000000')
 call(0x1407c710f,0x1407c7200)
 exact(0x1407c7082,'488b4f38')
-# Show passes the last actual ring entry to ShowEntry; not a guessed pointer.
+# Show passes the FRONT entry (offset & (capacity-1)), while Add appends
+# at ((offset+count) & (capacity-1)) then increments count. Capture that
+# newly enqueued back entry, even with an unrelated modal ahead of it.
+exact(0x1407c74c7,'498b5e10');exact(0x1407c74cb,'48ffcb')
+exact(0x1407c74ce,'49215e18');exact(0x1407c74d2,'498b7e20')
+exact(0x1407c74d6,'49037e18');exact(0x1407c74da,'4823df')
+exact(0x1407c7508,'488b34c8');exact(0x1407c75c0,'49ff4620')
 exact(0x1407c6b8b,'48837f2000')
 exact(0x1407c6d3f,'488b4710');exact(0x1407c6d43,'48ffc8')
 exact(0x1407c6d46,'48234718');exact(0x1407c6d4a,'488b5708')
