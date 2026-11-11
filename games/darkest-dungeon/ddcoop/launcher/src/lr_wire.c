@@ -59,7 +59,8 @@ uint32_t lr_crc32(uint32_t crc, const uint8_t *p, size_t len) {
  *   SAVE_CHUNK       index, offset, bytes (1..LR_CHUNK)
  *   SAVE_RESULT      result
  *   ROSTER           revision, table (1..LR_CHUNK bytes; checked by lr_owners_decode)
- *   CLAIM            hero id, tick (0 or 1) */
+ *   CLAIM            hero id, tick (0 or 1)
+ *   MODS             count, entries (0..LR_CHUNK bytes; checked by lr_mods_decode) */
 size_t lr_encode(const lr_msg *m, uint8_t *out) {
     uint8_t *p = out + LR_HEADER;
     out[0] = 'D';
@@ -115,6 +116,12 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
     case LR_RESTART:
         if (!m->id || !m->b || m->a<1 || m->a>5) return 0;
         put32(p,m->id);put32(p+4,m->a);put32(p+8,m->b);p+=12;break;
+    case LR_MODS:
+        if (m->len > LR_CHUNK || (m->len && !m->data) || m->id > 32) return 0;
+        put32(p, m->id);
+        if (m->len) memcpy(p + 4, m->data, m->len);
+        p += 4 + m->len;
+        break;
     case LR_CLAIM:
         if (m->a > 1) return 0;
         put32(p, m->id);
@@ -205,6 +212,13 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
         out->id=get32(p);out->a=get32(p+4);out->b=get32(p+8);
         if(!out->id || !out->b || out->a<1 || out->a>5)return 0;
         break;
+    case LR_MODS:
+        if (n < 4 || n > 4 + LR_CHUNK) return 0;
+        out->id = get32(p);
+        if (out->id > 32) return 0;
+        out->data = n > 4 ? p + 4 : NULL;
+        out->len = n - 4;
+        break;
     case LR_CLAIM:
         if (n != 8) return 0;
         out->id = get32(p);
@@ -250,6 +264,7 @@ const char *lr_bye_text(uint32_t reason) {
     case LR_BYE_PROTOCOL: return "Unexpected message (different versions?)";
     case LR_BYE_RESTART: return "The host must close the game and click Host again first; then join the new session.";
     case LR_BYE_STARTED: return "The host's game has already loaded the campaign. Everyone has to join before that: ask the host to close the game, choose the number of players and click Host again.";
+    case LR_BYE_MODS: return "Your friend is missing a mod this campaign uses, or has a different version of it (see their launcher).";
     case LR_BYE_DLC: return "Your friend is missing DLC required by this campaign (see their launcher).";
     default: return "unknown reason";
     }

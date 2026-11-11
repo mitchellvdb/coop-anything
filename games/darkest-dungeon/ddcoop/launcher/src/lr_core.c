@@ -35,7 +35,7 @@ const char *lr_state_name(lr_state s) {
     return (unsigned)s < sizeof names / sizeof *names ? names[s] : "?";
 }
 
-enum { SP_HELLO, SP_SESSION, SP_BEGIN, SP_FILES, SP_CHUNKS, SP_END, SP_DONE }; /* host send phases */
+enum { SP_HELLO, SP_SESSION, SP_MODS, SP_BEGIN, SP_FILES, SP_CHUNKS, SP_END, SP_DONE }; /* host send phases */
 
 static void files_free(lr_core *c) {
     for (uint32_t i = 0; i < LR_MAX_FILES; i++) {
@@ -553,6 +553,54 @@ static int store_campaign(lr_core *c) {
 
 static int campaign_dlc_ok(lr_core *c, const lr_game_info *game);
 
+static void log_mod(lr_core *c, const char *who, const lr_mod_print *p) {
+    char d[LR_MOD_TITLE_MAX + LR_UGC_NAME_MAX + 32];
+    lr_mods_describe(p, d, sizeof d);
+    if (p->found)
+        logf_(c, "mod (%s) %s [%s]: %u files, %llu bytes, fingerprint %02x%02x%02x%02x%02x%02x%02x%02x", who, d,
+              p->id.source[0] ? p->id.source : "-", p->files, (unsigned long long)p->bytes, p->sha256[0], p->sha256[1],
+              p->sha256[2], p->sha256[3], p->sha256[4], p->sha256[5], p->sha256[6], p->sha256[7]);
+    else
+        logf_(c, "mod (%s) %s [%s]: NOT FOUND or unreadable", who, d, p->id.source[0] ? p->id.source : "-");
+}
+
+/* Host: every mod the campaign uses must be on this PC; its fingerprints go to every friend (SP_MODS). */
+static int host_mods(lr_core *c, const lr_game_info *game) {
+    char missing[160] = "";
+    c->mod_count = 0;
+    c->mods_known = 1;
+    if (game->ugc_bad) {
+        fail(c, "The campaign's mod list (persist.game.json) cannot be read completely, so DDCoop cannot check that every PC has the same mods. Nothing was sent.");
+        return 0;
+    }
+    if (!game->ugc_count) {
+        logf_(c, "mods: none in this campaign");
+        return 1;
+    }
+    if (!c->cfg.mod_print) {
+        logf_(c, "mods: %d in this campaign, not fingerprinted by this caller", game->ugc_count);
+        return 1;
+    }
+    for (int i = 0; i < game->ugc_count; i++) {
+        c->cfg.mod_print(c->cfg.ctx, &game->ugc[i], &c->mods[i]);
+        log_mod(c, "host", &c->mods[i]);
+        if (!c->mods[i].found) {
+            char d[LR_MOD_TITLE_MAX + LR_UGC_NAME_MAX + 32];
+            size_t k = strlen(missing);
+            lr_mods_describe(&c->mods[i], d, sizeof d);
+            if (k + strlen(d) + 3 < sizeof missing) snprintf(missing + k, sizeof missing - k, "%s%s", k ? ", " : "", d);
+        }
+    }
+    c->mod_count = game->ugc_count;
+    if (missing[0]) {
+        char msg[sizeof c->error];
+        snprintf(msg, sizeof msg, "This campaign uses mods DDCoop cannot find or read on this PC: %s. Nothing was sent.", missing);
+        fail(c, msg);
+        return 0;
+    }
+    return 1;
+}
+
 #define LR_HOST_RESTART_TEXT "Your friend left. Close the game and click Host again to start a new session."
 void lr_core_host_loaded(lr_core *c) {
     if (c->role != LR_ROLE_HOST || c->host_loaded) return;
@@ -627,6 +675,7 @@ int lr_core_host_start(lr_core *c, uint64_t now_ms) {
         }
     }
     if (!campaign_dlc_ok(c, &game)) { files_free(c); return 0; }
+    if (!host_mods(c, &game)) { files_free(c); return 0; }
     lr_owners_init(&c->owners);
     c->owners_sent = 0;
     for (uint32_t i = 0; i < c->file_count; i++)
@@ -717,6 +766,16 @@ static void host_send_campaign(lr_core *c, lr_guest *g) {
             m.type = LR_SESSION;
             m.a = (uint32_t)c->cfg.coop_slot | (uint32_t)guest_player(c, g) << 8;
             snprintf(m.text, sizeof m.text, "%s", c->password);
+        } else if (g->send_phase == SP_MODS) {
+            static uint8_t body[LR_CHUNK];
+            m.type = LR_MODS;
+            m.id = (uint32_t)c->mod_count;
+            if (!lr_mods_encode(c->mods, c->mod_count, body, sizeof body, &m.len)) {
+                set_status(c, "The mod list could not be sent (see DDCoop-launcher.log).");
+                logf_(c, "mods: list of %d could not be encoded", c->mod_count);
+                return;
+            }
+            m.data = m.len ? body : NULL;
         } else if (g->send_phase == SP_BEGIN) {
             m.type = LR_SAVE_BEGIN;
             m.a = c->file_count;
@@ -785,6 +844,8 @@ int lr_core_guest_join(lr_core *c, uint64_t host_peer, uint64_t now_ms) {
     c->peer = host_peer;
     lr_owners_init(&c->owners);
     c->claim_count = 0;
+    c->mod_count = 0;
+    c->mods_known = 0;
     if (c->cfg.game_running && c->cfg.game_running(c->cfg.ctx)) {
         fail(c, lr_bye_text(LR_BYE_GAME_RUNNING));
         return 0;
@@ -835,6 +896,37 @@ static int campaign_dlc_ok(lr_core *c, const lr_game_info *game) {
     snprintf(msg, sizeof msg,
              "This campaign requires DLC data that is missing or incomplete: %s. Install or verify the DLC through Steam, then try again; no campaign was replaced.",
              missing);
+    fail(c, msg);
+    return 0;
+}
+
+/* Guest: a mod that is missing here or has another version makes this game simulate differently, without
+ * any error, so check every mod of the campaign against the host's fingerprints before our save is touched. */
+static int campaign_mods_ok(lr_core *c, const lr_game_info *game) {
+    if (game->ugc_bad) {
+        fail(c, "The host campaign's mod list cannot be read, so DDCoop cannot check the mods; your own save has not been changed.");
+        return 0;
+    }
+    if (!game->ugc_count) return 1;
+    if (!c->cfg.mod_print) {
+        logf_(c, "mods: %d in this campaign, not checked by this caller", game->ugc_count);
+        return 1;
+    }
+    if (!c->mods_known) {
+        fail(c, "This campaign uses mods, and the host's DDCoop launcher is too old to confirm them. Install the same DDCoop version on every PC; your campaign was not replaced.");
+        return 0;
+    }
+    lr_mod_print mine[LR_MAX_UGC];
+    char msg[sizeof c->error];
+    for (int i = 0; i < game->ugc_count; i++) {
+        c->cfg.mod_print(c->cfg.ctx, &game->ugc[i], &mine[i]);
+        log_mod(c, "here", &mine[i]);
+    }
+    if (lr_mods_match(game, c->mods, c->mod_count, mine, msg, sizeof msg)) {
+        logf_(c, "mods: all %d identical to the host's", game->ugc_count);
+        return 1;
+    }
+    logf_(c, "mods refused: %s", msg);
     fail(c, msg);
     return 0;
 }
@@ -915,6 +1007,10 @@ static void guest_save_message(lr_core *c, const lr_msg *m) {
         }
         if (!campaign_dlc_ok(c, &game)) {
             send_simple_to(c, c->peer, LR_SAVE_RESULT, LR_BYE_DLC);
+            return;
+        }
+        if (!campaign_mods_ok(c, &game)) {
+            send_simple_to(c, c->peer, LR_SAVE_RESULT, LR_BYE_MODS);
             return;
         }
         if (!store_campaign(c)) {
@@ -1028,6 +1124,20 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
             char msg[256];
             snprintf(msg, sizeof msg, "The host closed the connection: %s", lr_bye_text(m.a));
             fail(c, msg);
+            break;
+        }
+        case LR_MODS: {
+            if (!c->password[0] || c->state != LR_ST_GUEST_HELLO) return; /* after SESSION, before the campaign */
+            int n = lr_mods_decode(m.data, m.len, m.id, c->mods, LR_MAX_UGC);
+            if (n < 0) {
+                send_simple_to(c, c->peer, LR_BYE, LR_BYE_PROTOCOL);
+                fail(c, "The host sent a malformed mod list.");
+                return;
+            }
+            c->mod_count = n;
+            c->mods_known = 1;
+            logf_(c, "guest: the host's campaign uses %d mod(s)", n);
+            for (int i = 0; i < n; i++) log_mod(c, "host", &c->mods[i]);
             break;
         }
         case LR_ROSTER:

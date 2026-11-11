@@ -61,6 +61,36 @@ int lr_list_files(const char *dir, int (*fn)(void *ctx, const char *name), void 
     return count;
 }
 
+int lr_list_dir(const char *dir, int (*fn)(void *ctx, const char *name, int is_dir), void *ctx) {
+    /* A fingerprint must not silently omit an unreadable entry or a link whose
+     * target the game could load. The root itself must also be an ordinary dir. */
+    DWORD root = attrs(dir);
+    if (root == INVALID_FILE_ATTRIBUTES || !(root & FILE_ATTRIBUTE_DIRECTORY) ||
+        (root & FILE_ATTRIBUTE_REPARSE_POINT)) return -1;
+    char pattern[LR_PATH_MAX];
+    if (strlen(dir) + 3 > sizeof pattern) return -1;
+    lr_join(pattern, sizeof pattern, dir, "*");
+    wchar_t *w = wide(pattern);
+    if (!w) return -1;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(w, &fd);
+    DWORD error = GetLastError();
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) return error == ERROR_FILE_NOT_FOUND || error == ERROR_NO_MORE_FILES ? 0 : -1;
+    int count = 0, ok = 1, stopped = 0;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        if (fd.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DEVICE)) {ok = 0;break;}
+        char name[LR_PATH_MAX];
+        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, fd.cFileName, -1, name, sizeof name, NULL, NULL)) {ok = 0;break;}
+        count++;
+        if (!fn(ctx, name, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)) {stopped = 1;break;}
+    } while (FindNextFileW(h, &fd));
+    if (ok && !stopped && GetLastError() != ERROR_NO_MORE_FILES) ok = 0;
+    FindClose(h);
+    return ok ? count : -1;
+}
+
 static FILE *open_file(const char *path, const char *mode) {
     wchar_t *w = wide(path), wm[8];
     MultiByteToWideChar(CP_UTF8, 0, mode, -1, wm, 8);
@@ -94,6 +124,7 @@ int lr_delete_file(const char *path) {
 }
 #else
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #define SEP '/'
@@ -124,6 +155,30 @@ int lr_list_files(const char *dir, int (*fn)(void *ctx, const char *name), void 
     }
     closedir(d);
     return count;
+}
+
+int lr_list_dir(const char *dir, int (*fn)(void *ctx, const char *name, int is_dir), void *ctx) {
+    struct stat root;
+    if (lstat(dir, &root) != 0 || !S_ISDIR(root.st_mode)) return -1;
+    DIR *d = opendir(dir);
+    if (!d) return -1;
+    int count = 0, ok = 1;
+    struct dirent *e;
+    for (;;) {
+        errno = 0;
+        e = readdir(d);
+        if (!e) {if (errno) ok = 0;break;}
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char path[LR_PATH_MAX];
+        struct stat st;
+        if (strlen(dir) + strlen(e->d_name) + 2 > sizeof path) {ok = 0;break;}
+        lr_join(path, sizeof path, dir, e->d_name);
+        if (lstat(path, &st) != 0 || (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))) {ok = 0;break;}
+        count++;
+        if (!fn(ctx, e->d_name, S_ISDIR(st.st_mode))) break;
+    }
+    closedir(d);
+    return ok ? count : -1;
 }
 
 static FILE *open_file(const char *path, const char *mode) { return fopen(path, mode); }
@@ -192,6 +247,26 @@ int lr_read_file(const char *path, size_t max, uint8_t **out, size_t *len) {
     fclose(f);
     free(buf);
     return 0;
+}
+
+int lr_read_stream(const char *path, int (*fn)(void *ctx, const uint8_t *p, size_t n), void *ctx, uint64_t *size) {
+    *size = 0;
+    FILE *f = open_file(path, "rb");
+    if (!f) return 0;
+    uint8_t *buf = malloc(1u << 16);
+    int ok = buf != NULL;
+    while (ok) {
+        size_t r = fread(buf, 1, 1u << 16, f);
+        if (r == 0) {
+            ok = !ferror(f);
+            break;
+        }
+        *size += r;
+        if (!fn(ctx, buf, r)) ok = 0;
+    }
+    free(buf);
+    fclose(f);
+    return ok;
 }
 
 int lr_write_file(const char *path, const uint8_t *data, size_t len) {

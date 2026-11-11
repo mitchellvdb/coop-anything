@@ -59,6 +59,7 @@ typedef struct {
     int game_running;
     int allow_all;
     int no_dlc;     /* this node has no DLC installed */
+    char game_dir[LR_PATH_MAX]; /* mod tests: <node>\steamapps\common\DarkestDungeon */
     lr_core core;
     lr_restart restart;
     int restart_closes,restart_starts;
@@ -579,6 +580,151 @@ static void test_campaign_metadata_refusal(void) {
  printf("Campaign preflight: missing/corrupt metadata and tutorial refused before backup/write; all nine feature flags reject missing DLC and valid complete feature list launches via recovery journal\n");
 }
 
+/* ---- campaign mods ---- */
+
+static void node_mod_print(void *ctx, const lr_ugc *mod, lr_mod_print *out) {
+    lr_mods_print(((node *)ctx)->game_dir, mod, out);
+}
+
+static void setup_mod_node(node *n, uint64_t me, const char *name) {
+    char base[LR_PATH_MAX], a[LR_PATH_MAX], b[LR_PATH_MAX];
+    setup_node(n, me, name);
+    lr_join(base, sizeof base, root, name);
+    lr_join(a, sizeof a, base, "steamapps");
+    lr_join(b, sizeof b, a, "common");
+    lr_join(n->game_dir, sizeof n->game_dir, b, "DarkestDungeon");
+    CHECK(lr_make_dirs(n->game_dir));
+    n->core.cfg.mod_print = node_mod_print;
+    lr_join(n->core.cfg.restore_path, sizeof n->core.cfg.restore_path, n->core.cfg.remote_dir, "original-recovery.bin");
+}
+
+/* Workshop item <id> on this node, with one data file whose text is the version. */
+static void put_workshop_mod(node *n, const char *id, const char *version) {
+    char dir[LR_PATH_MAX], a[LR_PATH_MAX], data[LR_PATH_MAX];
+    lr_join(a, sizeof a, n->game_dir, "..");
+    lr_join(dir, sizeof dir, a, "..");
+    lr_join(a, sizeof a, dir, "workshop");
+    lr_join(dir, sizeof dir, a, "content");
+    lr_join(a, sizeof a, dir, "262060");
+    lr_join(dir, sizeof dir, a, id);
+    lr_join(data, sizeof data, dir, "heroes");
+    CHECK(lr_make_dirs(data));
+    write_text(dir, "project.xml", "<project><Title>Test Hero</Title></project>");
+    write_text(data, "hero.darkest", version);
+}
+
+static void use_mod_campaign(node *host) {
+    static uint8_t game[65536];
+    static const char *const names[] = {"12345"}, *const sources[] = {"Steam"};
+    char dir[LR_PATH_MAX], path[LR_PATH_MAX];
+    make_host_campaign(host->core.cfg.remote_dir);
+    size_t n = dw_game_ugc(game, names, sources, 1, 1);
+    lr_join(dir, sizeof dir, host->core.cfg.remote_dir, "profile_2");
+    lr_join(path, sizeof path, dir, "persist.game.json");
+    CHECK(lr_write_file(path, game, n));
+}
+
+static int own_save_intact(node *g) {
+    char dir[LR_PATH_MAX], path[LR_PATH_MAX];
+    lr_join(dir, sizeof dir, g->core.cfg.remote_dir, "profile_2");
+    lr_join(path, sizeof path, dir, "persist.part00.json");
+    char *own = read_text(path);
+    int ok = own && !strcmp(own, "{\"guest\": \"own\"}");
+    free(own);
+    lr_join(path, sizeof path, dir, "persist.game.json");
+    return ok && !lr_file_exists(path) && !g->core.backup_path[0] && !lr_file_exists(g->core.cfg.restore_path);
+}
+
+static void test_campaign_mods(void) {
+    static node h, g;
+    char name[64];
+    for (int kind = 0; kind < 5; kind++) {
+        snprintf(name, sizeof name, "mods-host-%d", kind);
+        setup_mod_node(&h, 1, name);
+        snprintf(name, sizeof name, "mods-guest-%d", kind);
+        setup_mod_node(&g, 2, name);
+        use_mod_campaign(&h);
+        make_guest_campaign(g.core.cfg.remote_dir);
+        if (kind != 3) put_workshop_mod(&h, "12345", "dmg 5");
+        if (kind == 0 || kind == 3) put_workshop_mod(&g, "12345", "dmg 5");
+        if (kind == 2) put_workshop_mod(&g, "12345", "dmg 6");
+        if (kind == 4) h.core.cfg.mod_print = NULL; /* a host that does not fingerprint: the guest cannot confirm */
+        if (kind == 3) {
+            CHECK(!lr_core_host_start(&h.core, now_ms()) && h.core.state == LR_ST_FAILED &&
+                  strstr(h.core.error, "cannot find") && strstr(h.core.error, "Workshop item 12345"));
+        } else {
+            CHECK(lr_core_host_start(&h.core, now_ms()));
+            CHECK(lr_core_guest_join(&g.core, 1, now_ms()));
+            CHECK(run_until(&h, &g, state_is, &g, 10000));
+            if (kind == 0) {
+                CHECK(g.core.state == LR_ST_GUEST_LAUNCH && g.core.mods_known && g.core.mod_count == 1 && g.core.backup_path[0]);
+            } else {
+                CHECK(g.core.state == LR_ST_FAILED && own_save_intact(&g) && strstr(g.core.error, "not replaced"));
+                if (kind == 1) CHECK(strstr(g.core.error, "Missing: Test Hero (Workshop item 12345)") != NULL);
+                if (kind == 2) CHECK(strstr(g.core.error, "Other version: Test Hero (Workshop item 12345)") != NULL);
+                if (kind == 4) CHECK(strstr(g.core.error, "Not found by the host") != NULL);
+                run_until(&h, &g, never, NULL, 200);
+                CHECK(lr_core_guest_count(&h.core) == 0);
+            }
+        }
+        lr_core_free(&h.core);
+        lr_core_free(&g.core);
+        drop_queue();
+    }
+    /* A host launcher without the mod message (older version) and a campaign with mods: refused. The same
+     * host and a campaign without mods: joins as before. */
+    static uint8_t game[65536];
+    static const char *const names[] = {"12345"};
+    for (int with = 0; with < 2; with++) {
+        snprintf(name, sizeof name, "mods-old-host-%d", with);
+        setup_mod_node(&g, 2, name);
+        make_guest_campaign(g.core.cfg.remote_dir);
+        put_workshop_mod(&g, "12345", "dmg 5");
+        CHECK(lr_core_guest_join(&g.core, 1, now_ms()));
+        drop_queue();
+        size_t size = with ? dw_game_ugc(game, names, NULL, 1, 0) : dw_game(game, 0, "", NULL, 0);
+        deliver_metadata(&g, game, size);
+        if (with) CHECK(g.core.state == LR_ST_FAILED && strstr(g.core.error, "too old") && own_save_intact(&g));
+        else CHECK(g.core.state == LR_ST_GUEST_LAUNCH);
+        lr_core_free(&g.core);
+        drop_queue();
+    }
+    /* A malformed mod list ends the session before anything is stored. */
+    setup_mod_node(&g, 2, "mods-malformed");
+    make_guest_campaign(g.core.cfg.remote_dir);
+    CHECK(lr_core_guest_join(&g.core, 1, now_ms()));
+    drop_queue();
+    {
+        lr_msg m = {0};
+        uint8_t wire[LR_MAX_MSG], body[3] = {5, 'a', 'b'};
+        size_t len;
+        m.type = LR_HELLO;
+        m.a = LR_ROLE_HOST;
+        m.b = g.core.cfg.build;
+        m.id = g.core.cfg.kit;
+        len = lr_encode(&m, wire);
+        lr_core_on_message(&g.core, 1, LR_CH_CONTROL, wire, len, now_ms());
+        memset(&m, 0, sizeof m);
+        m.type = LR_SESSION;
+        m.a = 3;
+        memset(m.text, 'a', LR_PASSWORD_LEN);
+        len = lr_encode(&m, wire);
+        lr_core_on_message(&g.core, 1, LR_CH_CONTROL, wire, len, now_ms());
+        memset(&m, 0, sizeof m);
+        m.type = LR_MODS;
+        m.id = 1;
+        m.data = body;
+        m.len = sizeof body;
+        len = lr_encode(&m, wire);
+        CHECK(len);
+        lr_core_on_message(&g.core, 1, LR_CH_CONTROL, wire, len, now_ms());
+        CHECK(g.core.state == LR_ST_FAILED && strstr(g.core.error, "malformed mod list") && own_save_intact(&g));
+    }
+    lr_core_free(&g.core);
+    drop_queue();
+    printf("Campaign mods end to end: identical Workshop mod joins; missing, other version, host without the mod, host that cannot confirm, older host launcher and a malformed list are refused before the guest's save is touched\n");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(4242);
@@ -1082,6 +1228,7 @@ int main(void) {
     drop_queue();
     test_automatic_transfer_restart();
     test_campaign_metadata_refusal();
+    test_campaign_mods();
     printf(failures ? "test_lr_core: %d FAILURES\n" : "test_lr_core: all passed\n", failures);
     return failures != 0;
 }

@@ -11,6 +11,7 @@
 #define LR_CORE_H
 
 #include "lr_files.h"
+#include "lr_mods.h"
 #include "lr_owners.h"
 #include "lr_relay.h"
 
@@ -38,6 +39,9 @@ typedef struct {
     int (*allowed)(void *ctx, uint64_t peer);   /* host: is this peer in our lobby? NULL = everyone */
     int (*game_running)(void *ctx);             /* guest: is Darkest.exe open? NULL = never */
     int (*has_dlc)(void *ctx, const char *name); /* local campaign-DLC data ready ("musketeer")? NULL = data presence not checked */
+    /* Finds a campaign mod on this PC and fingerprints it (lr_mods_print with the game folder). NULL = mods
+     * are not checked on this side (tests, callers without a game folder). */
+    void (*mod_print)(void *ctx, const lr_ugc *mod, lr_mod_print *out);
     void (*random)(void *ctx, uint8_t *buf, size_t len);
     void (*log)(void *ctx, const char *line);   /* NULL = no log */
     uint32_t build;                              /* first 4 bytes of the Darkest.exe SHA-256 */
@@ -110,6 +114,10 @@ typedef struct {
     uint64_t resync_sent_at;
     uint64_t restart_peers[LR_MAX_GUESTS]; /* retained player slots during automatic restart */
     int host_loaded;          /* host: its game has loaded the campaign; a new friend would start behind */
+    /* Campaign mods (launcher/MODS.md). Host: its own fingerprints, sent to every friend. Guest: the host's. */
+    lr_mod_print mods[LR_MAX_UGC];
+    int mod_count;
+    int mods_known;           /* host: fingerprinted; guest: the host's list arrived (an older host sends none) */
 } lr_core;
 
 void lr_core_init(lr_core *c, const lr_config *cfg);

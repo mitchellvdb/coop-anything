@@ -43,6 +43,7 @@ typedef enum {
     LR_ROSTER = 19,      /* host -> guest: hero ownership table (revision in id, lr_owners body in data) */
     LR_RESTART = 21,     /* generation=id, phase=a, runtime kit=b; automatic checkpoint restart */
     LR_CLAIM = 20,       /* guest -> host: hero id in id, a = 1 tick (mine) / 0 untick */
+    LR_MODS = 22,        /* host -> guest: the campaign's mods with fingerprints (count in id, lr_mods body in data, may be empty) */
 } lr_type;
 
 typedef enum {
@@ -62,6 +63,7 @@ typedef enum {
     LR_BYE_RESTART = 9,      /* the host's game had its one session; it must restart first */
     LR_BYE_RESYNC = 11,      /* coordinated restart from the host saved checkpoint */
     LR_BYE_STARTED = 10,     /* the host's game has loaded the campaign already: everyone joins before that */
+    LR_BYE_MODS = 12,        /* the guest lacks a mod the campaign uses, or has another version of it */
 } lr_bye_reason;
 
 typedef struct {

@@ -26,7 +26,7 @@ static void round_trip(const lr_msg *m) {
     CHECK(lr_encode(&d, again) == n && memcmp(buf, again, n) == 0);
     lr_msg scratch;
     CHECK(!lr_decode(buf, n, 1 - lr_channel_of(m->type), &scratch)); /* wrong channel */
-    if (m->type != LR_STREAM_DATA && m->type != LR_SAVE_CHUNK && m->type != LR_ROSTER) /* variable length */
+    if (m->type != LR_STREAM_DATA && m->type != LR_SAVE_CHUNK && m->type != LR_ROSTER && (m->type != LR_MODS || !m->len)) /* variable length */
         CHECK(!lr_decode(buf, n - 1, lr_channel_of(m->type), &scratch));
 }
 
@@ -53,6 +53,22 @@ int main(void) {
     memset(&m, 0, sizeof m); m.type = LR_ROSTER; m.id = 1; m.data = data; m.len = LR_CHUNK; round_trip(&m);
     memset(&m, 0, sizeof m); m.type = LR_CLAIM; m.id = 16; m.a = 1; round_trip(&m);
     memset(&m, 0, sizeof m); m.type = LR_CLAIM; m.id = 16; m.a = 0; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 0; round_trip(&m);                         /* no mods */
+    memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 2; m.data = data; m.len = 400; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 32; m.data = data; m.len = LR_CHUNK; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_BYE; m.a = LR_BYE_MODS; round_trip(&m);
+    CHECK(strstr(lr_bye_text(LR_BYE_MODS), "mod") != NULL);
+    {
+        uint8_t w[LR_MAX_MSG];
+        lr_msg d;
+        memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 33; CHECK(lr_encode(&m, w) == 0);  /* more than a campaign holds */
+        m.id = 1; m.len = 1; m.data = NULL; CHECK(lr_encode(&m, w) == 0);
+        m.data = data; m.len = LR_CHUNK + 1; CHECK(lr_encode(&m, w) == 0);
+        memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 1; size_t n = lr_encode(&m, w);
+        w[4] = 33; CHECK(n == 8 && !lr_decode(w, n, LR_CH_CONTROL, &d));                     /* count checked on decode */
+        w[4] = 1; CHECK(lr_decode(w, n, LR_CH_CONTROL, &d) && d.id == 1 && d.len == 0 && !d.data);
+        CHECK(!lr_decode(w, 7, LR_CH_CONTROL, &d) && !lr_decode(w, n, LR_CH_STREAM, &d));
+    }
 
     /* refusals on the encode side */
     uint8_t buf[LR_MAX_MSG];

@@ -279,6 +279,96 @@ static int campaign_dlc_name(const dson *d, uint32_t f, uint32_t limit, char nam
     return found && i == *end;
 }
 
+/* A mod's name becomes a folder name on this PC (lr_mods.c): printable ASCII without path or Windows
+ * special characters, no leading or trailing space, not "." or "..". */
+int lr_ugc_name_ok(const char *s) {
+    size_t n = strlen(s);
+    if (n == 0 || n > LR_UGC_NAME_MAX || s[0] == ' ' || s[n - 1] == ' ' || s[n - 1] == '.' || !strcmp(s, ".")) return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 0x20 || c > 0x7e || strchr("/\\:*?\"<>|", c)) return 0;
+    }
+    return strstr(s, "..") == NULL;
+}
+
+static int ugc_source_ok(const char *s) {
+    for (; *s; s++)
+        if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || *s == '_')) return 0;
+    return 1;
+}
+
+/* Unlike the older display-only child lookup, compatibility data must refuse
+ * duplicate keys rather than choose one interpretation of a malformed save. */
+static int ugc_child(const dson *d, uint32_t f, const char *wanted, int64_t *found) {
+    uint32_t end;*found = -1;
+    if (!campaign_object_end(d, f, d->n2, &end)) return 0;
+    uint32_t direct = get32(d->m1 + 16 * field_obj(d, f) + 8), i = f + 1;
+    for (uint32_t k = 0; k < direct; k++) {
+        uint32_t len, next = i + 1;
+        if (i >= end) return 0;
+        const char *key = field_name(d, i, &len);
+        if (!key) return 0;
+        if (!strcmp(key, wanted)) {if (*found >= 0) return 0;*found = i;}
+        if (field_is_obj(d, i) && !campaign_object_end(d, i, end, &next)) return 0;
+        i = next;
+    }
+    return i == end;
+}
+
+/* Collects known mod objects directly or under one group. A nonempty unknown
+ * representation is unreadable, never an apparently empty campaign mod list. */
+static int collect_ugcs(const dson *d, uint32_t f, uint32_t end, int depth, lr_game_info *out) {
+    uint32_t direct = get32(d->m1 + 16 * field_obj(d, f) + 8), i = f + 1;
+    for (uint32_t k = 0; k < direct; k++) {
+        uint32_t len, next = i + 1;
+        if (i >= end || !field_name(d, i, &len)) return 0;
+        if (field_is_obj(d, i)) {
+            if (!campaign_object_end(d, i, end, &next)) return 0;
+            int64_t name;
+            if (!ugc_child(d, i, "name", &name)) return 0;
+            if (name >= 0 && !field_is_obj(d, (uint32_t)name)) {
+                lr_ugc u;
+                memset(&u, 0, sizeof u);
+                int64_t src;
+                if (!ugc_child(d, i, "source", &src)) return 0;
+                if (!campaign_text(d, name, u.name, sizeof u.name) || !lr_ugc_name_ok(u.name)) return 0;
+                if (src >= 0 && (field_is_obj(d, (uint32_t)src) || !campaign_text(d, src, u.source, sizeof u.source) ||
+                                 !ugc_source_ok(u.source))) return 0;
+                int dup = 0;
+                for (int j = 0; j < out->ugc_count; j++)
+                    dup |= !strcmp(out->ugc[j].name, u.name) && !strcmp(out->ugc[j].source, u.source);
+                if (!dup) {
+                    if (out->ugc_count >= LR_MAX_UGC) return 0;
+                    out->ugc[out->ugc_count++] = u;
+                }
+            } else if (depth < 1) {
+                /* A nonempty list containing an unidentified empty object is
+                 * not proof of an empty mod list. Only the empty root is known. */
+                if (!get32(d->m1 + 16 * field_obj(d, i) + 8) ||
+                    !collect_ugcs(d, i, next, depth + 1, out)) return 0;
+            } else {
+                return 0; /* deeper than the layouts we know: do not guess */
+            }
+        } else {
+            return 0; /* unknown scalar/string list entries must not bypass checks */
+        }
+        i = next;
+    }
+    return i == end;
+}
+
+static void game_ugcs(const dson *d, lr_game_info *out) {
+    int64_t f;
+    uint32_t end;
+    if (!ugc_child(d, 0, "persistent_ugcs", &f)) {out->ugc_bad = 1;return;}
+    if (f < 0) return; /* no list: no mods */
+    if (!field_is_obj(d, (uint32_t)f) || !campaign_object_end(d, (uint32_t)f, d->n2, &end) ||
+        !collect_ugcs(d, (uint32_t)f, end, 0, out)) {
+        out->ugc_bad = 1;
+        out->ugc_count = 0;
+    }
+}
+
 int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out) {
     memset(out, 0, sizeof *out);
     size_t i = 0;
@@ -302,6 +392,7 @@ int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out) {
     if (!value_bool(&d, path(&d, inraid, 2), &raid) ||
         !campaign_text(&d, path(&d, dungeon, 2), where, sizeof where)) return 0;
     out->tutorial = raid && strcmp(where, "tutorial") == 0;
+    game_ugcs(&d, out);
     int64_t list;
     if (!campaign_find_dlc(&d, &list)) return 0;
     if (list < 0) return 1; /* The game omits an empty DLC list in some valid base-game saves. */

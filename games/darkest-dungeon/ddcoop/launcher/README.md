@@ -34,6 +34,9 @@ launcher does the rest:
   game write, verified restoration is still required. Preparation/recovery never targets another slot;
 - a pinned installed `SDL2-bootstrap.dll` repairs the known Steam-restored-original case automatically.
   The log bundle includes preparation, restoration and `app.log`; guest exit/failure collects it automatically.
+- a campaign that uses mods (Steam Workshop or `mods\`) is joined only when every PC has exactly the same
+  files of each mod: the host sends a fingerprint per mod and the friend's launcher compares before its own
+  save is touched (`lr_mods.c`, design in `MODS.md`);
 - the hero list on the right shows the heroes of the co-op campaign; each player ticks the heroes they command
   in the dungeon, the host's launcher decides, and both write `mods\DDCoop\ddcoop-heroes.ini` for the runtime
   (design and file format: `OWNERSHIP.md`).
@@ -88,6 +91,7 @@ proxy as SDL2_orig.dll. Both payload/bootstrap remain SHA-256 pinned (`src/lr_ha
 | `src/lr_relay.c/.h` | Carries the runtime's TCP streams over peer messages; host retries while the game loads |
 | `src/lr_core.c/.h` | Session: HELLO, password hand-over, campaign transfer with backup, ddcoop.ini, keep-alive, hero ownership |
 | `src/lr_roster.c/.h` | Reads the hero list from the game's binary save `persist.roster.json` (platform independent) |
+| `src/lr_mods.c/.h` | Campaign mods: finds them (Workshop, `mods\`), fingerprints their files, the `LR_MODS` body, the guest's comparison (platform independent) |
 | `src/lr_owners.c/.h` | Hero ownership table: rules, `ddcoop-heroes.ini`, the `LR_ROSTER` body (platform independent) |
 | `src/lr_files.c/.h`, `src/lr_sock.c/.h` | UTF-8 file helpers (wide APIs on Windows), non-blocking loopback TCP |
 | `src/lr_steam.c/.h` | Windows: the game's own `steam_api64.dll` through the flat API (lobby, invites, friends, messages) |

@@ -35,6 +35,15 @@ int lr_hero_level(int32_t xp);
 
 #define LR_MAX_DLC 16
 #define LR_DLC_NAME_MAX 31
+#define LR_MAX_UGC 32         /* mods one campaign uses */
+#define LR_UGC_NAME_MAX 63    /* a Workshop item id or a mod folder name */
+#define LR_UGC_SOURCE_MAX 15  /* where the game got it, as the save says ("" when the save gives none) */
+
+/* One mod (the game says "UGC", user-generated content) of a campaign: base_root.persistent_ugcs. */
+typedef struct {
+    char name[LR_UGC_NAME_MAX + 1];
+    char source[LR_UGC_SOURCE_MAX + 1];
+} lr_ugc;
 
 typedef struct {
     int text;       /* 1 = still the game's text template (scripts\starting_save): the game never saved this campaign */
@@ -42,6 +51,13 @@ typedef struct {
     int dlc_count;  /* DLC this campaign uses (base_root.dlc), e.g. "musketeer"; [a-z0-9_] only */
     char dlc[LR_MAX_DLC][LR_DLC_NAME_MAX + 1];
     char estate[64]; /* The name the player gave the estate (base_root.estatename), UTF-8; empty in the text template. */
+    /* Mods the campaign uses (base_root.persistent_ugcs). Every object in that list (or one level of
+     * groups below it) with a "name" is one mod. ugc_bad = 1: the list exists but cannot be read
+     * completely (a name that is not a plain folder/Workshop name, too many mods, damaged); a session
+     * must then refuse, because the games could not be checked for the same mods. */
+    int ugc_count;
+    int ugc_bad;
+    lr_ugc ugc[LR_MAX_UGC];
 } lr_game_info;
 
 /* Parses persist.game.json. Returns 1 and fills out, or 0 if the file is neither the binary save nor the
@@ -49,6 +65,9 @@ typedef struct {
  * list means no campaign DLC, while an existing list must be complete.
  * Malformed, duplicate, oversized or truncated DLC names/lists fail the whole parse. */
 int lr_game_parse(const uint8_t *buf, size_t len, lr_game_info *out);
+
+/* Is this a mod name the launcher accepts (it becomes a folder name)? */
+int lr_ugc_name_ok(const char *s);
 
 /* The store name of a DLC ("musketeer" -> "The Musketeer"); the name itself if unknown. */
 const char *lr_dlc_title(const char *name);

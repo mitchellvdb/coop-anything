@@ -1,0 +1,29 @@
+DDCoop test75 - weekly Stagecoach and campaign mod checks
+Every PC must install the same new kit. Solo multi-window testing uses duo58.
+
+1. Close every game before installing. Use the usual Install DDCoop.bat.
+2. Host or join the same campaign. Wait for the initial candidate comparison.
+   Compare Stagecoach names/classes/skills/quirks on every copy. Recruit once
+   from a guest and once from the host; the same heroes must join every roster.
+3. Finish a normal mission together. A party wipe is not required. Return to
+   the Hamlet, close the reward screens and wait for the comparison to finish.
+4. Compare the new Stagecoach pool on every copy. Recruit different candidates
+   from different players. Compare their names, classes, skills and quirks.
+5. Prepare and depart for another mission from a guest while the host is idle.
+   The pool check must finish automatically; no host approval click is needed.
+6. Retest Tavern/Abbey draft placement, Accept and X from different players.
+   Also retain earlier obstacle hand/tool, curio item/X and normal food checks.
+7. If candidates differ or a synchronization notice appears, stop and Copy logs
+   from every launcher. Use the host's Resync with all launchers kept open.
+   Never recruit different heroes to work around a refusal.
+
+Campaign mods: a listed mod must be present with the same files on every PC.
+Missing/different/unknown or unreadable mod data is refused before the guest's
+save is replaced. No mods are downloaded or enabled automatically. This file
+comparison does not establish gameplay compatibility for arbitrary mods or DLC.
+Use an otherwise disposable test campaign for any optional mod comparison test.
+
+Guests always use -nosave; host saving follows its checkbox. Backups/restore
+borrow only the selected slot1..9; profile_9 is forbidden. Checkpoint Resync may
+lose unsaved progress. The host game and launcher stay running, without manual
+host approval for shared choices. Solo batch guests still restart manually.

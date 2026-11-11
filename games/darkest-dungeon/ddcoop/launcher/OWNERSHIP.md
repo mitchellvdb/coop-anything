@@ -296,3 +296,15 @@ an admitted apply. The existing town epoch barrier re-seeds activities afterward
 See runtime/ACTIVITY-WEEKLY.md. No owner-file/mapping/launcher wire change.
 Runtime bytewire33 remains; exact hello test74 requires matching peers. Startup
 log and hello now share DD_RUNTIME_VERSION, avoiding a stale plugin version label.
+
+## Test75 candidate and week contract (Codex, 11 Nov 2026)
+
+Runtime protocol34/exacthello75 adds per-recruit logical content fingerprints,
+a post-load/post-return pool comparison anchored after ordered actions, and an
+authenticated host Rules seed consumed at the exact native RaidFinish boundary.
+The pool check requires every connected guest's matching report before release.
+Recruit/prepare/embark wait for release; no manual host approval is required.
+Campaign mod preflight from Claude Code is included with strict malformed-list
+and unreadable/linked-tree refusal. Launcher wire3 remains; all peers need75.
+No owner-file/mapping or host save preference/guest-nosave change. See
+runtime/STAGECOACH-WEEK.md and launcher/MODS.md for scope and limits.

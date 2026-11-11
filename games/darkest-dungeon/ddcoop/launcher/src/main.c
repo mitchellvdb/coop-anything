@@ -254,6 +254,12 @@ static int has_dlc_cb(void *ctx, const char *name) {
     return lr_dlc_present(G.root, name);
 }
 
+/* Campaign mods: Workshop items next to the game's steamapps folder, local mods in <game>\mods. */
+static void mod_print_cb(void *ctx, const lr_ugc *mod, lr_mod_print *out) {
+    (void)ctx;
+    lr_mods_print(G.root, mod, out);
+}
+
 static void set_check(int i, int ok, const char *fmt, ...) {
     G.ok[i] = ok;
     va_list ap;
@@ -1785,6 +1791,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
     cfg.allowed = allowed_cb;
     cfg.game_running = game_running_cb;
     cfg.has_dlc = has_dlc_cb;
+    cfg.mod_print = mod_print_cb;
     cfg.random = random_cb;
     cfg.log = log_cb;
     cfg.coop_slot = 3;

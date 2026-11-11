@@ -4,6 +4,7 @@
 #define DSON_WRITER_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct {
@@ -173,6 +174,33 @@ static size_t dw_game(uint8_t *out, int inraid, const char *dungeon, const char 
         dw_end(&w);
     }
     dw_end(&w);
+    dw_end(&w);
+    return dw_finish(&w, out);
+}
+
+/* A campaign in town that uses mods: base_root.persistent_ugcs with one object per mod (name, source),
+ * directly ("0": {...}) or, grouped = 1, one level deeper ("ugcs": {"0": {...}}). source NULL = no source. */
+static inline size_t dw_game_ugc(uint8_t *out, const char *const *names, const char *const *sources, int count, int grouped) {
+    static dson_writer w;
+    memset(&w, 0, sizeof w);
+    dw_begin(&w, "base_root");
+    dw_int(&w, "version", 2);
+    dw_bool(&w, "inraid", 0);
+    dw_str(&w, "raiddungeon", "none");
+    dw_str(&w, "estatename", "Modded");
+    dw_begin(&w, "persistent_ugcs");
+    if (grouped) dw_begin(&w, "ugcs");
+    for (int i = 0; i < count; i++) {
+        char key[16];
+        snprintf(key, sizeof key, "%d", i);
+        dw_begin(&w, key);
+        dw_str(&w, "name", names[i]);
+        if (sources && sources[i]) dw_str(&w, "source", sources[i]);
+        dw_end(&w);
+    }
+    if (grouped) dw_end(&w);
+    dw_end(&w);
+    dw_bool(&w, "dlc_init", 1);
     dw_end(&w);
     return dw_finish(&w, out);
 }
