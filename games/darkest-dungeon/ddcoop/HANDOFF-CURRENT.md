@@ -1,45 +1,59 @@
-# Current: test74 / duo57 (Codex, 10 Nov 2026)
+# Development candidate: test75 / duo58 (Codex, 11 Nov 2026)
 
-- Based on delivered/published test73 / duo56. Latest owner four-window session:
-  all three guests apply seq1..149 without gaps/duplicates. All four post-return
-  Town checkpoints agree (9 heroes); three later recruits take every roster to12.
-  Prop item choices3 and X1 succeed; no hand/shovel action in this live session.
-  No gameplay STOP. Final connection loss stops peers; intentional close versus
-  lost process is not established by logs. Town digests are not full-save proof.
-- The reserved-slot notice at the week update is a real bug: a native automatic
-  AssignHero call is misread as UI Accept and blocked without a DRAFT reservation.
-  The engine continues setting its slot flag despite the omitted native call.
-- Exact native weekly return RVA53cbef now goes directly to the trampoline,
-  without guest request/host observed broadcast. UI68b0e7 retains ordered shared
-  drafts. Already-admitted nested effects finish once without re-emission;
-  STOP/unready guards apply before outside native exception. Existing town
-  epoch barrier re-seeds afterward. No old save repair is claimed.
-- Runtime startup banner and exact hello now share DD_RUNTIME_VERSION. Bytewire33
-  unchanged; exacthello74 requires matching new peers. Launcher wire/lobby3 and
-  ownership/party mapping unchanged.136 named pins/132 native addresses include
-  131 function entries plus1 exact caller witness;88 live/early hooks unchanged.
-- New actual-bridge regression reproduces322 before-fix assertions then passes
-  MSVC ASan: all4 roles/all6 stress activities/EMPTY+COMMITTED cache, one modeled
-  native effect/charge, no packets/notices, ordinary UI ordering, STOP and nested
-  applies. Fourteen exact read-only native proofs pass. Full native/fuzz/FIFO,
-  both launcher/fake-Steam/restore suites, overlay/hidden English/GIF preview,
-  analysis and retained recovery/transport/reservation/DLC models pass.
-- See runtime/ACTIVITY-WEEKLY.md. Native effects in fixtures are modeled; no real
-  game/installer/save/Steam write or live repair test. Next owner check: finish a
-  normal mission, return to Hamlet, then shared bar/abbey draft/Accept/X from
-  different players. A forced wipe is unnecessary. Hand/shovel still need live
-  confirmation. Prior activity/provisioning/departure/selection/prop fixes retained.
-- Direct loot-to-hero trinket equip, full native/live DLC, complete transaction/
-  combat-state verification and older provisions crash remain open. Guests-nosave,
-  host save checkbox, selected slots1..9/profile_9 forbidden remain unchanged.
-  Checkpoint recovery may lose unsaved progress; solo batch guests restart
-  manually. Linux/MinGW/optional Capstone not run; existing warnings recorded.
-- 0.5.0-test74: C:\dev\ddcoop-handoff\0.5.0-test74\DDCoop-install.zip
-  Kit SHA256 bd977b2edff7d0708842445dcbc45d7461aaedfb837937f56f4fbe82c9dcc37a
-  Runtime 772945e677b76fe1398d98070ac8a923980ab466d7b2721397090e287d6f4fb5
-- 0.5.0-duo57: C:\dev\ddcoop-handoff\0.5.0-duo57\DDCoop-install.zip
-  Kit SHA256 2e82f749de3ff8201055c846ff2fd48dc6a2b2798c98df10a1c4b4ba61fb2cbf
-  Runtime bf8281a3fbbfb1e8f2c4639fd9e45494d06c584824332ae35fee6f4337c214eb
-- Source commits separate runtime work, minimal launcher/tools, ordinary runtime
-  pin and release/handoff. Byte-reproducing patches vs73 and Claude64 included.
-  Written by Codex; earlier Claude Code contributions retained.
+Latest delivered gameplay baseline remains74. Claude's current repo baseline
+296222c adds campaign mod preflight and the Stagecoach task after an owner raid.
+
+Implemented candidate75:
+- Logical Stagecoach candidate/pool fingerprints (ID, availability, class/name,
+  XP/equipment, learned/selected skills and persisted quirks). Same-ID different
+  content refuses before local native clone. No raw pointer/padding hashing.
+- Anchored all-peer pool probe/report/release after load/raid return. Recruitment,
+  provisions and departure wait for every connected player's matching pool.
+  No manual host approval. FIFO and late-control/late-town races are covered.
+- Native RaidFinish shares host Rules before week generation, including automatic
+  wipes. Network worker only latches data; bounded wait pumps no game/FIFO.
+  Always complete native once on failure; exact automatic activity work finishes
+  after STOP while player UI remains blocked. No old save repair claimed.
+- Claude's campaign mod check retained, with unknown/empty/duplicate layouts and
+  linked/unreadable/incompletely enumerated mod trees now refused before writes.
+- Runtime34/exacthello75, launcher wire3;137 pins/133 addresses (132 native
+  function entries plus1 witness),89 hooks. See runtime/STAGECOACH-WEEK.md.
+
+Validation completed: native/protocol/fuzz/FIFO and MSVC ASan bridge (all4 roles,
+3guests, cross-thread week seed, anchored pool, delayed native/UI frames,
+STOP/disconnect/timeouts and full real queues),16 native proofs, both launcher
+unit/core/fake-transfer suites, mod14-failure-before-fix/native+ASan regressions,
+isolated overlay/English preview/GIF and static analysis. Old74 control accepts
+sameID40/different named heroes on both copies. New tests prevent local clone.
+Native effects modeled; no real game launched. Linux/MinGW/Capstone not run.
+
+RELEASE PENDING: preparation/restore helper integration tests must run with all
+real Darkest processes closed (BUILD.md). Owner is still playing. The baseline
+helper refused correctly while the game was running; this is not a passing
+restore test. No75 player kit has been delivered or installed. Existing kits and
+Cdev checkouts/saves untouched. Pending artifacts and source are in the workspace
+outputs/0.5.0-test75-pending and outputs/0.5.0-duo58-pending.
+
+Next action: after the owner closes every game, run each built launcher's fake-
+Steam preparation test; then package normal75/duo58, verify hashes/patches/payload,
+publish final release metadata and deliver new Cdev version folders. Preserve
+immutable older outputs. Do not rebuild runtime unless source changes; pins below
+match the compiled source. Host checkbox/guest-nosave/selected slots1..9 retained.
+
+Open: live normal mission return/recruit verification; full native/live DLC,
+direct loot-to-hero equip, complete state checks and older provisions crash.
+Checkpoint recovery may lose unsaved progress; solo batch guests restart manually.
+Written by Codex; Claude Code's launcher work and prior contributions retained.
+
+[
+  {
+    "version": "0.5.0-test75",
+    "runtime_sha256": "d17d5b42b35ab76c07de143432a0f159ae8c0e1f0d6186ce44018100dbae384f",
+    "launcher_sha256": "ce0b30a4cb1f6afd76dfde6073425abdbf43be94fd0885bf1e3ec3deb0709000"
+  },
+  {
+    "version": "0.5.0-duo58",
+    "runtime_sha256": "60708a9f365791e06cfc5249b3dcc8b804d09ccf6218ca59ae777dfef54741c6",
+    "launcher_sha256": "61862b0a54c5bbf3a82803d8bfd013eebb088025bbec8c83b564aacb5899b692"
+  }
+]

@@ -103,7 +103,7 @@ After rebuilding the runtime, put its SHA-256 in `LR_HASH_RUNTIME` in `launcher/
 refuses any other runtime, and the first 8 hex digits are the kit id both players must share). Then:
 
 ```
-set "DDC_VERSION=0.5.0-test74"
+set "DDC_VERSION=0.5.0-test75"
 launcher\build-windows-msvc.cmd
 launcher\test-windows-msvc.cmd         & rem close every Darkest Dungeon first
 ```
@@ -139,6 +139,7 @@ launcher\test-windows-msvc.cmd         & rem close every Darkest Dungeon first
 | [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md) | Current state, latest kits, open problems |
 | [BUILD.md](BUILD.md) | Supported build, all build/test commands, per-version notes |
 | [launcher/README.md](launcher/README.md), [launcher/OWNERSHIP.md](launcher/OWNERSHIP.md) | Launcher, campaign transfer, hero ownership format |
+| [launcher/MODS.md](launcher/MODS.md) | Campaign mods: the check that every PC has the same mod files |
 | [runtime/PROVISIONS.md](runtime/PROVISIONS.md) | Shared supplies / provisions |
 | [runtime/DUNGEON.md](runtime/DUNGEON.md), [runtime/PARALLEL-AUDIT.md](runtime/PARALLEL-AUDIT.md) | Dungeon actions, which inputs each player may give |
 | [runtime/DESYNC.md](runtime/DESYNC.md), [runtime/FORMATION.md](runtime/FORMATION.md), [runtime/FRESH-RAIDS.md](runtime/FRESH-RAIDS.md), [runtime/PARTY-RETURN.md](runtime/PARTY-RETURN.md) | Desyncs found in real sessions and their fixes |
@@ -197,3 +198,5 @@ read-only layout proof and the runtime tests. Never relax a pin to make an unkno
 "DD Co-op" (Nexus Mods, Darkest Dungeon mod 2282) is a separate co-op mod where the host runs the town and
 guests play their heroes in fights. It has no source or license; this project uses only its public README and
 changelog as a reference (lessons in NOTES.md) and copies no code.
+
+Test75: read [STAGECOACH-WEEK.md](runtime/STAGECOACH-WEEK.md) for native week-seed timing and the candidate-pool comparison.

@@ -1,42 +1,32 @@
 # DDCoop — Darkest Dungeon co-op
 
-New to the project? Read [START-HERE.md](START-HERE.md) first: what it is, how the parts fit, the rules,
-how to build and test, and the mistakes already made.
+Development candidate **test75 / duo58**, runtime34/exacthello75, launcher wire3.
+It is built and the native/ASan/model/launcher unit suites pass. It is **not yet
+released**: the isolated preparation/restore integration check requires every
+real Darkest process to be closed. RELEASES.json still lists the released74 kits;
+CANDIDATE.json records the new build hashes and pending check honestly.
 
-Current snapshot **test74 / duo57**, runtime bytewire33/exacthello74 and launcher
-wire/lobby3. All peers need matching new kits. Source is on the dedicated
-`game/darkest-dungeon-ddcoop` branch under this subtree. Shared playbook/other
-projects and existing Claude/Codex contributions are preserved.
+This candidate compares Stagecoach pools before recruitment, provisioning and
+departure. Every recruit also checks logical candidate content before its local
+native roster addition. Normal native RaidFinish shares host Rules before week
+generation, including automatic wipes; worker threads only latch seed packets.
+No manual host approval is needed. Host game/launcher stay running. Guests use
+-nosave with selected-slot backup/replace/restore; host saving follows its checkbox.
 
-Each player runs their own copy. Supported shared actions may start from any
-player and are ordered through the host. Combat ownership uses persistent hero
-IDs. The host game/launcher stay running without manual host approval for guest
-shared choices. Guests back up/replace/restore a selected campaign slot and always
-use-nosave; host saving follows its checkbox. Slots1..9 only; profile_9 forbidden.
+Claude Code's campaign mod preflight is retained, with fail-closed unknown list
+and linked/unreadable/incomplete-tree checks. Matching files do not establish
+full gameplay compatibility. See [STAGECOACH-WEEK.md](runtime/STAGECOACH-WEEK.md),
+[MODS.md](launcher/MODS.md), [BUILD.md](BUILD.md), [START-HERE.md](START-HERE.md),
+[KIT.md](KIT.md) and [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md).
 
-The latest owner four-window run completed149 shared applies on all3guests,
-matching checked post-return Town state and3later recruits. A weekly activity
-notice revealed a legitimate native AssignHero call being mistaken for a new UI
-Accept. All copies omitted the native operation despite matching checked digests.
-The exact pinned weekly caller now invokes native once without network re-emission;
-UI Accept still requires shared drafts. See [ACTIVITY-WEEKLY.md](runtime/ACTIVITY-WEEKLY.md).
-
-New fixture:322 before-fix assertion failures, then corrected native/MSVC ASan
-passes across all4roles/all6stressactivities, empty/committed models, one modeled
-native effect/cost, no messages/notices, normal UI ordering, STOP and nested apply.
-Fourteen read-only native proofs pass:136 named pins/132 distinct addresses,
-131function entries plus1caller witness,88distinct live/early hooks. Full normal/
-duo launcher/fake-Steam/restore, native/fuzz/FIFO/transport/recovery/reservation/
-DLC models, isolated overlay/hidden English/embedded GIF preview pass. Native
-effects modeled; no new live fix verification or real game/save/Steam mutation.
-
-Earlier provisional activity/provisioning/departure/selection/prop choices retained.
-Owner latest logs confirm propitem3/X1; no hand/shovel route observed. Full live
-DLC, direct loot-to-hero equip, full transaction/combat-state verification and an
-older provisions crash remain open. Checkpoint recovery may lose unsaved progress;
-solo batch guests restart manually. Linux/MinGW/optional Capstone not run.
-
-See [BUILD.md](BUILD.md), [KIT.md](KIT.md), [HANDOFF-CURRENT.md](HANDOFF-CURRENT.md)
-and RELEASES.json. Never use Circus/PlayFab or bypass TamperingManager. No game
-assets, binaries, Steam DLLs, saves, artwork or private logs are published.
-Written/published by Codex; earlier Claude Code contributions retained.
+All four roles/three guests are modeled in actual-bridge tests, with delayed
+controls/town/ordered actions, exact local recruit content, cross-thread seed
+arrival, STOP/timeouts/disconnects and real full queues. Sixteen read-only native
+proofs cover137 pins/133 addresses (132 function entries plus1 witness)/89 hooks.
+Native effects modeled; no new live native/multi-PC/Cloud QA or real game/save/
+Steam mutation. Linux/MinGW/Capstone not run. Direct loot-to-hero equipping, full
+transaction/combat-state checks, older provisions crash and full native/live DLC
+remain open. Checkpoint recovery may lose unsaved progress; solo batch guests
+restart manually. Slots1..9 only; profile_9 forbidden. No Circus/PlayFab/tamper
+integration. No binaries, assets, saves, artwork or private logs are published.
+Written/published by Codex; Claude Code's work and prior contributions retained.

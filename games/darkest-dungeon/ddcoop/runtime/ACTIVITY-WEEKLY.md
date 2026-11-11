@@ -1,5 +1,8 @@
 # Weekly activity correction — test74, 10 November 2026
 
+Test75 update: exact automatic engine assignments now complete after STOP as well;
+player UI stays blocked. See STAGECOACH-WEEK.md. The account below records74.
+
 ## Latest owner session
 
 Only the latest session in the appended logs was assessed: host startup at

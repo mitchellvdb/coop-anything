@@ -1,4 +1,4 @@
-# DDCoop build and validation — test74 / duo57
+# DDCoop build and validation — test75 / duo58
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -10,10 +10,10 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 136 named signatures cover 132 distinct
-native addresses:131 function entries plus one exact weekly caller witness
-(some deliberate alias names);88 live/early hook targets are distinct.
-Runtime protocol 33; exact runtime hello version74 also required. Launcher wire 3.
+Never relax pins for an unknown update. 137 named signatures cover 133 distinct
+native addresses:132 function entries plus one exact weekly caller witness
+(some deliberate alias names);89 live/early hook targets are distinct.
+Runtime protocol 34; exact runtime hello version75 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -28,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test74"
+    set "DDC_VERSION=0.5.0-test75"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -54,6 +54,8 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_selection_layout.py "%DD_GAME_EXE%"
     python -I tests/test_prop_choice_layout.py "%DD_GAME_EXE%"
     python -I tests/test_activity_weekly_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_recruit_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_week_transition_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -79,8 +81,8 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-For duo57, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo57. Gameplay source remains identical. Source
+For duo58, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo58. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:
@@ -133,3 +135,13 @@ single modeled native cost/effect, no extra packets/notices, UI ordering, STOP
 and nested applies. Fourteen read-only proofs include the exact weekly/UI caller
 proof. The new136th pin is a caller witness, not another hook/function entry.
 See runtime/ACTIVITY-WEEKLY.md for the live session evidence and validation limits.
+
+Test75 adds logical Stagecoach candidate/pool fingerprints, all-peer comparison
+before recruitment/provisioning/departure, and a dedicated network-latched weekly
+Rules seed at normal native RaidFinish (also automatic wipes). Sixteen exact
+read-only proofs,137 named pins/133 distinct addresses/89 hooks are required.
+Run the full native/MSVC ASan bridge and both launcher suites, including Claude's
+campaign mods tests and strict unknown-list/linked-or-unreadable-tree regressions.
+The new schema is runtime34/exacthello75; launcher wire3 remains. The old74 native
+weekly assignment exception now completes exact engine week work even after a
+synchronization STOP; ordinary UI remains blocked. See runtime/STAGECOACH-WEEK.md.

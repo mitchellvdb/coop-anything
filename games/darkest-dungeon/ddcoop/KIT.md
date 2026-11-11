@@ -1,36 +1,30 @@
-# Test74 / duo57
+# Candidate test75 / duo58 — release pending
 
-Small weekly activity fix after an otherwise successful owner four-window session.
-All3guest applied-action lists match seq1..149 with no gaps/duplicates; all4checked
-post-return Town states match9heroes, then3shared recruits bring every roster to12.
-No gameplaySTOP. A final connectionloss stops peers; intentionalclose versus lost
-process not established. Propitem3/X1 observed live; no hand/shovel action observed.
+295 text source archive files. Runtime and launcher binaries were built for
+both variants; CANDIDATE.json records their exact hashes. No75 player kit has
+been delivered. Preparation/restore integration testing is pending closure of
+all real Darkest processes. The owner's current game is left running.
 
-Wrong reserved-slot notice was real: native weekly AssignHero was refused as UI
-Accept without a DRAFT. Exactnative return53cbef now goes straight to the original,
-without guest requests/hostobserved broadcasts. UI68b0e7 stays shared/ordered.
-Nested admitted effects do not re-emit, and outsideSTOP/unreadyguards still apply.
-Existing town epoch reseeds afterward. Startup banner/hello share one versionmacro.
-No earlier save repair claimed. See runtime/ACTIVITY-WEEKLY.md.
+PASS native/protocol/fuzz/FIFO and MSVC ASan actual bridge, including content
+checks before native recruits, all connected peer pool reports, delayed controls
+and ordered anchors, transition races, full queues, cross-thread weekly seed,
+malformed/stale/duplicate packets, STOP, timeouts and native completion once.
+PASS16 exact native proofs/137 pins/133addresses/89hooks, both launcher unit/core/
+fake-transfer suites, strict mod regressions/native+ASan (14 failures beforefix),
+retained transport/recovery/reservation/DLC models, isolated overlay/hidden English/
+embedded GIF preview and static analysis. Old74 control demonstrates two different
+named candidates with sameID40 both recruited; new local content checks refuse.
 
-New regression reproduces322 before-fix assertions then passes native/MSVC ASan:
-all4roles/all6stressactivities, EMPTY/COMMITTED caches, native modeled effect/cost
-once, no packets/notices, ordinaryUIaccept/replay, STOP/nestedapply. PASS14exact
-native proofs,136pins/132addresses(131functionentries+1callerwitness)/88hooks.
-PASS both full launcher/fake-Steam/restore,10000restartsimulations/four-coretransfer,
-retained prop/selection/activity/guest-autonomy/transport/FIFO/protocol/fuzz,
-5000fourcopy reservationmodels/640000requests,DLC5000/1200currency, overlay/hidden
-English/embedded GIFpreview/staticanalysis. Existingwarnings recorded; DLCdata
-15tests with1OSsymlinkprivilegeskip. Nativeeffects modeled; no realgame launched.
+The required preparation helper refused while a real game was running, as designed.
+That is not a passing restore integration test. Final release still requires that
+check on both built launchers, player ZIP/payload/patch checks and final release
+metadata. Existing74 kits remain immutable. No game, installer, save or Steam
+mutation was performed. Native effects modeled; new live validation remains.
 
-281 text sourcearchive files; exactZIP/pins/labels/payload/GIF and normal/duo
-parity verified; patches versus73/Claude64 reproduce all sourcebytes. Sources
-published in4commits: runtime, minimalClaude-ownedlauncher/tools, runtimepin,
-release/handoff. Player binaries stay outsidegit. Protocol33/exacthello74 needs
-matchingpeers. No newnative/multi-PC/Cloud livevalidation, Linux/MinGW/Capstone run.
-
-Next livecheck: normalmissionreturn and shared bar/abbey draft/Accept/X. No forced
-wipe needed. Direct loot-to-hero equip, complete stateverification, olderprovisions
-crash/full native/liveDLC remain open. Host game/launcher keep running; guests-nosave,
-hostcheckbox retained. Recoverymay loseunsaved progress; solo batchguests restart
-manually. Earlier activity/provisioning/departure/selection/propwork retained.
+See runtime/STAGECOACH-WEEK.md for scope. Logical fingerprints exclude pointers/
+padding and are not complete Hero/save serialization or crypto authentication.
+No claim that Rules alone guarantees every weekly input. Host stays running;
+guests-nosave/host checkbox/selected slots1..9 retained. Direct loot-to-hero equip,
+full-state verification, older provisions crash and full native/live DLC remain
+open. Checkpoint recovery can lose unsaved progress; solo batch guests restart
+manually. No Linux/MinGW/optional Capstone run.
