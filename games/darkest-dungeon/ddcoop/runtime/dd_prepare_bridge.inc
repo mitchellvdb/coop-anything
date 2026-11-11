@@ -26,7 +26,7 @@ static int (*g_prepare_read)(depart_view *) = prepare_read;
 static int prepare_apply(const dd_action *a) {
     depart_view v;
     uint32_t state = 0;
-    if (!g_prepare_open || !g_prepare_read(&v) ||
+    if (!pool_recruit_ready() || !g_prepare_open || !g_prepare_read(&v) ||
         !safe_read((uintptr_t)v.town + 0x37c8, &state, 4)) return 0;
     /* An already open panel must not be refilled or have its mission changed. */
     if (state >= 1 && state <= 4) return v.quest == (int32_t)a->u.prepare.index && v.key == a->u.prepare.key;
@@ -52,6 +52,7 @@ static void __fastcall hook_prepare_open(void *functor) {
         if (!runtime_shared_blocked()) g_prepare_open(functor);
         return;
     }
+    if(!pool_recruit_ready())return;
     if (!g_prepare_read(&v) || !safe_read((uintptr_t)functor + 8, &town, 8) || town != v.town || (!g_supply_quest_known && (v.quest < 0 || !v.key))) {
         shop_notice("Provisions could not be opened together. Select a mission first and try again.");
         return;

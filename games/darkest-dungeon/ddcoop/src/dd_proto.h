@@ -15,7 +15,7 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 33 /* ordered prop choices with revision and persistent actor */
+#define DD_PROTO_VERSION 34 /* candidate content, pool barrier and weekly Rules seed */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -30,6 +30,8 @@ typedef enum {
     DD_MSG_WALK_INTENT = 8,  /* guest -> host: the direction its keys ask for; no order, no answer */
     DD_MSG_SYNC_STOP = 10, /* either peer: shared gameplay must stop; u.load.slot is bounded reason1..3 */
     DD_MSG_LOAD = 9,         /* both directions: this copy waits at the save screen to load menu slot u.load.slot */
+    DD_MSG_POOL = 12, /* main-thread pool preflight, anchored after ordered actions */
+    DD_MSG_WEEKLY = 13, /* host seed, consumed at exact native RaidFinish entry */
     DD_MSG_BUSY = 11,        /* guest -> host: 1 while a window in the raid (curio, loot, menu) keeps it from walking, 0 when free */
 } dd_msg_type;
 
@@ -73,6 +75,7 @@ typedef struct {
         struct {uint8_t op,activity,slot;uint32_t hero_id,revision,epoch;} activity;
         struct { uint8_t activity, slot; uint32_t hero_id; } assign;              /* activity: dd_activity */
         struct { uint32_t tree; uint8_t code; uint32_t hero_id; } upgrade;        /* tree = hash("class.item"), hero 0 = building */
+        struct {uint32_t hero_id;uint64_t fingerprint;} recruit;
         struct { uint32_t hero_id; } hero;                                         /* recruit, dismiss */
         struct { uint16_t slot, count; uint32_t type, id, cost; } items;             /* wagon buy/sell: physical slot, item identity, quoted gold; provision actions use slot/count */
         struct { int32_t src_type, src_amount, dst_type, dst_amount; } exchange;  /* heirloom exchange */
@@ -119,6 +122,8 @@ typedef struct {
         struct { uint32_t area, pos; } walk;                      /* pos: the bits of a float */
         struct { int32_t direction; } intent;                     /* -1, 0 or +1 */
         struct { uint32_t slot; } load;                           /* 1..9 */
+        struct {uint32_t epoch,anchor;uint64_t digest;uint32_t count;uint8_t op,player;} pool;
+        struct {uint32_t epoch,rules;} weekly;
         struct { uint32_t busy; } busy;                           /* 0 or 1 */
     } u;
 } dd_msg;

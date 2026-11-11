@@ -8,7 +8,8 @@ static const uint64_t image = 0x10000000, campaign = 0x13000000, head = 0x130100
                       rows = 0x13021000, row0 = 0x13022000, row1 = 0x13022800, controller0 = 0x13023000,
                       controller1 = 0x13023100, roster = 0x13030000, hero0 = 0x13040000, hero1 = 0x13042000,
                       regular = 0x13044000, entries = 0x13080000;
-static int failures, reads;
+static int failures, reads, fail_at, change_at;
+static uint64_t change_address,change_value;
 #define CHECK(c)                                                                                             \
     do {                                                                                                     \
         if (!(c)) {                                                                                          \
@@ -19,6 +20,8 @@ static int failures, reads;
 static int read_memory(void *unused, uint64_t at, void *out, size_t n) {
     (void)unused;
     reads++;
+    if(fail_at && reads==fail_at)return 0;
+    if(change_at && reads==change_at)memcpy(memory+(size_t)(change_address-image),&change_value,8);
     if (at < image || at - image > sizeof memory || n > sizeof memory - (size_t)(at - image)) return 0;
     memcpy(out, memory + (size_t)(at - image), n);
     return 1;
@@ -33,7 +36,7 @@ static void vec(uint64_t at, uint64_t begin, unsigned bytes) {
 static int open(dd_recruit *s) { return dd_recruit_open(s, read_memory, NULL, image, campaign); }
 static void setup(void) {
     memset(memory, 0, sizeof memory);
-    reads = 0;
+    reads = 0;fail_at=0;change_at=0;change_address=change_value=0;
     p64(campaign + 0x11f8, head);
     p8(head + 0x19, 1);
     p64(head + 8, node);
@@ -151,9 +154,125 @@ static void invalid(void) {
     p64(campaign + 0x28, roster + 65 * 8);
     CHECK(dd_recruit_roster_has(&s, 40, &count) == -1);
 }
+
+static void pstr(uint64_t at,const char *text) {memcpy(memory+(size_t)(at-image),text,strlen(text)+1);}
+static void content_setup(void) {
+    setup();
+    for(unsigned i=0;i<2;i++) {
+        uint64_t e=entries+(uint64_t)i*0x15b0,k=0x130a0000+(uint64_t)i*0x200;
+        uint64_t levels=0x130b0000+(uint64_t)i*0x100,selected=levels+0x40;
+        uint64_t camping=levels+0x60,camp_selected=levels+0x80;
+        uint64_t quirks=0x130c0000+(uint64_t)i*0x100;
+        uint64_t definition=0x130d0000+(uint64_t)i*0x200;
+        pstr(e+8,i?"Hero B":"Hero A");p64(e+0x1320,k);pstr(k+8,"crusader");p32(k+0xd4,1234);
+        p32(e+0x1328,10);p32(e+0x132c,1);p32(e+0x1330,2);
+        vec(e+0x13e0,levels,12);p32(levels,0);p32(levels+4,UINT32_MAX);p32(levels+8,1);
+        vec(e+0x13c8,selected,8);p32(selected,2);p32(selected+4,0);
+        vec(e+0x13b0,camping,8);p32(camping,0);p32(camping+4,0);
+        vec(e+0x1398,camp_selected,4);p32(camp_selected,1);
+        vec(e+0x1380,quirks,0x70);
+        for(unsigned j=0;j<2;j++) {
+            uint64_t q=quirks+j*0x38,d=definition+j*0x80;
+            p64(q,d);pstr(d,j?"quirk_b":"quirk_a");p32(d+0x40,j+1);
+            p32(q+0x20,3);p32(q+0x24,4);p8(q+0x28,1);p8(q+0x29,0);p8(q+0x2a,1);
+            p32(q+0x2c,6);p32(q+0x30,7);
+        }
+    }
+}
+static int digest(uint64_t *hash,unsigned *count) {
+    dd_recruit s;return open(&s) && dd_recruit_pool_digest(&s,hash,count);
+}
+static void fingerprints(void) {
+    dd_recruit s;uint64_t initial=0,other=0,candidate=0;unsigned count=0;
+    content_setup();CHECK(open(&s));CHECK(dd_recruit_pool_digest(&s,&initial,&count) && initial && count==2);
+    CHECK(dd_recruit_fingerprint(&s,40,&candidate) && candidate);
+    /* Logical equality survives distinct allocations and arbitrary unused bytes. */
+    memcpy(memory+(0x130e0000-image),memory+(0x130a0000-image),0x200);
+    p64(entries+0x1320,0x130e0000);
+    memcpy(memory+(0x130e1000-image),memory+(0x130b0000-image),0x100);
+    p64(entries+0x13e0,0x130e1000);p64(entries+0x13e8,0x130e100c);
+    p64(entries+0x13c8,0x130e1040);p64(entries+0x13d0,0x130e1048);
+    p64(entries+0x13b0,0x130e1060);p64(entries+0x13b8,0x130e1068);
+    p64(entries+0x1398,0x130e1080);p64(entries+0x13a0,0x130e1084);
+    p8(entries+30,0xff);p8(0x130e0000+40,0xff);p64(0x130c0000+8,UINT64_MAX);p8(0x130c0000+0x2b,0xff);
+    CHECK(dd_recruit_fingerprint(&s,40,&other) && other==candidate);
+    CHECK(dd_recruit_pool_digest(&s,&other,&count) && other==initial && count==2);
+    unsigned char temporary[0x15b0];memcpy(temporary,memory+(size_t)(entries-image),sizeof temporary);
+    memcpy(memory+(size_t)(entries-image),memory+(size_t)(entries+0x15b0-image),sizeof temporary);
+    memcpy(memory+(size_t)(entries+0x15b0-image),temporary,sizeof temporary);
+    CHECK(dd_recruit_pool_digest(&s,&other,&count) && other==initial);
+    CHECK(dd_recruit_fingerprint(&s,40,&other) && other==candidate);
+    /* Same ID with any changed persistent recruit content must not compare equal. */
+    static const struct {uint64_t at;uint32_t value;} changes[]={
+        {0x130a0000+0xd4,1235},{0x130a0000+8,0x78657263},{0x13080000+8,0x78657248},
+        {0x13080000+0x1328,11},{0x13080000+0x132c,2},{0x13080000+0x1330,3},
+        {0x13080000+0x15a8,0},{0x130b0000,1},{0x130b0000+4,0},{0x130b0000+0x40,0},
+        {0x130b0000+0x60,1},{0x130b0000+0x80,0},{0x130d0000+0x40,5},{0x130d0000,0x78697271},
+        {0x130c0000+0x20,9},{0x130c0000+0x24,9},{0x130c0000+0x28,0},
+        {0x130c0000+0x29,1},{0x130c0000+0x2a,0},{0x130c0000+0x2c,9},{0x130c0000+0x30,9}
+    };
+    for(unsigned i=0;i<sizeof changes/sizeof *changes;i++) {
+        content_setup();CHECK(open(&s));
+        if(changes[i].at>=0x130c0000+0x28 && changes[i].at<=0x130c0000+0x2a)
+            p8(changes[i].at,(uint8_t)changes[i].value);
+        else if(changes[i].at==entries+0x15a8)p8(changes[i].at,(uint8_t)changes[i].value);
+        else p32(changes[i].at,changes[i].value);
+        /* A selected-skill duplicate is malformed and must be refused, not hashed. */
+        int valid=dd_recruit_fingerprint(&s,40,&other);
+        CHECK(!valid || other!=candidate);
+        CHECK(!dd_recruit_pool_digest(&s,&other,&count) || other!=initial);
+    }
+    content_setup();CHECK(open(&s));reads=0;CHECK(dd_recruit_pool_digest(&s,&other,&count));int total=reads;
+    for(int i=1;i<=total;i++) {
+        content_setup();CHECK(open(&s));reads=0;fail_at=i;other=123;count=123;
+        CHECK(!dd_recruit_pool_digest(&s,&other,&count) && !other && !count);
+    }
+    content_setup();CHECK(open(&s));reads=0;CHECK(dd_recruit_fingerprint(&s,40,&other));total=reads;
+    for(int i=1;i<=total;i++) {
+        content_setup();CHECK(open(&s));reads=0;fail_at=i;other=123;
+        CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    }
+    /* Change container bounds between the opening and final reads. */
+    content_setup();CHECK(open(&s));reads=0;CHECK(dd_recruit_pool_digest(&s,&other,&count));total=reads;
+    for(int i=3;i<total;i++) {
+        content_setup();CHECK(open(&s));reads=0;change_at=i;change_address=store+0x70;
+        change_value=entries+0x15b0;other=123;count=123;
+        CHECK(!dd_recruit_pool_digest(&s,&other,&count) && !other && !count);
+    }
+    content_setup();CHECK(open(&s));p32(entries+0x15b0+0x137c,40);
+    CHECK(!dd_recruit_pool_digest(&s,&other,&count) && !other && !count);
+    content_setup();CHECK(open(&s));p64(entries+0x1388,0x130c0000+65*0x38);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p32(0x130d0080+0x40,1);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p8(0x130c0000+0x28,2);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p64(entries+0x13e8,0x130b0000+33*4);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p32(0x130b0000,5);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p32(0x130b0000+0x40,1);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other); /* selected unlearned skill */
+    content_setup();CHECK(open(&s));memset(memory+(size_t)(entries+8-image),'a',64);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));p64(entries+0x1320,UINT64_MAX-10);
+    CHECK(!dd_recruit_fingerprint(&s,40,&other) && !other);
+    content_setup();CHECK(open(&s));vec(store+0x68,0,0);
+    CHECK(dd_recruit_pool_digest(&s,&other,&count) && other && !count);
+    content_setup();CHECK(open(&s));other=123;count=123;
+    CHECK(!dd_recruit_fingerprint(&s,999,&other) && !other);
+    other=123;CHECK(!dd_recruit_fingerprint(NULL,40,&other) && !other);
+    CHECK(!dd_recruit_fingerprint(&s,40,NULL));
+    other=123;count=123;CHECK(!dd_recruit_pool_digest(NULL,&other,&count) && !other && !count);
+    other=123;CHECK(!dd_recruit_pool_digest(&s,&other,NULL) && !other);
+    count=123;CHECK(!dd_recruit_pool_digest(&s,NULL,&count) && !count);
+    CHECK(!dd_recruit_pool_digest(&s,NULL,NULL));
+    puts("Stagecoach fingerprints: stable logical content, pointer/padding/order independence, same-ID changes, bounded duplicate/invalid guards, every read failure and vector mutation: checked");
+}
 int main(void) {
     normal();
     invalid();
+    fingerprints();
     printf("Stagecoach snapshot: candidate identity, normal model, genuine rows, "
            "capacity/duplicate/corruption guards: %s (%d failures)\n",
            failures ? "FAILED" : "OK", failures);

@@ -15,6 +15,7 @@ static void embark_reset(void) {
 static int embark_apply(const dd_action *a) {
     /* This is the acknowledgement of an intent, never seeds supplied by GAST.
      * GAST stays in town until the following DEPARTURE from HOST's RaidStart. */
+    if(!pool_recruit_ready())return 0;
     if (g_cfg.role == DD_ROLE_GUEST) return 1;
     depart_view v;
     if (g_cfg.role != DD_ROLE_HOST || g_embark_leaving || !supply_active() ||
@@ -45,7 +46,7 @@ static void embark_poll(void) {
         shop_notice("Departure waited too long for a shared action. Close both games and restart the session; send the logs.");
         return;
     }
-    if (runtime_shared_blocked()) return;
+    if (runtime_shared_blocked() || !pool_recruit_ready()) return;
     g_embark_local_pending = 0;
     dd_log("Embark: shared departure chosen (role=%s)", dd_role_name(g_cfg.role));
     if (g_cfg.role == DD_ROLE_GUEST) g_embark_request = dd_town_guest_local(&g_town, &g_embark_local);

@@ -940,7 +940,7 @@ static void walk_poll(void) {
         town_check_poll();
         return;
     }
-    g_town_check_raid = 1;
+    g_town_check_raid = 1;pool_enter_raid();
     party_publish(&v);
     g_town_check_at = 0;
     memcpy(&bits, &v.pos, 4);

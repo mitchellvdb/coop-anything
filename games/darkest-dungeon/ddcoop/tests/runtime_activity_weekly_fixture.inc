@@ -101,11 +101,14 @@ static void activity_weekly_checks(void) {
     }
 
     for(unsigned player=0;player<4;player++) {
-        /* STOP blocks outside weekly work even from the recognized caller. */
+        /* Engine weekly completion remains native even after sharing stops. */
         aw_weekly_prepare(player,0,0,1,1);g_activity_native_assign_caller=aw_weekly_caller;
         g_town.needs_resync=1;uint8_t answer[DD_RESULT_BYTES]={0};
-        CHECK(!hook_assign_hero(ar_activity[0],answer,1));
-        CHECK(!ar_commits && !sent && aw_read32(hm_wallet)==20 && !aw_read32(ar_records[0][0]));
+        CHECK(hook_assign_hero(ar_activity[0],answer,1)==(uintptr_t)answer);
+        aw_native_effect(0,0,1);CHECK(!sent);
+        aw_weekly_prepare(player,0,0,1,1);g_activity_native_assign_caller=aw_ui_caller;
+        g_town.needs_resync=1;CHECK(!hook_assign_hero(ar_activity[0],answer,1));
+        CHECK(!ar_commits && !sent);
         /* Inside an already-ordered apply, use the native trampoline without
          * creating another request/observed broadcast or changing depth. */
         for(int stopped=0;stopped<=1;stopped++) {

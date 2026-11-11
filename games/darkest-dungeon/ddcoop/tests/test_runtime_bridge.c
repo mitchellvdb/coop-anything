@@ -61,6 +61,7 @@ static void fake_send(void *ctx, int to, const dd_msg *m) {
     sent++;
 }
 static void reset(int role) {
+    pool_reset();g_pool_verified=1;weekly_reset(); /* Other fixtures start after the pool handshake; its own fixture starts unverified. */
     queue_clear(&g_incoming);
     queue_clear(&g_outgoing);
     memset(&g_cfg, 0, sizeof g_cfg);
@@ -88,13 +89,14 @@ static void reset(int role) {
     dd_town_init(&g_town, NULL, fake_apply, NULL, fake_send);
 }
 static void ordered_wait(int role) {
-    reset(role);
+    reset(role);g_pool_verified=1; /* This fixture isolates row-readiness, not the pool handshake. */
     dd_msg a = {0}, b = {0};
     a.type = b.type = (uint16_t)(role == DD_ROLE_HOST ? DD_MSG_TOWN_REQUEST : DD_MSG_TOWN_APPLY);
     a.seq = 1;
     a.u.town.request_id = 1;
     a.u.town.action.kind = DD_ACT_RECRUIT;
     a.u.town.action.u.hero.hero_id = 40;
+    a.u.town.action.u.recruit.fingerprint=1;
     b.seq = 2;
     b.u.town.request_id = 2;
     b.u.town.action.kind = DD_ACT_BUY_UPGRADE;
@@ -179,7 +181,7 @@ static int __fastcall world_drop(void *target, void *position, void *drag) {
 }
 static void world_reset(int role) {
     reset(role);
-    ready = 1;
+    ready = 1;g_pool_verified=1;
     world_count = 1;
     world_capacity = 9;
     add_calls = finish_calls = drop_calls = 0;
@@ -199,6 +201,10 @@ static void world_reset(int role) {
     putptr(world_store + 0x68, (uintptr_t)world_entries);
     putptr(world_store + 0x70, (uintptr_t)(world_entries + sizeof world_entries));
     putint(world_entries + 0x137c, 40);
+    strcpy((char *)world_entries+8,"Candidate");
+    static uint8_t world_class[0x100];memset(world_class,0,sizeof world_class);
+    strcpy((char *)world_class+8,"vestal");putint(world_class+0xd4,9);
+    putptr(world_entries+0x1320,(uintptr_t)world_class);
     world_entries[0x15a8] = 1;
     putptr(world_panel, 0x10ec0cb0);
     putptr(world_panel + 0x80, (uintptr_t)world_store);
@@ -263,10 +269,8 @@ static void recruit_transactions(void) {
     CHECK(g_town.rejected == 1 && !add_calls && !finish_calls && world_entries[0x15a8] == 1 &&
           !g_town.needs_resync);
     world_reset(DD_ROLE_HOST);
-    CHECK(hook_roster_drop(NULL, NULL, drag));
-    CHECK(add_calls == 1 && !finish_calls && sent == 0);
-    uint64_t capture = (uintptr_t)world_panel;
-    hook_recruit(&capture, world_entries, 0);
+    CHECK(!hook_roster_drop(NULL, NULL, drag));
+    CHECK(add_calls == 1 && finish_calls == 1 && sent == 1);
     CHECK(g_town.accepted == 1 && add_calls == 1 && finish_calls == 1 &&
           last_message.type == DD_MSG_TOWN_APPLY);
     world_reset(DD_ROLE_GUEST);
@@ -511,6 +515,7 @@ static void hook_machine_code(void) {
 #include "runtime_selection_fixture.inc"
 #include "runtime_activity_fixture.inc"
 #include "runtime_activity_weekly_fixture.inc"
+#include "runtime_weekly_fixture.inc"
 #include "runtime_hunger_fixture.inc"
 #include "runtime_quest_return_fixture.inc"
 #include "dd_focus.h"
@@ -684,7 +689,9 @@ static void activity_transactions(void) {
 }
 
 #include "runtime_transport_stop_fixture.inc"
+#include "runtime_recruit_pool_fixture.inc"
 int main(void) {
+    queue_init(&g_pool_controls);
     queue_init(&g_incoming);
     queue_init(&g_outgoing);
     ordered_wait(DD_ROLE_HOST);
@@ -727,6 +734,7 @@ int main(void) {
     transport_stop_checks();
     reset(DD_ROLE_HOST);
     recruit_transactions();
+    recruit_pool_checks();
     sale_transactions();
     hook_machine_code();
     hook_targets_unique();
@@ -759,6 +767,7 @@ int main(void) {
     activity_transactions();
     activity_bridge_checks();
     activity_weekly_checks();
+    weekly_bridge_checks();
     duo_checks();
     guard_transactions();
     reset(DD_ROLE_HOST);
@@ -771,6 +780,7 @@ int main(void) {
     shop_notice_clear("fallback test");
     shop_notice("fallback test");
     CHECK(alerts == 2);
+    DeleteCriticalSection(&g_pool_controls.lock);
     DeleteCriticalSection(&g_incoming.lock);
     DeleteCriticalSection(&g_outgoing.lock);
     printf("Runtime FIFO: host/guest wait without mutation, preserve order, resume once and detect overflow: "

@@ -102,7 +102,7 @@ static dd_action random_action(void) {
         a.u.upgrade.code = (uint8_t)('0' + rnd() % 4);
         a.u.upgrade.hero_id = rnd() % 12;
         break;
-    case DD_ACT_RECRUIT:
+    case DD_ACT_RECRUIT:a.u.recruit.hero_id=1+rnd()%47;a.u.recruit.fingerprint=1;break;
     case DD_ACT_DISMISS: a.u.hero.hero_id = 1 + rnd() % 47; break;
     case DD_ACT_RENAME: a.u.rename.hero_id=1;strcpy(a.u.rename.before,"Hero");strcpy(a.u.rename.after,"Hero B");break;
     case DD_ACT_SKILL: a.u.skill.hero_id=1;a.u.skill.after=1;break;

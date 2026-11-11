@@ -44,7 +44,7 @@ static dd_action act(uint8_t kind) {
     case DD_ACT_ACTIVITY: a.u.activity.op=1;a.u.activity.activity=DD_ACTIVITY_BAR;a.u.activity.slot=0;a.u.activity.hero_id=7;a.u.activity.revision=1;a.u.activity.epoch=1;break;
     case DD_ACT_ASSIGN_HERO: a.u.assign.activity = DD_ACTIVITY_MEDITATION; a.u.assign.slot = 2; a.u.assign.hero_id = 7; break;
     case DD_ACT_BUY_UPGRADE: a.u.upgrade.tree = 0x3fb36379; a.u.upgrade.code = '0'; a.u.upgrade.hero_id = 1; break;
-    case DD_ACT_RECRUIT: a.u.hero.hero_id = 30; break;
+    case DD_ACT_RECRUIT: a.u.recruit.hero_id = 30;a.u.recruit.fingerprint=UINT64_C(0x1020304050607080); break;
     case DD_ACT_DISMISS: a.u.hero.hero_id = 30; break;
     case DD_ACT_RENAME: a.u.rename.hero_id=1;strcpy(a.u.rename.before,"Hero");strcpy(a.u.rename.after,"Hero B");break;
     case DD_ACT_SKILL: a.u.skill.hero_id=1;a.u.skill.after=1;break;
@@ -465,7 +465,9 @@ static void test_prop_choice_packets(void) {
     CHECK(!dd_action_valid(&old),"optimistic curio item opcode is reserved/disabled in33");
     puts("Prop choices protocol33: all terminal operations, four actors/nullable arguments, exact revision/identity length and legacy bypass refusal verified");
 }
+#include "recruit_wire_fixture.inc"
 int main(void) {
+    recruit_wire_checks();
     test_desync_wire();
     test_roundtrip();
     test_invalid_encode();

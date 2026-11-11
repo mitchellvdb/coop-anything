@@ -43,7 +43,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_ACTIVITY: return 1 + 1 + 1 + 1 + 4 + 4 + 4;
     case DD_ACT_ASSIGN_HERO: return 1 + 1 + 1 + 4;
     case DD_ACT_BUY_UPGRADE: return 1 + 4 + 1 + 4;
-    case DD_ACT_RECRUIT:
+    case DD_ACT_RECRUIT: return 1+4+8;
     case DD_ACT_DISMISS: return 1 + 4;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: return 1 + 2 + 2;
@@ -102,7 +102,7 @@ int dd_action_valid(const dd_action *a) {
         uint8_t c = a->u.upgrade.code; /* level letters/digits seen: '0'.., 'a'.. */
         return a->u.upgrade.tree != 0 && ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z'));
     }
-    case DD_ACT_RECRUIT:
+    case DD_ACT_RECRUIT:return a->u.recruit.hero_id && a->u.recruit.hero_id!=UINT32_MAX && a->u.recruit.fingerprint;
     case DD_ACT_DISMISS: return a->u.hero.hero_id != 0;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: return a->u.items.count >= 1 && a->u.items.count <= 999;
@@ -180,7 +180,7 @@ static void w_action(wr *w, const dd_action *a) {
         w_u32(w,a->u.activity.hero_id);w_u32(w,a->u.activity.revision);w_u32(w,a->u.activity.epoch);break;
     case DD_ACT_ASSIGN_HERO: w_u8(w, a->u.assign.activity); w_u8(w, a->u.assign.slot); w_u32(w, a->u.assign.hero_id); break;
     case DD_ACT_BUY_UPGRADE: w_u32(w, a->u.upgrade.tree); w_u8(w, a->u.upgrade.code); w_u32(w, a->u.upgrade.hero_id); break;
-    case DD_ACT_RECRUIT:
+    case DD_ACT_RECRUIT: w_u32(w,a->u.recruit.hero_id);w_u64(w,a->u.recruit.fingerprint);break;
     case DD_ACT_DISMISS: w_u32(w, a->u.hero.hero_id); break;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: w_u16(w, a->u.items.slot); w_u16(w, a->u.items.count); break;
@@ -245,7 +245,7 @@ static void r_action(rd *r, dd_action *a) {
         a->u.activity.hero_id=r_u32(r);a->u.activity.revision=r_u32(r);a->u.activity.epoch=r_u32(r);break;
     case DD_ACT_ASSIGN_HERO: a->u.assign.activity = r_u8(r); a->u.assign.slot = r_u8(r); a->u.assign.hero_id = r_u32(r); break;
     case DD_ACT_BUY_UPGRADE: a->u.upgrade.tree = r_u32(r); a->u.upgrade.code = r_u8(r); a->u.upgrade.hero_id = r_u32(r); break;
-    case DD_ACT_RECRUIT:
+    case DD_ACT_RECRUIT: a->u.recruit.hero_id=r_u32(r);a->u.recruit.fingerprint=r_u64(r);break;
     case DD_ACT_DISMISS: a->u.hero.hero_id = r_u32(r); break;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: a->u.items.slot = r_u16(r); a->u.items.count = r_u16(r); break;
@@ -306,6 +306,8 @@ static size_t body_size(const dd_msg *m) {
     case DD_MSG_WALK_INTENT: return 4;
     case DD_MSG_SYNC_STOP:
     case DD_MSG_LOAD: return 4;
+    case DD_MSG_POOL: return 4+4+8+4+1+1;
+    case DD_MSG_WEEKLY: return 8;
     case DD_MSG_BUSY: return 4;
     default: return 0;
     }
@@ -316,6 +318,8 @@ size_t dd_encode(const dd_msg *m, uint8_t *buf, size_t cap) {
     if (body == 0 || body > DD_PROTO_MAX_BODY) return 0;
     if (m->type == DD_MSG_SYNC_STOP && (!m->u.load.slot || m->u.load.slot > 3)) return 0;
     if ((m->type == DD_MSG_TOWN_REQUEST || m->type == DD_MSG_TOWN_APPLY) && !dd_action_valid(&m->u.town.action)) return 0;
+    if(m->type==DD_MSG_WEEKLY && (m->seq || !m->u.weekly.epoch || !m->u.weekly.rules || m->u.weekly.rules>2147483646u))return 0;
+    if(m->type==DD_MSG_POOL && (m->seq || !m->u.pool.epoch || m->u.pool.anchor==UINT32_MAX || m->u.pool.count>64 || m->u.pool.op<1 || m->u.pool.op>3 || m->u.pool.player>3 || (m->u.pool.op==2 ? !m->u.pool.player : m->u.pool.player!=0)))return 0;
     wr w = {buf, cap, 0, 0};
     w_u32(&w, DD_PROTO_MAGIC);
     w_u16(&w, DD_PROTO_VERSION);
@@ -349,6 +353,10 @@ size_t dd_encode(const dd_msg *m, uint8_t *buf, size_t cap) {
     case DD_MSG_LOAD:
         w_u32(&w, m->u.load.slot);
         break;
+    case DD_MSG_POOL:
+        w_u32(&w,m->u.pool.epoch);w_u32(&w,m->u.pool.anchor);w_u64(&w,m->u.pool.digest);w_u32(&w,m->u.pool.count);w_u8(&w,m->u.pool.op);w_u8(&w,m->u.pool.player);break;
+    case DD_MSG_WEEKLY:
+        w_u32(&w,m->u.weekly.epoch);w_u32(&w,m->u.weekly.rules);break;
     case DD_MSG_BUSY:
         w_u32(&w, m->u.busy.busy);
         break;
@@ -367,7 +375,7 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
     m->type = r_u16(&h);
     m->seq = r_u32(&h);
     uint32_t body = r_u32(&h);
-    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_BUSY) return DD_DECODE_BAD_TYPE;
+    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_WEEKLY) return DD_DECODE_BAD_TYPE;
     if (body == 0 || body > DD_PROTO_MAX_BODY) return DD_DECODE_BAD_LENGTH;
     if (len < DD_PROTO_HEADER + (size_t)body) return DD_DECODE_SHORT;
 
@@ -411,6 +419,13 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
         m->u.load.slot = r_u32(&r);
         if (!r.bad && (m->u.load.slot < 1 || m->u.load.slot > 9)) return DD_DECODE_BAD_VALUE;
         break;
+    case DD_MSG_POOL:
+        m->u.pool.epoch=r_u32(&r);m->u.pool.anchor=r_u32(&r);m->u.pool.digest=r_u64(&r);m->u.pool.count=r_u32(&r);m->u.pool.op=r_u8(&r);m->u.pool.player=r_u8(&r);
+        if(!r.bad && (m->seq || !m->u.pool.epoch || m->u.pool.anchor==UINT32_MAX || m->u.pool.count>64 || m->u.pool.op<1 || m->u.pool.op>3 || m->u.pool.player>3 || (m->u.pool.op==2 ? !m->u.pool.player : m->u.pool.player!=0)))return DD_DECODE_BAD_VALUE;
+        break;
+    case DD_MSG_WEEKLY:
+        m->u.weekly.epoch=r_u32(&r);m->u.weekly.rules=r_u32(&r);
+        if(!r.bad && (m->seq || !m->u.weekly.epoch || !m->u.weekly.rules || m->u.weekly.rules>2147483646u))return DD_DECODE_BAD_VALUE;break;
     case DD_MSG_BUSY:
         m->u.busy.busy = r_u32(&r);
         if (!r.bad && m->u.busy.busy > 1) return DD_DECODE_BAD_VALUE;

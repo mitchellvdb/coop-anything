@@ -1040,6 +1040,7 @@ static void town_check_poll(void) {
     activity_new_epoch(a.u.item.amount);
     dd_log("Town: back from the raid; currencies %08x, heroes %08x, %u heroes", d[0], d[1], d[2]);
     dd_town_host_observed(&g_town, &a);
+    pool_start();
 }
 static int town_check_apply(const dd_action *a) {
     uint32_t d[3];

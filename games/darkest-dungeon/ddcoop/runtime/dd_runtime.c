@@ -154,6 +154,9 @@ static roster_size_fn g_roster_count,g_roster_capacity;
 static uint64_t g_recruit_panel,g_recruit_ready_at;
 static uint32_t g_recruit_request;
 static int g_recruit_waiting;
+static int pool_recruit_ready(void);
+static void pool_fail(void);
+static void pool_start(void),pool_reset(void),pool_enter_raid(void),pool_poll(void);
 static volatile LONG g_queue_failed;
 static void *g_activity[DD_ACTIVITY_COUNT_];
 static dd_msg_queue g_incoming, g_outgoing;
@@ -322,6 +325,7 @@ static int runtime_waiting_for_peer(void) {
 static int runtime_shared_blocked(void) {
     if (g_game_apply_depth || g_cfg.role == DD_ROLE_OFF ||
         !InterlockedCompareExchange(&g_campaign_active, 0, 0)) return 0;
+    if(InterlockedCompareExchange(&g_queue_failed,0,0)){runtime_sync_stop(2);return 1;}
     int lost = InterlockedCompareExchange(&g_session_lost, 0, 0) ||
                (InterlockedCompareExchange(&g_session_seen, 0, 0) &&
                 !InterlockedCompareExchange(&g_session_ready, 0, 0));
@@ -566,10 +570,16 @@ static void recruit_background(const dd_recruit *s,const dd_recruit_choice *c) {
 static int recruit_apply(const dd_action *a) {
     dd_recruit s;dd_recruit_choice before,after;unsigned roster_before=0,roster_after=0;
     int screen=g_recruit_panel!=0;
+    uint64_t fingerprint=0;
+    if(!pool_recruit_ready())return 0;
     if(!g_original_recruit || !g_recruit_open_model(&s) ||
        !(screen?dd_recruit_resolve(&s,g_recruit_panel,a->u.hero.hero_id,&before):dd_recruit_candidate(&s,a->u.hero.hero_id,&before)) ||
        !before.available || (!screen && !recruit_background_ready(&s))) {
         dd_log("Stagecoach refused: candidate/display mismatch hero=%u screen=%d",a->u.hero.hero_id,screen);return 0;
+    }
+    if(!dd_recruit_fingerprint(&s,before.id,&fingerprint) || fingerprint!=a->u.recruit.fingerprint) {
+        dd_log("Stagecoach candidate content mismatch hero=%u",before.id);
+        pool_fail();return 0;
     }
     if(screen && !before.enabled) {
         dd_log("Stagecoach refused: game disabled recruit row (roster full or candidate unavailable) hero=%u",before.id);return 0;
@@ -640,43 +650,28 @@ static int __fastcall hook_roster_drop(void *target,void *position,void *drag) {
     if(!InterlockedCompareExchange(&g_session_ready,0,0) || g_town.needs_resync) {
         shop_notice("Wait until both games are connected before recruiting. After a synchronization error, restart both games.");return 0;
     }
-    if(g_cfg.role==DD_ROLE_HOST)return g_original_roster_drop(target,position,drag);
+    if(!pool_recruit_ready())return 0;
     if(!dd_recruit_resolve(&s,g_recruit_panel,id,&choice) || !choice.enabled) {
         shop_notice("Open the Stagecoach and select an available candidate.");return 0;
     }
-    dd_action a={0};a.kind=DD_ACT_RECRUIT;a.u.hero.hero_id=id;
+    dd_action a={0};a.kind=DD_ACT_RECRUIT;a.u.recruit.hero_id=id;
+    if(!dd_recruit_fingerprint(&s,id,&a.u.recruit.fingerprint)){pool_fail();return 0;}
+    if(g_cfg.role==DD_ROLE_HOST) {
+        if(!dd_town_host_local(&g_town,&a) && !g_town.needs_resync)shop_notice("This candidate could not be recruited. Check the roster space and try again.");
+        return 0;
+    }
     g_recruit_request=dd_town_guest_local(&g_town,&a);
     dd_log("guest sent Stagecoach request before local roster mutation request=%u hero=%u",g_recruit_request,id);
     return 0;
 }
 static void __fastcall hook_recruit(void *capture,void *hero,uint32_t index) {
     if(!g_original_recruit)return;
-    if(!InterlockedCompareExchange(&g_campaign_active,0,0) || g_cfg.role==DD_ROLE_OFF) {
+    if(!InterlockedCompareExchange(&g_campaign_active,0,0) || g_cfg.role==DD_ROLE_OFF || g_game_apply_depth) {
         g_original_recruit(capture,hero,index);return;
     }
-    if (runtime_shared_blocked()) return;
-    if(g_cfg.role==DD_ROLE_GUEST) {
-        dd_log("guest recruit completion held; only host orders may mutate Stagecoach");return;
-    }
-    uint64_t panel=0;uint32_t id=0;dd_recruit s;dd_recruit_choice choice;
-    if(!safe_read((uintptr_t)capture,&panel,8) || panel!=g_recruit_panel ||
-       !safe_read((uintptr_t)hero+0x137c,&id,4) || !g_recruit_open_model(&s) ||
-       !dd_recruit_resolve(&s,panel,id,&choice) || choice.hero!=(uintptr_t)hero || choice.index!=index || !choice.enabled) {
-        dd_log("Stagecoach local recruit refused: context/candidate/row invalid or disabled");
-        g_town.needs_resync=1;
-        shop_notice("Recruitment could not be fully verified. Close both games and restart the co-op session. Send the logs.");return;
-    }
-    g_original_recruit(capture,hero,index);
-    dd_recruit_choice after;unsigned count=0;
-    if(InterlockedCompareExchange(&g_session_ready,0,0) && dd_recruit_candidate(&s,id,&after) &&
-       !after.available && dd_recruit_roster_has(&s,id,&count)==1) {
-        dd_action a={0};a.kind=DD_ACT_RECRUIT;a.u.hero.hero_id=id;
-        dd_town_host_observed(&g_town,&a);
-        dd_log("host committed Stagecoach recruit hero=%u available=1->0 roster=%u",id,count);
-    } else {
-        g_town.needs_resync=1;dd_log("host Stagecoach completion did not match live roster; rejoin required");
-        shop_notice("Recruitment could not be fully verified. Close both games and restart the co-op session. Send the logs.");
-    }
+    if(runtime_shared_blocked() || runtime_waiting_for_peer())return;
+    dd_log("Stagecoach unexpected local completion held: recruitment must use the early shared drag");
+    pool_fail();
 }
 
 static int image_range(uintptr_t p, size_t n) {
@@ -966,21 +961,20 @@ static int runtime_apply(void *unused,const dd_action *a) {
 
 static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint32_t hero_id) {
     if (!g_original_assign) return 0;
+#ifdef _MSC_VER
+    uintptr_t caller=(uintptr_t)_ReturnAddress();
+#else
+    uintptr_t caller=(uintptr_t)__builtin_return_address(0);
+#endif
+    /* Engine week completion must remain intact even after sharing stops. */
+    if(g_cfg.role!=DD_ROLE_OFF && InterlockedCompareExchange(&g_campaign_active,0,0) &&
+       g_activity_native_assign_caller(caller-image_base()))
+        return g_original_assign(activity,result,hero_id);
     /* Finish a native effect already admitted by the ordered apply. Never
      * emit another request or observed assignment from that nested call. */
     if(g_game_apply_depth)return g_original_assign(activity,result,hero_id);
     if (runtime_shared_blocked() || runtime_waiting_for_peer()) return 0;
     if(activity_shared()) {
-#ifdef _MSC_VER
-        uintptr_t caller=(uintptr_t)_ReturnAddress();
-#else
-        uintptr_t caller=(uintptr_t)__builtin_return_address(0);
-#endif
-        /* The game reassigns activities during its deterministic week update.
-         * That exact pinned caller is not a second click on shared Accept.
-         * Return directly: the legacy host/guest branch must not re-emit it. */
-        if(g_activity_native_assign_caller(caller-image_base()))
-            return g_original_assign(activity,result,hero_id);
         int kind=g_activity_kind(activity);
         if(kind>=0 && kind<6)return activity_accept_input(activity,result,hero_id);
     }
@@ -1085,10 +1079,12 @@ static void bag_drag_done(void);
 #include "dd_departure_bridge.inc"
 #include "dd_frontend_bridge.inc"
 #include "dd_walk_bridge.inc"
+#include "dd_recruit_pool_bridge.inc"
+#include "dd_weekly_bridge.inc"
 
 enum { DD_RUNTIME_HOOK_COUNT = 9 + sizeof g_hamlet_hooks / sizeof *g_hamlet_hooks +
     sizeof g_supply_hooks / sizeof *g_supply_hooks + sizeof g_departure_hooks / sizeof *g_departure_hooks +
-    sizeof g_walk_hooks / sizeof *g_walk_hooks };
+    sizeof g_walk_hooks / sizeof *g_walk_hooks + sizeof g_weekly_hooks/sizeof *g_weekly_hooks };
 _Static_assert(DD_RUNTIME_HOOK_COUNT <= 128, "Review hook storage/stack bounds before extending beyond128");
 static int install_hooks(void) {
     dd_hook h[DD_RUNTIME_HOOK_COUNT] = {0};
@@ -1096,10 +1092,12 @@ static int install_hooks(void) {
     unsigned hamlet_count=(unsigned)(sizeof g_hamlet_hooks/sizeof *g_hamlet_hooks);
     unsigned supply_count=(unsigned)(sizeof g_supply_hooks/sizeof *g_supply_hooks);
     unsigned departure_count=(unsigned)(sizeof g_departure_hooks/sizeof *g_departure_hooks);
-    unsigned extra=hamlet_count+supply_count+departure_count+(unsigned)(sizeof g_walk_hooks/sizeof *g_walk_hooks),total=9+extra;
+    unsigned walk_count=(unsigned)(sizeof g_walk_hooks/sizeof *g_walk_hooks);
+    unsigned extra=hamlet_count+supply_count+departure_count+walk_count+(unsigned)(sizeof g_weekly_hooks/sizeof *g_weekly_hooks),total=9+extra;
 #define RUNTIME_HOOK_SPEC(i) ((i)<hamlet_count?&g_hamlet_hooks[i]:(i)<hamlet_count+supply_count?\
     &g_supply_hooks[(i)-hamlet_count]:(i)<hamlet_count+supply_count+departure_count?\
-    &g_departure_hooks[(i)-hamlet_count-supply_count]:&g_walk_hooks[(i)-hamlet_count-supply_count-departure_count])
+    &g_departure_hooks[(i)-hamlet_count-supply_count]:(i)<hamlet_count+supply_count+departure_count+walk_count?\
+    &g_walk_hooks[(i)-hamlet_count-supply_count-departure_count]:&g_weekly_hooks[(i)-hamlet_count-supply_count-departure_count-walk_count])
     if(total>sizeof h/sizeof *h || !departure_start_ready() || !hamlet_bind_native() || !supplies_bind_native() || !formation_bind())return 0;
     uintptr_t targets[] = {g_assign_va, g_widget_ctor_va, g_buy_upgrade_va, g_wagon_va,g_recruit_va,g_recruit_show_va,g_recruit_hide_va,g_roster_drop_va,g_sell_va};
     uintptr_t hooks[] = {(uintptr_t)hook_assign_hero, (uintptr_t)hook_slot_widget_ctor, (uintptr_t)hook_buy_upgrade,
@@ -1236,6 +1234,14 @@ static int session_loop(dd_conn *c, int host, int player) {
                 dd_log("Walk: guest player %d %s", player, m.u.busy.busy ? "has a window open; the host waits before walking on" : "is free to walk again");
             }
             InterlockedExchange64(&g->busy_at, now);
+            continue;
+        }
+        if(m.type==DD_MSG_WEEKLY) {
+            if(!weekly_receive(&m,host,player))return 0;
+            continue;
+        }
+        if(m.type==DD_MSG_POOL) {
+            if(!pool_receive(m,host,player)){InterlockedExchange(&g_peer_sync_stop,3);return 0;}
             continue;
         }
         if (m.type == DD_MSG_LOAD) {
@@ -1382,6 +1388,7 @@ int dd_runtime_init(const dd_config *cfg, const uint8_t build_id[8], uint64_t as
     queue_init(&g_incoming);
     queue_init(&g_outgoing);
     for (int i = 0; i < DD_MAX_GUESTS; i++) queue_init(&g_guests[i].out);
+    queue_init(&g_pool_controls);
     runtime_town_init();
     return 1;
 }
@@ -1479,7 +1486,7 @@ void dd_runtime_poll(void) {
     g_poll_running = 0;
 }
 static void runtime_poll_once(void) {
-    if (!InterlockedCompareExchange(&g_initialized, 0, 0)) return;
+    if (!InterlockedCompareExchange(&g_initialized, 0, 0) || weekly_busy()) return;
     LONG peer_stop = InterlockedExchange(&g_peer_sync_stop, 0);
     if (peer_stop) runtime_stop_shared((uint32_t)peer_stop, g_cfg.role == DD_ROLE_HOST); /* The host tells the other guests. */
     frontend_poll();
@@ -1495,7 +1502,7 @@ static void runtime_poll_once(void) {
         provisions_reset();
         departure_reset();
         walk_reset();
-        g_recruit_panel=0;g_recruit_waiting=0;g_recruit_request=0;
+        g_recruit_panel=0;g_recruit_waiting=0;g_recruit_request=0;pool_reset();weekly_reset();
         memset(g_activity, 0, sizeof g_activity);
         incoming_clear_inactive();
         return;
@@ -1522,6 +1529,8 @@ static void runtime_poll_once(void) {
     embark_poll();
     if(g_town.needs_resync)return;
     walk_poll();
+    pool_poll();
+    if(g_town.needs_resync)return;
     dd_msg m;
     while (queue_peek(&g_incoming, &m)) {
         if (formation_gate(&m)) break;
@@ -1541,6 +1550,7 @@ static void runtime_poll_once(void) {
             }
             break;
         }
+        if(pool_apply_gate(&m))break;
         queue_pop(&g_incoming,&m);g_recruit_waiting=0;
         if (g_cfg.role == DD_ROLE_HOST && m.type == DD_MSG_TOWN_REQUEST) {
             uint32_t accepted_before = g_town.accepted;

@@ -630,7 +630,9 @@ static void hm_alone(void) {
     g_walk_view = saved;
     puts("New campaign alone: in town after the tutorial the player is told once to close the game and click Host; never in a raid, a normal start or a session");
 }
+static int hm_pool_read(uint64_t *hash,unsigned *n){*hash=123;*n=0;return 1;}
 static void hm_town_check(void) {
+    int (*old_pool_read)(uint64_t *,unsigned *)=g_pool_read;g_pool_read=hm_pool_read;
     int (*saved)(walk_view *) = g_walk_view;
     dd_action check;
     dd_msg m = {0};
@@ -648,11 +650,11 @@ static void hm_town_check(void) {
     CHECK(!sent);
     g_town_check_at = 1;
     town_check_poll();
-    CHECK(sent == 1 && last_message.type == DD_MSG_TOWN_APPLY && last_message.u.town.action.u.item.op == DD_ITEM_OP_TOWN &&
-          last_message.u.town.action.u.item.round == 3 && !g_town_check_raid);
-    check = last_message.u.town.action;
+    CHECK(sent == 2 && sent_messages[0].type == DD_MSG_TOWN_APPLY && sent_messages[0].u.town.action.u.item.op == DD_ITEM_OP_TOWN &&
+          sent_messages[0].u.town.action.u.item.round == 3 && !g_town_check_raid && last_message.type==DD_MSG_POOL);
+    check = sent_messages[0].u.town.action;
     town_check_poll();
-    CHECK(sent == 1);
+    CHECK(sent == 2);
     /* The guest asks for it: only the host says what its town is. */
     m.type = DD_MSG_TOWN_REQUEST;
     m.u.town.request_id = 5;
@@ -699,6 +701,7 @@ static void hm_town_check(void) {
     CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
     hm_raid_now = 0; g_walk_view = saved;
     puts("Town after a raid: matching/delayed towns succeed; currency/stress/trinket/roster mismatch or unreadable timeout stops before ACK/next action");
+    g_pool_read=old_pool_read;
 }
 static void hm_dismiss_hidden(void) {
     for (int role = DD_ROLE_HOST; role <= DD_ROLE_GUEST; role++) {

@@ -95,7 +95,7 @@ static void test_handshake(void) {
     m.type = DD_MSG_TOWN_REQUEST;
     m.u.town.request_id = 5;
     m.u.town.action.kind = DD_ACT_RECRUIT;
-    m.u.town.action.u.hero.hero_id = 30;
+    m.u.town.action.u.hero.hero_id = 30;m.u.town.action.u.recruit.fingerprint=1;
     uint8_t plain[300], frame[400], back[400];
     size_t n = dd_encode(&m, plain, sizeof plain), plen, used;
     size_t f = dd_sess_seal(&g, plain, n, frame, sizeof frame);
