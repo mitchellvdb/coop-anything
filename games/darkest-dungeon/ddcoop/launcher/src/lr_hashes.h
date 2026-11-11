@@ -8,6 +8,6 @@
 #define LR_HASH_BOOTSTRAP "ad3c25374e9fb23ff5e388cde052a7359abad1cda9bf5afb6aad399e25e82589"     /* test12 SDL input + GL swap bootstrap */
 #define LR_HASH_BOOTSTRAP_TEST11 "e7f1c4a7aa8a96144b17497fd774aefac71af3625a69e3e1f2e57be59c24a627" /* verified predecessor, upgrade only with intact original */
 #define LR_HASH_TOWN_PROBE_V12 "e3d4796686656c496715ab0d9917d4413b12b34ef8eef3cb6929b9c27c7dd8fc" /* read-only probe */
-#define LR_HASH_RUNTIME "772945e677b76fe1398d98070ac8a923980ab466d7b2721397090e287d6f4fb5" /* test74: native weekly assignment and shared UI drafts */
+#define LR_HASH_RUNTIME "d17d5b42b35ab76c07de143432a0f159ae8c0e1f0d6186ce44018100dbae384f" /* test75: candidate content and native weekly state */
 
 #endif
