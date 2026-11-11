@@ -201,3 +201,5 @@ guests play their heroes in fights. It has no source or license; this project us
 changelog as a reference (lessons in NOTES.md) and copies no code.
 
 Test75: read [STAGECOACH-WEEK.md](runtime/STAGECOACH-WEEK.md) for native week-seed timing and the candidate-pool comparison.
+
+Current tested snapshot: test81 / duo60, protocol36/exacthello81. See BUILD.md and runtime/RECHECK-2026-11-11.md. Signed ordinary updates use launcher/UPDATE.md; solo duo remains manual.

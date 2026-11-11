@@ -1,5 +1,31 @@
 [
   {
+    "version": "0.5.0-test81",
+    "kit_sha256": "36eeeb3050aa1e1da37e811b39e4aed68a12b8ab046136cfddd57065931262ce",
+    "runtime_sha256": "37e295d2d6b4535e43accc293f1548fcd6379520b8c52063d6215cacfd37d7c4",
+    "launcher_sha256": "c43ded76e429578d0f5f346b4b80682b665605345772c653437cf737b733fc79",
+    "runtime_protocol": 36,
+    "launcher_protocol": 3,
+    "exact_runtime": "0.5.0-test81",
+    "source_variant": "ordinary",
+    "native_effects_modeled": true,
+    "live_test_pending": true,
+    "signed_update_serial": 81
+  },
+  {
+    "version": "0.5.0-duo60",
+    "kit_sha256": "223a3f4a1a8222aa3c225e2fd1318e6c405cac299a5f95ec4aea7dc586a34b99",
+    "runtime_sha256": "32099e52d3443944bd977d800449bded4d6c043f23cc85717987587039c1d3a1",
+    "launcher_sha256": "876a20f0d468226d72469d0f99476a593c90b4a4d3f2985f52d0185c8f3a91f0",
+    "runtime_protocol": 36,
+    "launcher_protocol": 3,
+    "exact_runtime": "0.5.0-test81",
+    "source_variant": "duo",
+    "native_effects_modeled": true,
+    "live_test_pending": true,
+    "signed_update_serial": 0
+  },
+  {
     "version": "0.5.0-test74",
     "runtime_protocol": 33,
     "runtime_sha256": "772945e677b76fe1398d98070ac8a923980ab466d7b2721397090e287d6f4fb5",

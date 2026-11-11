@@ -1,4 +1,4 @@
-# DDCoop build and validation — test75 / duo58
+# DDCoop build and validation — test81 / duo60
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -10,10 +10,10 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 137 named signatures cover 133 distinct
-native addresses:132 function entries plus one exact weekly caller witness
-(some deliberate alias names);89 live/early hook targets are distinct.
-Runtime protocol 34; exact runtime hello version75 also required. Launcher wire 3.
+Never relax pins for an unknown update. 140 named signatures cover 136 distinct
+native addresses:135 function entries plus one exact weekly caller witness
+(some deliberate alias names);92 live/early hook targets are distinct.
+Runtime protocol 36; exact runtime hello version81 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -28,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test75"
+    set "DDC_VERSION=0.5.0-test81"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -57,6 +57,8 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_camp_guid_layout.py "%DD_GAME_EXE%"
     python -I tests/test_recruit_layout.py "%DD_GAME_EXE%"
     python -I tests/test_week_transition_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_town_save_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_full_notice_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -82,8 +84,8 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-For duo58, build the same runtime with DD_DUO, pin that separate DLL and build the
-launcher with DDC_VERSION=0.5.0-duo58. Gameplay source remains identical. Source
+For duo60, build the same runtime with DD_DUO, pin that separate DLL and build the
+launcher with DDC_VERSION=0.5.0-duo60. Gameplay source remains identical. Source
 archives differ only in the duo runtime pin and test instructions.
 
 The verified custom SDL2 bootstrap pin remains:
@@ -146,3 +148,17 @@ campaign mods tests and strict unknown-list/linked-or-unreadable-tree regression
 The new schema is runtime34/exacthello75; launcher wire3 remains. The old74 native
 weekly assignment exception now completes exact engine week work even after a
 synchronization STOP; ordinary UI remains blocked. See runtime/STAGECOACH-WEEK.md.
+
+Test81 adds shared inventory-full informational dismissal (ITEM22, protocol36).
+Only pinned loot callers with an empty callback are tracked. Close markers use
+loot apply sequence + area and the local native Entry; an absent/delayed popup
+is safe. Other dialogs and later loot attempts remain independent. Native
+removal runs from ShowEntry on the game thread, once. Read-only ABI proof and
+all4-role actual-bridge regressions cover late/absent/duplicate/STOP cases.
+Combat FIFO now waits for input29/30 while an equal-round/turn copy plays its
+presentation; exact actor, RNG and apply checks remain. Native loot button flags
+must be consumed before another command is accepted. See runtime/RECHECK-2026-11-11.md.
+Both variants passed the full Windows launcher suite including isolated
+preparation/restore after real games closed. Fixtures model engine effects;
+no live gameplay QA is claimed. Sign ordinary kits using the existing local
+owner key as described in launcher/UPDATE.md; never create a replacement key.

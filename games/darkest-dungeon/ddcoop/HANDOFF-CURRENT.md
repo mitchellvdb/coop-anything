@@ -1,3 +1,33 @@
+# Current: test81 / duo60 (Codex, 11 Nov 2026)
+
+Built on Claude Code test80/local57a494b, retaining all intervening updates.
+Inventory-full OK now follows every player using its causal loot order; exact
+native empty callback/Entry verified. Combat same-turn animation waits for
+input29/30. Native pending loot clicks are bounded and serialized. Added OPEN
+and recruit-refusal diagnostics. Protocol36/exact runtime81; launcher wire3.
+Read runtime/RECHECK-2026-11-11.md for evidence, scope and unresolved causes.
+
+- 0.5.0-test81: C:\dev\ddcoop-handoff\0.5.0-test81\DDCoop-install.zip
+  Kit SHA256 36eeeb3050aa1e1da37e811b39e4aed68a12b8ab046136cfddd57065931262ce
+  Runtime 37e295d2d6b4535e43accc293f1548fcd6379520b8c52063d6215cacfd37d7c4
+  Launcher c43ded76e429578d0f5f346b4b80682b665605345772c653437cf737b733fc79
+- 0.5.0-duo60: C:\dev\ddcoop-handoff\0.5.0-duo60\DDCoop-install.zip
+  Kit SHA256 223a3f4a1a8222aa3c225e2fd1318e6c405cac299a5f95ec4aea7dc586a34b99
+  Runtime 32099e52d3443944bd977d800449bded4d6c043f23cc85717987587039c1d3a1
+  Launcher 876a20f0d468226d72469d0f99476a593c90b4a4d3f2985f52d0185c8f3a91f0
+
+PASS native/protocol/FIFO, final actual-bridge ASan,19 pinned native proofs,
+dungeon foundation, both complete Windows launcher suites including isolated
+backup/restore after real games closed. Signed ordinary manifest serial81 and
+actual bundle hashes verified with launcher's owner-key CNG check. New live
+playtest is pending. Native effects in fixtures are modeled. No real game/save/
+Steam mutation. Stagecoach/earlier OPEN and some loot causes remain open.
+Ordinary test81 is signed for existing update-capable launchers; duo60 is manual
+and includes all three local guest startup batch files. Do not mix variants.
+Source-only GitHub commits are on game/darkest-dungeon-ddcoop; no .git ACL bypass.
+
+## Previous state (retained history)
+
 # Current: test80 (Claude Code, 11 Nov 2026): test79 + local tutorial popups, curio double clicks
 
 - **19:49:37 stop (owner, test78):** player 2 clicked an open curio three times. Each duplicate OPEN made the host
