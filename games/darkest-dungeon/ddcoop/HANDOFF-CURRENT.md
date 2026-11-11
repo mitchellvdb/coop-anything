@@ -8,13 +8,13 @@ and recruit-refusal diagnostics. Protocol36/exact runtime81; launcher wire3.
 Read runtime/RECHECK-2026-11-11.md for evidence, scope and unresolved causes.
 
 - 0.5.0-test81: C:\dev\ddcoop-handoff\0.5.0-test81\DDCoop-install.zip
-  Kit SHA256 36eeeb3050aa1e1da37e811b39e4aed68a12b8ab046136cfddd57065931262ce
-  Runtime 37e295d2d6b4535e43accc293f1548fcd6379520b8c52063d6215cacfd37d7c4
-  Launcher c43ded76e429578d0f5f346b4b80682b665605345772c653437cf737b733fc79
+  Kit SHA256 b82561d5dd2b45db4a77c7907bd578a4498a9337ce24f01b5a5ed6a5e2ce75e2
+  Runtime 835d58030c99105ec1a7a63bde07f6c9fc9486c0a117c9ad52203431d1a549a3
+  Launcher 578493360fd2c10d3effde988e76bbbde3892d423df836b0bbce9411f07cfcee
 - 0.5.0-duo60: C:\dev\ddcoop-handoff\0.5.0-duo60\DDCoop-install.zip
-  Kit SHA256 223a3f4a1a8222aa3c225e2fd1318e6c405cac299a5f95ec4aea7dc586a34b99
-  Runtime 32099e52d3443944bd977d800449bded4d6c043f23cc85717987587039c1d3a1
-  Launcher 876a20f0d468226d72469d0f99476a593c90b4a4d3f2985f52d0185c8f3a91f0
+  Kit SHA256 7b5811c30d0afa720d65a315619afe25c08497cac9dec202835c218cf2a78263
+  Runtime 92ce93497998321a0c76dbeb425744a1e9e0ca20747a6fd82764934e7345a09f
+  Launcher 487204ac352ff16d4fe7462545a559756cc6baac160a18777d3eed4d718709ac
 
 PASS native/protocol/FIFO, final actual-bridge ASan,19 pinned native proofs,
 dungeon foundation, both complete Windows launcher suites including isolated
