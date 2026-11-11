@@ -1,11 +1,38 @@
 DDCoop - development test kit {VERSION}
 
-New in test75 / duo58
-The new-week Rules state is shared before native raid completion, including
-party wipes. Before recruiting, all games compare their Stagecoach candidates.
-Each recruit also checks the selected hero's logical content before changing
-its local roster. Provisioning and departure wait for this comparison.
-Read TESTSTAPPEN-test75.txt and STAGECOACH-WEEK.md.
+New in test80
+Everything from test79, plus: each player closes their own tutorial popups
+(a guest could get stuck on one the host did not have), and clicking an open
+curio again no longer puts the guests' dice out of step (that ended a session
+with a loot window that only the host had).
+
+New in test79
+Tavern and Abbey treatments, removals and skill choices are now saved by the
+host's game right away, as the game itself does. Until test78 a restart could
+lose a treatment while the gold stayed spent. Guest skill clicks that do not
+reach the host now leave a line in the logs. Every PC needs test79 (a test77
+or test78 friend is offered it by the host).
+
+New in test78
+After a raid the games compare their currencies per kind and write each amount
+to the logs; the order of currencies inside the game no longer counts as a
+difference. Every PC needs test78 (a test77 friend is offered it by the host).
+
+New in test77
+Updates from the host: when a friend with an older DDCoop joins, the host's
+launcher sends its kit along and the friend's launcher offers to install it.
+Only kits signed by the DDCoop owner are accepted. Install test77 by hand once;
+later kits then arrive this way. Read UPDATE.md. Gameplay is unchanged from
+test76 (same runtime), so test76 and test77 players can play together.
+
+New in test76 / duo59
+After a raid every game now gives the new Stagecoach heroes the same numbers:
+the host's id counter is shared together with the new-week Rules state. A
+shared camp Leave waits until the camp is not covered by another window on
+that PC, instead of leaving only some games in camp.
+From test75: Stagecoach candidates are compared before recruiting, and each
+recruit checks the hero's content. Read TESTSTAPPEN-test76.txt and
+STAGECOACH-WEEK.md.
 
 Campaign mod files are compared when joining a modded campaign. Unknown lists,
 missing/different files and unreadable or linked mod folders are refused before

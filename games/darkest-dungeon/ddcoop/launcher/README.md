@@ -34,6 +34,8 @@ launcher does the rest:
   game write, verified restoration is still required. Preparation/recovery never targets another slot;
 - a pinned installed `SDL2-bootstrap.dll` repairs the known Steam-restored-original case automatically.
   The log bundle includes preparation, restoration and `app.log`; guest exit/failure collects it automatically.
+- a friend with an older DDCoop gets the host's signed kit offered and can update with one click
+  (`lr_kit.c`, design in `UPDATE.md`);
 - a campaign that uses mods (Steam Workshop or `mods\`) is joined only when every PC has exactly the same
   files of each mod: the host sends a fingerprint per mod and the friend's launcher compares before its own
   save is touched (`lr_mods.c`, design in `MODS.md`);

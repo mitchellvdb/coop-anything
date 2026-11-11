@@ -201,7 +201,7 @@ static int find_game(const char *kit, char *out, size_t cap) {
      * a copied install instead of a previously registered Steam install. */
     char p[LR_PATH_MAX];
     snprintf(p, sizeof p, "%s", kit);
-    for (int up = 0; up < 4; up++) {
+    for (int up = 0; up < 5; up++) { /* also <game>\mods\DDCoop\update\<version> (UPDATE.md) */
         if (is_game_dir(p)) {
             snprintf(out, cap, "%s", p);
             return 1;
@@ -244,6 +244,21 @@ static void desktop_shortcut(const char *target, const char *workdir, int create
 }
 
 /* ---- modes ---- */
+
+/* The kit's signed manifest goes next to DDCoop.exe, so this launcher can offer the same kit to a friend later
+ * (launcher/UPDATE.md). A kit without one removes an old manifest, which would no longer match the files. */
+static int install_manifest(const char *kit, const char *launcher) {
+    char src[LR_PATH_MAX], dst[LR_PATH_MAX];
+    lr_join(src, sizeof src, kit, "ddcoop-kit.sig");
+    lr_join(dst, sizeof dst, launcher, "ddcoop-kit.sig");
+    if (!lr_file_exists(src)) {
+        lr_delete_file(dst);
+        return 1;
+    }
+    return copy_file(src, dst);
+}
+
+static int g_update; /* --update: started by the previous launcher with a kit from the host */
 
 static int install(const char *kit, int repair) {
     char game[LR_PATH_MAX];
@@ -309,6 +324,7 @@ static int install(const char *kit, int repair) {
     if (!copy_file(steam_src, dst)) return fail("Could not copy steam_api64.dll.");
     lr_join(dst, sizeof dst, launcher, "steam_appid.txt");
     if (!lr_write_file(dst, (const uint8_t *)"480", 3)) return fail("Could not write steam_appid.txt.");
+    if (!install_manifest(kit, launcher)) return fail("Could not write ddcoop-kit.sig.");
     lr_join(dst, sizeof dst, mods, "ddcoop.ini");
     if (!lr_write_ini(dst, "off", LR_DEFAULT_GAME_PORT, "unused-until-ddcoop-starts", 3))
         return fail("Could not write ddcoop.ini.");
@@ -328,7 +344,8 @@ static int install(const char *kit, int repair) {
     note("");
     note("Starting normally through Steam still works as before (co-op is then off).");
     note("For co-op, open DDCoop from the desktop. Open it now?");
-    if (MessageBoxW(NULL, W(g_report), repair ? L"DDCoop gerepareerd" : L"DDCoop geïnstalleerd", MB_YESNO | MB_ICONINFORMATION) == IDYES)
+    if (MessageBoxW(NULL, W(g_report), g_update ? L"DDCoop updated" : repair ? L"DDCoop gerepareerd" : L"DDCoop geïnstalleerd",
+                    MB_YESNO | MB_ICONINFORMATION) == IDYES)
         ShellExecuteW(NULL, L"open", W(target), NULL, W(launcher), SW_SHOWNORMAL);
     return 0;
 }
@@ -403,5 +420,12 @@ int lr_install_main(const wchar_t *mode) {
     if (wcscmp(mode, L"--repair") == 0) return install(kit, 1);
     if (wcscmp(mode, L"--uninstall") == 0) return uninstall(kit);
     if (wcscmp(mode, L"--start") == 0) return start(kit);
+    if (wcscmp(mode, L"--update") == 0) {
+        /* The previous launcher started us from mods\DDCoop\update\<version> and is closing: wait for it. */
+        for (int i = 0; i < 100 && process_running(L"DDCoop.exe"); i++) Sleep(200);
+        g_update = 1;
+        note("DDCoop update from the host (signed by the owner, checked by the previous launcher).");
+        return install(kit, 1);
+    }
     return fail("Onbekende opdracht.");
 }

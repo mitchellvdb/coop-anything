@@ -210,14 +210,28 @@ static int hamlet_skill_apply(const dd_hamlet *s, const dd_action *a) {
     if (!g_hamlet_toggle[a->u.skill.camping] || dd_hamlet_find(s, a->u.skill.hero_id, &hero) != 1 ||
         !dd_hamlet_skill(s, &hero, a->u.skill.camping, a->u.skill.index, &active) ||
         active != a->u.skill.before || !dd_hamlet_skill_mask(s, &hero, a->u.skill.camping, &before) ||
-        before != a->u.skill.selected_mask)
+        before != a->u.skill.selected_mask) {
+        /* Owner's run 19:36:52-19:37:01: player 2's skill clicks were refused five times; say which check. */
+        dd_log("Hamlet skill refused hero=%u camping=%u index=%u: selected here=%d sender=%u, mask here=%08x sender=%08x",
+               a->u.skill.hero_id, a->u.skill.camping, a->u.skill.index, active, a->u.skill.before, before,
+               a->u.skill.selected_mask);
         return hamlet_fail("skill not learned, stale selection or invalid hero", 0);
+    }
     g_hamlet_toggle[a->u.skill.camping]((void *)(uintptr_t)hero.hero, a->u.skill.index);
     if (!dd_hamlet_skill_mask(s, &hero, a->u.skill.camping, &after))
         return hamlet_fail("skill post-state unreadable", 1);
     dd_log("Hamlet skill result hero=%u camping=%u index=%u mask=%08x->%08x", hero.id, a->u.skill.camping,
            a->u.skill.index, before, after);
     if (after == (before ^ (1u << a->u.skill.index))) {
+        /* What the character sheet's skill lambdas do after a toggle (combat 8045c0, camping 8040a0;
+         * tail at 805208): mark the roster entry (+162c), write persist.roster (585a60), notify the wallet
+         * (567990) and call the raid writer (3d3110). With -nosave nothing is written. */
+        uint8_t one = 1;
+        if (hero.entry)
+            WriteProcessMemory(GetCurrentProcess(), (void *)(uintptr_t)(hero.entry + 0x162c), &one, 1, NULL);
+        if (g_recruit_save[0]) g_recruit_save[0]((void *)(uintptr_t)s->campaign, 0);
+        if (g_hamlet_notify) g_hamlet_notify((void *)(uintptr_t)(s->campaign + 0xe50));
+        if (g_recruit_save[3]) g_recruit_save[3]((void *)(image_base() + 0x2a6cf70), 0);
         hamlet_refresh_schedule(hero.id);
         return 1;
     }
@@ -634,17 +648,30 @@ static int hamlet_party_ui(uintptr_t caller) {
 static int (*g_hamlet_party_input)(uintptr_t) = hamlet_party_ui;
 static uint8_t hamlet_skill_input(void *pointer, uint32_t index, unsigned camping, uintptr_t caller) {
     if (!g_hamlet_toggle[camping]) return 0;
-    if (g_game_apply_depth || !hamlet_local_active() || !g_hamlet_skill_input(caller))
+    if (g_game_apply_depth || !hamlet_local_active()) return g_hamlet_toggle[camping](pointer, index);
+    if (!g_hamlet_skill_input(caller)) {
+        /* Owner, 11 Nov: guests could not choose skills, and no guest skill request was ever logged.
+         * Name the caller so the next log shows which screen's button bypasses the shared path. */
+        dd_log("Skill toggle from an unshared caller %llx (role=%s camping=%u index=%u): local only",
+               (unsigned long long)(caller - image_base()), dd_role_name(g_cfg.role), camping, index);
         return g_hamlet_toggle[camping](pointer, index);
-    if (g_cfg.role == DD_ROLE_GUEST && g_skill_requests[camping]) return 0;
+    }
+    if (g_cfg.role == DD_ROLE_GUEST && g_skill_requests[camping]) {
+        dd_log("Skill toggle held: the previous skill request %u has no answer yet (camping=%u)",
+               g_skill_requests[camping], camping);
+        return 0;
+    }
     dd_hamlet s;
     dd_hamlet_hero hero;
     int active = 0;
     uint32_t mask = 0;
     if (!g_hamlet_open_model(&s) || !dd_hamlet_hero_pointer(&s, (uintptr_t)pointer, &hero) ||
         !dd_hamlet_skill(&s, &hero, camping, index, &active) ||
-        !dd_hamlet_skill_mask(&s, &hero, camping, &mask))
+        !dd_hamlet_skill_mask(&s, &hero, camping, &mask)) {
+        dd_log("Skill toggle refused here: hero, learned skill or selection unreadable (role=%s camping=%u index=%u)",
+               dd_role_name(g_cfg.role), camping, index);
         return 0;
+    }
     dd_action a = {0};
     a.kind = DD_ACT_SKILL;
     a.u.skill.hero_id = hero.id;

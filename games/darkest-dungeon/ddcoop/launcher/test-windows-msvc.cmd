@@ -17,6 +17,10 @@ if errorlevel 1 goto failed
 if errorlevel 1 goto failed
 %DDC_CC% /Febuild\win\tests\test_lr_mods.exe launcher\tests\test_lr_mods.c launcher\src\lr_mods.c launcher\src\lr_files.c launcher\src\lr_roster.c
 if errorlevel 1 goto failed
+%DDC_CC% /Febuild\win\tests\test_lr_kit.exe launcher\tests\test_lr_kit.c launcher\src\lr_kit.c launcher\src\lr_mods.c launcher\src\lr_files.c launcher\src\lr_roster.c
+if errorlevel 1 goto failed
+%DDC_CC% /Febuild\win\tests\test_lr_kitsig_win.exe launcher\tests\test_lr_kitsig_win.c launcher\src\lr_kit.c launcher\src\lr_kitsig_win.c launcher\src\lr_mods.c launcher\src\lr_files.c launcher\src\lr_roster.c /link bcrypt.lib
+if errorlevel 1 goto failed
 %DDC_CC% /Febuild\win\tests\test_lr_wire.exe launcher\tests\test_lr_wire.c launcher\src\lr_wire.c
 if errorlevel 1 goto failed
 %DDC_CC% /Febuild\win\tests\test_lr_roster.exe launcher\tests\test_lr_roster.c launcher\src\lr_roster.c
@@ -27,13 +31,13 @@ if errorlevel 1 goto failed
 if errorlevel 1 goto failed
 %DDC_CC% /Febuild\win\tests\test_lr_snapshot.exe launcher\tests\test_lr_snapshot.c launcher\src\lr_snapshot.c launcher\src\lr_files.c launcher\src\lr_wire.c
 if errorlevel 1 goto failed
-%DDC_CC% /Febuild\win\tests\test_lr_core.exe launcher\tests\test_lr_core.c launcher\src\lr_wire.c launcher\src\lr_sock.c launcher\src\lr_relay.c launcher\src\lr_files.c launcher\src\lr_core.c launcher\src\lr_dlc.c launcher\src\lr_mods.c launcher\src\lr_restart.c launcher\src\lr_owners.c launcher\src\lr_roster.c launcher\src\lr_snapshot.c /link /STACK:8388608 ws2_32.lib
+%DDC_CC% /Febuild\win\tests\test_lr_core.exe launcher\tests\test_lr_core.c launcher\src\lr_wire.c launcher\src\lr_sock.c launcher\src\lr_relay.c launcher\src\lr_files.c launcher\src\lr_core.c launcher\src\lr_dlc.c launcher\src\lr_mods.c launcher\src\lr_kit.c launcher\src\lr_restart.c launcher\src\lr_owners.c launcher\src\lr_roster.c launcher\src\lr_snapshot.c /link /STACK:8388608 ws2_32.lib
 if errorlevel 1 goto failed
 %DDC_CC% /LD /Febuild\win\tests\fake-steam\steam_api64.dll launcher\tests\fake_storage_api.c
 if errorlevel 1 goto failed
 %DDC_CC% /Febuild\win\tests\test_lr_prepare_win.exe launcher\tests\test_lr_prepare_win.c launcher\src\lr_snapshot.c launcher\src\lr_files.c launcher\src\lr_wire.c
 if errorlevel 1 goto failed
-for %%t in (wire roster mods owners live_party_win mascot logs dlc restart restart_sim core) do (
+for %%t in (wire roster mods kit kitsig_win owners live_party_win mascot logs dlc restart restart_sim core) do (
   build\win\tests\test_lr_%%t.exe
   if errorlevel 1 goto failed
 )

@@ -149,6 +149,21 @@ static int activity_release_confirmed(void *unused,unsigned kind,unsigned slot,u
     if(!ok && mutated)runtime_sync_stop(3);
     return ok;
 }
+/* What the game's own buttons do after a placement (accept lambda 68b080, after assign 68b0e2) and after
+ * the red X (68c320, after SetHero): mark the hero's roster entry (+162c), then write persist.roster
+ * (585a60), persist.town (591540) and the raid files (3d3110); with -nosave they write nothing. The
+ * shared path only called the native assign/setter, whose own wallet notification saved the gold:
+ * a restart then kept the gold spent and lost the treatment (owner's test77/78 session, 11 Nov). */
+static void activity_persist(uint32_t id,const char *what) {
+    dd_hamlet s;dd_hamlet_hero hero;uint8_t one=1;
+    if(!g_hamlet_open_model(&s))return;
+    if(dd_hamlet_find(&s,id,&hero)==1 && hero.entry)
+        WriteProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)(hero.entry+0x162c),&one,1,NULL);
+    if(g_recruit_save[0])g_recruit_save[0]((void *)(uintptr_t)s.campaign,0);
+    if(g_recruit_save[2])g_recruit_save[2]((void *)(uintptr_t)(s.campaign+0x1138),0);
+    if(g_recruit_save[3])g_recruit_save[3]((void *)(image_base()+0x2a6cf70),0);
+    dd_log("Activity saved after shared %s: roster, town and raid writers called (hero=%u)",what,id);
+}
 static int activity_apply(const dd_action *a) {
     if(a->u.activity.activity>=6 || a->u.activity.epoch!=g_activity_epoch || !activity_seed())return 0;
     dd_activity_res_command c={a->u.activity.op,a->u.activity.activity,a->u.activity.slot,0,
@@ -168,6 +183,8 @@ static int activity_apply(const dd_action *a) {
     if(result!=DD_ACTIVITY_RES_OK && result!=DD_ACTIVITY_RES_UNCHANGED)return 0;
     dd_log("Activity shared: op=%u activity=%u slot=%u hero=%u revision=%u epoch=%u",c.op,c.activity,c.slot,c.hero,
         g_activity_res.slots[c.activity][c.slot].revision,g_activity_epoch);
+    if(result==DD_ACTIVITY_RES_OK && (c.op==DD_ACTIVITY_ACCEPT || c.op==DD_ACTIVITY_RELEASE))
+        activity_persist(c.hero,c.op==DD_ACTIVITY_ACCEPT?"placement":"removal");
     activity_refresh();return !g_town.needs_resync;
 }
 static int activity_submit(unsigned op,unsigned kind,unsigned slot,uint32_t id) {

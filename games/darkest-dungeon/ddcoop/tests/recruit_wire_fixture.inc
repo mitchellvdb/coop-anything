@@ -1,4 +1,4 @@
-/* Protocol34 consistency controls: no native effects or game files. */
+/* Protocol35 consistency controls: no native effects or game files. */
 static void rw_put16(uint8_t *p,uint16_t v) {p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
 static void rw_put32(uint8_t *p,uint32_t v) {for(unsigned i=0;i<4;i++)p[i]=(uint8_t)(v>>(8*i));}
 static uint32_t rw_random(uint32_t *s) {*s^=*s<<13;*s^=*s>>17;*s^=*s<<5;return *s;}
@@ -15,18 +15,18 @@ static dd_msg rw_control(unsigned which) {
         m.type=DD_MSG_POOL;m.u.pool.epoch=5;m.u.pool.anchor=77;
         m.u.pool.digest=UINT64_C(0xfedcba9876543210);m.u.pool.count=7;m.u.pool.op=1;
     } else {
-        m.type=DD_MSG_WEEKLY;m.u.weekly.epoch=4;m.u.weekly.rules=2147483646u;
+        m.type=DD_MSG_WEEKLY;m.u.weekly.epoch=4;m.u.weekly.rules=2147483646u;m.u.weekly.guid=1024;
     }
     return m;
 }
 static void rw_expect_invalid(dd_msg invalid,const uint8_t *valid,size_t n,size_t offset,
                               uint32_t value,unsigned bytes) {
     uint8_t wire[128];dd_msg out={0};size_t used=0;
-    CHECK(!dd_encode(&invalid,wire,sizeof wire),"protocol34 invalid encode type%u at%u",invalid.type,(unsigned)offset);
+    CHECK(!dd_encode(&invalid,wire,sizeof wire),"protocol35 invalid encode type%u at%u",invalid.type,(unsigned)offset);
     memcpy(wire,valid,n);
     if(bytes==1)wire[offset]=(uint8_t)value;else rw_put32(wire+offset,value);
     CHECK(dd_decode(wire,n,&out,&used)==DD_DECODE_BAD_VALUE,
-          "protocol34 invalid decode type%u at%u",invalid.type,(unsigned)offset);
+          "protocol35 invalid decode type%u at%u",invalid.type,(unsigned)offset);
 }
 static void recruit_wire_checks(void) {
     uint8_t wire[128],bad[128],roundtrip[128];dd_msg out={0};size_t used=0;
@@ -86,10 +86,12 @@ static void recruit_wire_checks(void) {
     }
     for(unsigned high=0;high<2;high++) {
         m=rw_control(3);m.u.weekly.epoch=high?UINT32_MAX:1;m.u.weekly.rules=high?2147483646u:1;
+        m.u.weekly.guid=high?DD_PROTO_GUID_MAX:1;
         n=dd_encode(&m,wire,sizeof wire);
-        CHECK(n==24 && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && used==n &&
-              out.u.weekly.epoch==m.u.weekly.epoch && out.u.weekly.rules==m.u.weekly.rules && !out.seq,
-              "weekly exact8-byte body/boundary seed epoch");
+        CHECK(n==28 && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && used==n &&
+              out.u.weekly.epoch==m.u.weekly.epoch && out.u.weekly.rules==m.u.weekly.rules &&
+              out.u.weekly.guid==m.u.weekly.guid && !out.seq,
+              "weekly exact12-byte body/boundary seed epoch guid");
     }
     m=rw_control(3);n=dd_encode(&m,wire,sizeof wire);
     invalid=m;invalid.seq=1;rw_expect_invalid(invalid,wire,n,8,1,4);
@@ -98,11 +100,15 @@ static void recruit_wire_checks(void) {
     for(unsigned i=0;i<4;i++) {
         invalid=m;invalid.u.weekly.rules=bad_rules[i];rw_expect_invalid(invalid,wire,n,20,bad_rules[i],4);
     }
+    static const uint32_t bad_guids[]={0,DD_PROTO_GUID_MAX+1u,UINT32_MAX};
+    for(unsigned i=0;i<3;i++) {
+        invalid=m;invalid.u.weekly.guid=bad_guids[i];rw_expect_invalid(invalid,wire,n,24,bad_guids[i],4);
+    }
     /* A stream buffer may contain the next frame; declared body length may not
      * contain extra bytes or omit any of this frame's fields. */
     uint32_t random=0x74b192a3;
     for(unsigned which=0;which<4;which++) {
-        m=rw_control(which);n=dd_encode(&m,wire,sizeof wire);CHECK(n,"base protocol34 fixture%u",which);
+        m=rw_control(which);n=dd_encode(&m,wire,sizeof wire);CHECK(n,"base protocol35 fixture%u",which);
         for(size_t cap=0;cap<n;cap++)CHECK(!dd_encode(&m,bad,cap),"small encode buffer%u/%u",which,(unsigned)cap);
         for(size_t length=0;length<n;length++)
             CHECK(dd_decode(wire,length,&out,&used)==DD_DECODE_SHORT,"truncation fixture%u/%u",which,(unsigned)length);
@@ -129,5 +135,5 @@ static void recruit_wire_checks(void) {
             }
         }
     }
-    puts("Recruit/pool/weekly protocol34: full64 fingerprints, legacy dismiss shape, canonical fields, all op/player pairs, exact lengths, old33 refusal and100000 mutation roundtrips verified");
+    puts("Recruit/pool/weekly protocol35: full64 fingerprints, legacy dismiss shape, canonical fields, all op/player pairs, exact lengths, old33 refusal and100000 mutation roundtrips verified");
 }

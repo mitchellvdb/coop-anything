@@ -30,6 +30,8 @@
 #include "lr_mascot.h"
 #include "lr_logs.h"
 #include "lr_dlc.h"
+#include "lr_kit.h"
+#include "lr_kitsig_win.h"
 
 /* How long a session waits for Steam to serve a save the game just wrote (LR_PREPARE_UNREAD), trying every 3 s. */
 #define LR_STEAM_WAIT_MS 90000u
@@ -103,6 +105,9 @@ static struct {
     uint64_t heroes_hint_until, heroes_recheck_at;
     uint32_t roster_crc;         /* host: last persist.roster.json read from disk */
     uint64_t last_roster;
+    /* kit updates (UPDATE.md): our own installed, verified kit; the host's offer is asked about once */
+    lr_kit_bundle own_kit;
+    int update_asked, update_prompt;
 } G;
 
 /* ---- helpers ---- */
@@ -1385,6 +1390,7 @@ static void automatic_restart_tick(uint64_t t) {
 
 static void tick_body(void);
 static void overlay_publish(void);
+static void offer_update(void);
 
 static void tick(void) {
     if (G.in_tick) return;
@@ -1397,6 +1403,10 @@ static void tick(void) {
         snprintf(text, sizeof text, "%s", G.deferred);
         G.deferred[0] = 0;
         message(text, G.deferred_icon);
+    }
+    if (G.update_prompt) { /* asked outside the tick, like other dialogs */
+        G.update_prompt = 0;
+        offer_update();
     }
 }
 
@@ -1415,7 +1425,12 @@ static void tick_body(void) {
      * Failures from a button (Host, Join) already show one there. */
     if(lr_restart_active(&G.restart) && G.core.state==LR_ST_FAILED)lr_restart_abort(&G.restart);
     automatic_restart_tick(t);
-    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED && !G.core.resync_requested && !lr_restart_active(&G.restart) && G.restart.phase!=LR_R_FAILED) {
+    if (!G.update_asked && lr_core_update(&G.core)) {
+        G.update_asked = 1;
+        G.update_prompt = 1;
+    }
+    if (G.core.role == LR_ROLE_GUEST && before != LR_ST_FAILED && G.core.state == LR_ST_FAILED && !G.core.resync_requested && !lr_restart_active(&G.restart) && G.restart.phase!=LR_R_FAILED &&
+        !lr_core_update(&G.core)) {
         message(G.core.error, MB_ICONWARNING);
         collect_logs(0);
     }
@@ -1733,6 +1748,100 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+/* ---- kit updates (UPDATE.md) ---- */
+
+/* Our own installed kit: offered to a friend whose launcher is older. Only when ddcoop-kit.sig next to this
+ * DDCoop.exe is signed by the owner, names this build and this runtime, and the installed files match it. */
+static void load_own_kit(lr_config *cfg) {
+    lr_kit_bundle *k = &G.own_kit;
+    wchar_t w[LR_PATH_MAX];
+    char self[LR_PATH_MAX], dir[LR_PATH_MAX], path[LR_PATH_MAX], boot[LR_PATH_MAX], runtime[LR_PATH_MAX];
+    uint8_t *data = NULL;
+    size_t len = 0;
+    memset(k, 0, sizeof *k);
+    cfg->kit_verify = lr_kit_verify_owner;
+    cfg->kit_serial = lr_kit_serial(DDC_VERSION);
+    if (!cfg->kit_serial) {
+        logline("kit: updates are off in this build (%s)", DDC_VERSION);
+        return;
+    }
+    GetModuleFileNameW(NULL, w, LR_PATH_MAX);
+    to_utf8(w, self, sizeof self);
+    snprintf(dir, sizeof dir, "%s", self);
+    char *slash = strrchr(dir, '\\');
+    if (slash) *slash = 0;
+    lr_join(path, sizeof path, dir, "ddcoop-kit.sig");
+    if (!lr_read_file(path, LR_KIT_MANIFEST_MAX, &data, &len)) {
+        logline("kit: no signed manifest next to DDCoop.exe; nothing to offer to friends");
+        return;
+    }
+    memcpy(k->manifest, data, len);
+    k->manifest_len = len;
+    free(data);
+    lr_join(boot, sizeof boot, G.moddir, "SDL2-bootstrap.dll");
+    lr_join(runtime, sizeof runtime, G.moddir, "ddcoop-runtime.dll");
+    const char *paths[LR_KIT_FILES] = {self, boot, runtime};
+    int ok = lr_kit_parse(k->manifest, k->manifest_len, &k->m) && !strcmp(k->m.version, DDC_VERSION) && k->m.kit == cfg->kit;
+    for (int f = 0; ok && f < LR_KIT_FILES; f++) {
+        ok = lr_read_file(paths[f], LR_KIT_MAX_FILE, &k->data[f], &len) && len == k->m.size[f];
+        if (ok) k->got[f] = (uint32_t)len;
+    }
+    if (!ok || !lr_kit_bundle_ok(k, lr_kit_verify_owner, cfg->kit)) {
+        logline("kit: the signed manifest does not match this launcher and its installed files; nothing offered");
+        lr_kit_bundle_free(k);
+        return;
+    }
+    cfg->kit_offer = k;
+    logline("kit: signed DDCoop %s (serial %u) ready to offer to a friend with an older launcher", k->m.version, k->m.serial);
+}
+
+/* Writes the host's checked kit to mods\DDCoop\update\<version>, reads every file back, starts its DDCoop.exe
+ * with --update (which waits for us to close and installs through the normal install path) and closes. */
+static void apply_update(const lr_kit_bundle *k) {
+    char sub[LR_PATH_MAX], dir[LR_PATH_MAX], path[LR_PATH_MAX];
+    if (session_active() || G.prepare || G.game || restore_pending() || darkest_running()) {
+        message("Close Darkest Dungeon and let the current session finish first, then join the host again to update.", MB_ICONWARNING);
+        return;
+    }
+    lr_join(sub, sizeof sub, G.moddir, "update");
+    lr_join(dir, sizeof dir, sub, k->m.version);
+    int ok = lr_make_dirs(dir);
+    for (int f = 0; ok && f < LR_KIT_FILES; f++) {
+        uint8_t *back = NULL;
+        size_t len = 0;
+        lr_join(path, sizeof path, dir, lr_kit_file_names[f]);
+        ok = lr_write_file(path, k->data[f], k->m.size[f]) && lr_read_file(path, LR_KIT_MAX_FILE, &back, &len) &&
+             lr_kit_file_ok(&k->m, f, back, len);
+        free(back);
+    }
+    lr_join(path, sizeof path, dir, "ddcoop-kit.sig");
+    if (ok) ok = lr_write_file(path, k->manifest, k->manifest_len);
+    lr_join(path, sizeof path, dir, "DDCoop.exe");
+    if (!ok || (INT_PTR)ShellExecuteW(NULL, L"open", W(path), L"--update", W(dir), SW_SHOWNORMAL) <= 32) {
+        logline("update: could not prepare or start %s", path);
+        message("The update could not be prepared (see DDCoop-launcher.log). Nothing was changed.", MB_ICONWARNING);
+        return;
+    }
+    logline("update: DDCoop %s started from %s; closing for the install", k->m.version, dir);
+    PostMessageW(G.wnd, WM_CLOSE, 0, 0);
+}
+
+static void offer_update(void) {
+    const lr_kit_bundle *k = lr_core_update(&G.core);
+    char text[700];
+    if (!k) return;
+    snprintf(text, sizeof text,
+             "The host runs a newer DDCoop: %s (you have %s). It is signed by the DDCoop owner, and every file was "
+             "checked.\n\nUpdate now? DDCoop closes, installs the new version and offers to open it again. Your game "
+             "and your saves are not changed.\n\nYour virus scanner may still question the new files; see the kit's README.",
+             k->m.version, DDC_VERSION);
+    if (MessageBoxW(G.wnd, W(text), L"DDCoop update", MB_YESNO | MB_ICONQUESTION) != IDYES) {
+        logline("update: declined by the player");
+        return;
+    }
+    apply_update(k);
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
     (void)prev;
     int argc = 0;
@@ -1813,6 +1922,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
         }
     }
     check_install();
+    load_own_kit(&cfg);
     {
         /* both launchers say which build they run; the host refuses a different one */
         char exe_hex[65], exe[LR_PATH_MAX];

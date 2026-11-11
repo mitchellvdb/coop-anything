@@ -54,6 +54,7 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_selection_layout.py "%DD_GAME_EXE%"
     python -I tests/test_prop_choice_layout.py "%DD_GAME_EXE%"
     python -I tests/test_activity_weekly_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_camp_guid_layout.py "%DD_GAME_EXE%"
     python -I tests/test_recruit_layout.py "%DD_GAME_EXE%"
     python -I tests/test_week_transition_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py

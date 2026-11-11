@@ -26,7 +26,8 @@ static void round_trip(const lr_msg *m) {
     CHECK(lr_encode(&d, again) == n && memcmp(buf, again, n) == 0);
     lr_msg scratch;
     CHECK(!lr_decode(buf, n, 1 - lr_channel_of(m->type), &scratch)); /* wrong channel */
-    if (m->type != LR_STREAM_DATA && m->type != LR_SAVE_CHUNK && m->type != LR_ROSTER && (m->type != LR_MODS || !m->len)) /* variable length */
+    if (m->type != LR_STREAM_DATA && m->type != LR_SAVE_CHUNK && m->type != LR_ROSTER && m->type != LR_KIT_OFFER &&
+        m->type != LR_KIT_CHUNK && (m->type != LR_MODS || !m->len)) /* variable length */
         CHECK(!lr_decode(buf, n - 1, lr_channel_of(m->type), &scratch));
 }
 
@@ -57,6 +58,19 @@ int main(void) {
     memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 2; m.data = data; m.len = 400; round_trip(&m);
     memset(&m, 0, sizeof m); m.type = LR_MODS; m.id = 32; m.data = data; m.len = LR_CHUNK; round_trip(&m);
     memset(&m, 0, sizeof m); m.type = LR_BYE; m.a = LR_BYE_MODS; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_KIT_OFFER; m.id = 77; m.data = data; m.len = 600; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_KIT_CHUNK; m.id = 2; m.a = 32000; m.data = data; m.len = LR_CHUNK; round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_KIT_END; round_trip(&m);
+    {
+        uint8_t w[LR_MAX_MSG];
+        lr_msg d;
+        memset(&m, 0, sizeof m); m.type = LR_KIT_OFFER; m.id = 0; m.data = data; m.len = 10; CHECK(lr_encode(&m, w) == 0); /* serial 0 */
+        m.id = 5; m.len = 0; CHECK(lr_encode(&m, w) == 0);
+        memset(&m, 0, sizeof m); m.type = LR_KIT_CHUNK; m.id = 3; m.data = data; m.len = 10; CHECK(lr_encode(&m, w) == 0); /* file 3 */
+        m.id = 2; size_t n = lr_encode(&m, w);
+        w[4] = 3; CHECK(n && !lr_decode(w, n, LR_CH_CONTROL, &d));
+        w[4] = 2; CHECK(lr_decode(w, n, LR_CH_CONTROL, &d) && !lr_decode(w, n, LR_CH_STREAM, &d));
+    }
     CHECK(strstr(lr_bye_text(LR_BYE_MODS), "mod") != NULL);
     {
         uint8_t w[LR_MAX_MSG];

@@ -303,24 +303,16 @@ static int tutorial_open(void) {
     uint32_t state = 0;
     return g_tutorial_panel && safe_read((uintptr_t)g_tutorial_panel + 0x58, &state, 4) && state && (state < 5 || state > 7);
 }
+/* Each copy closes its own tutorial popup. It only informs, and a popup does not always open on every copy
+ * (tutorials already seen, or shown at a different moment): a shared close then waited for the host's popup and
+ * the guest could not close its own (owner's runs, 11 Nov after a camp and 20:03:58-20:04:08: four refusals,
+ * the host waited for that window, Resync). The walk check still waits while any player has a window open. */
 static void __fastcall hook_panel_close(void *functor) {
     uint64_t panel = 0;
-    walk_view v;
-    dd_action a;
     if (!g_panel_close) return;
-    if (g_game_apply_depth || !walk_shared() || !safe_read((uintptr_t)functor + 8, &panel, 8) || !panel || panel != g_tutorial_panel || !g_walk_view(&v)) {
-        g_panel_close(functor);
-        return;
-    }
-    memset(&a, 0, sizeof a);
-    a.kind = DD_ACT_ITEM;
-    a.u.item.op = DD_ITEM_OP_TUTORIAL;
-    a.u.item.hero = 255;
-    a.u.item.area = v.area;
-    memcpy(&a.u.item.pos, &v.pos, 4);
-    a.u.item.rules = battle_rules();
-    item_send(&a);
-    if (g_cfg.role == DD_ROLE_HOST) g_panel_close(functor);
+    if (!g_game_apply_depth && walk_shared() && safe_read((uintptr_t)functor + 8, &panel, 8) && panel && panel == g_tutorial_panel)
+        dd_log("Item: tutorial popup closed here only (role=%s)", dd_role_name(g_cfg.role));
+    g_panel_close(functor);
 }
 /* The player clicked another hero, outside a fight. A curio or item then uses that hero, so the other copy must have it too (owner's run, 16:12: the destress went to the wrong hero). */
 static void walk_selection_poll(const walk_view *v) {
@@ -377,6 +369,22 @@ typedef void(__fastcall *camp_leave_fn)(void *);
 static camp_meal_fn g_camp_meal;
 static camp_skill_fn g_camp_skill;
 static camp_leave_fn g_camp_leave;
+/* 70b7c0 (Leave) does nothing while overlay+24 is 0. The overlay's frame update 70a1e0 keeps +24 at 0 while
+ * another panel is open over the camp (display+31a0), and the leave itself runs at the end of the fade it starts
+ * (lambda 70b850: camp part 7, leave, +24 = 0). Applying Leave on a copy whose camp is inactive therefore left that
+ * copy in camp while the others walked on (owner test74, 11 Nov). Wait until the camp is active here. */
+#define DD_ITEM_CAMP_ACTIVE 0x24u
+static const char g_camp_leave_wait_text[] = "Close the open window: the other player has left the camp, and this camp can only follow once it is not covered.";
+static int g_camp_leave_wait_told;
+static int camp_leave_ready(const walk_view *v) {
+    uint8_t active = 0;
+    return safe_read((uintptr_t)v->display + DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE, &active, 1) && active;
+}
+static void camp_leave_wait_notice(int waiting) {
+    if (waiting && !g_camp_leave_wait_told) shop_notice(g_camp_leave_wait_text);
+    if (!waiting && g_camp_leave_wait_told) shop_notice_clear(g_camp_leave_wait_text);
+    g_camp_leave_wait_told = waiting;
+}
 static int camp_order(uint8_t op, dd_action *a, walk_view *v) {
     uint32_t stage = 0;
     if (!item_order(op, a, v) || v->battle || !safe_read((uintptr_t)v->raid + DD_ITEM_CAMP_STAGE, &stage, 4)) return 0;
@@ -981,11 +989,24 @@ static int loot_settled(const walk_view *v) {
 /* The town after a raid, as three numbers both logs can show: the currencies (vector at campaign+e70, 0x48 each: amount +0, kind +44),
  * the heroes in roster order (vector at campaign+20: id at the entry, Hero at entry+8 with its stress and trinkets) and their count.
  * Only in town: the town display is there and no raid is. */
+/* The wallet as the town check last read it: currencies sorted by kind, empty ones left out. The order of the
+ * native vector and a currency the engine created with 0 on one copy only are not differences (owner test77:
+ * a currency mismatch after a raid whose loot, rewards and conversions were identical in both game logs). */
+static uint32_t g_town_wallet[32][2];
+static unsigned g_town_wallet_count;
+static void town_wallet_text(char *out, size_t cap) {
+    size_t k = 0;
+    out[0] = 0;
+    for (unsigned i = 0; i < g_town_wallet_count && k + 24 < cap; i++)
+        k += (size_t)snprintf(out + k, cap - k, "%s%08x=%u", i ? " " : "", g_town_wallet[i][0], g_town_wallet[i][1]);
+}
 static int town_check_here(uint32_t out[3]) {
     dd_hamlet s;
     walk_view v;
     uint64_t panel = 0, begin = 0, end = 0;
     uint32_t money = 2166136261u, heroes = 2166136261u;
+    uint32_t wallet[32][2];
+    unsigned n = 0;
     if (g_walk_view(&v) || !g_hamlet_open_model(&s) || dd_hamlet_panel(&s, 0xec00a0, &panel) != 1) return 0;
     if (!hamlet_read(&s, s.campaign + 0xe70, &begin, 8) || !hamlet_read(&s, s.campaign + 0xe78, &end, 8) || end < begin ||
         (end - begin) % 0x48 || (end - begin) / 0x48 > 32)
@@ -993,9 +1014,20 @@ static int town_check_here(uint32_t out[3]) {
     for (uint64_t p = begin; p < end; p += 0x48) {
         uint32_t amount = 0, kind = 0;
         if (!hamlet_read(&s, p, &amount, 4) || !hamlet_read(&s, p + 0x44, &kind, 4)) return 0;
-        money = (money ^ kind) * 16777619u;
-        money = (money ^ amount) * 16777619u;
+        if (!amount) continue;
+        unsigned at = n;
+        while (at && wallet[at - 1][0] > kind) { wallet[at][0] = wallet[at - 1][0]; wallet[at][1] = wallet[at - 1][1]; at--; }
+        if (at && wallet[at - 1][0] == kind) return 0; /* the same currency twice: not a wallet we understand */
+        wallet[at][0] = kind;
+        wallet[at][1] = amount;
+        n++;
     }
+    for (unsigned i = 0; i < n; i++) {
+        money = (money ^ wallet[i][0]) * 16777619u;
+        money = (money ^ wallet[i][1]) * 16777619u;
+    }
+    memcpy(g_town_wallet, wallet, sizeof wallet[0] * n);
+    g_town_wallet_count = n;
     if (!hamlet_read(&s, s.campaign + 0x20, &begin, 8) || !hamlet_read(&s, s.campaign + 0x28, &end, 8) || end < begin ||
         (end - begin) % 8 || (end - begin) / 8 > DD_HAMLET_HEROES)
         return 0;
@@ -1039,6 +1071,11 @@ static void town_check_poll(void) {
     a.u.item.amount = g_town.next_apply_seq;
     activity_new_epoch(a.u.item.amount);
     dd_log("Town: back from the raid; currencies %08x, heroes %08x, %u heroes", d[0], d[1], d[2]);
+    {
+        char wallet[32 * 24 + 1];
+        town_wallet_text(wallet, sizeof wallet);
+        dd_log("Town: wallet here %s", wallet);
+    }
     dd_town_host_observed(&g_town, &a);
     pool_start();
 }
@@ -1057,6 +1094,11 @@ static int town_check_apply(const dd_action *a) {
     }
     dd_log("Town: differs from the host after the raid: currencies %08x/%08x, heroes %08x/%08x, count %u/%u (here/host)", d[0], a->u.item.type, d[1],
            a->u.item.id, d[2], a->u.item.round);
+    {
+        char wallet[32 * 24 + 1];
+        town_wallet_text(wallet, sizeof wallet);
+        dd_log("Town: wallet here %s (compare with the host's \"Town: wallet here\" line)", wallet);
+    }
     runtime_sync_stop(3);
     return 0; /* Never acknowledge a known different town or continue the FIFO. */
 }
@@ -1121,11 +1163,15 @@ static int item_gate(const dd_msg *m) {
         go = 1;
     } else if (item_is_camp(a->u.item.op)) {
         uint32_t stage = 0;
-        limit = 30000;
+        /* A player may be reading a panel over the camp before Leave can follow; give them time and say why. */
+        limit = a->u.item.op == DD_ITEM_OP_CAMP_LEAVE ? 300000 : 30000;
         go = have && safe_read((uintptr_t)v.raid + DD_ITEM_CAMP_STAGE, &stage, 4) && stage == a->u.item.round;
+        if (a->u.item.op == DD_ITEM_OP_CAMP_LEAVE && go) {
+            go = camp_leave_ready(&v);
+            camp_leave_wait_notice(!go);
+        }
     } else if (a->u.item.op == DD_ITEM_OP_TUTORIAL) {
-        limit = 5000;
-        go = tutorial_open();
+        go = 1; /* No longer sent; an old order closes a popup that is open here, else does nothing. */
     } else if (a->u.item.state) {
         limit = 30000;
         go = have && battle_read(&v, &b) && battle_place_compare(&b, a->u.item.round, a->u.item.turn, a->u.item.state) >= 0;
@@ -1279,7 +1325,13 @@ static int item_apply(const dd_action *a) {
             memcpy((void *)(uintptr_t)(v.display + DD_ITEM_CAMP_OVERLAY + 0x10), &none, 8);
         } else {
             uint64_t functor[2] = {0, v.display + DD_ITEM_CAMP_OVERLAY};
+            camp_leave_wait_notice(0);
             if (!g_camp_leave) return refused;
+            if (!camp_leave_ready(&v)) {
+                /* The native call would silently do nothing here; never acknowledge a leave that did not start. */
+                dd_log("Item: camp leave refused: this camp is covered by another panel (inactive)");
+                return refused;
+            }
             g_camp_leave(functor);
         }
         return 1;
@@ -1305,8 +1357,8 @@ static int item_apply(const dd_action *a) {
     if (a->u.item.op == DD_ITEM_OP_TUTORIAL) {
         uint64_t functor[2] = {0, g_tutorial_panel};
         if (!g_panel_close || !tutorial_open()) {
-            dd_log("Item: no tutorial popup open here");
-            return refused;
+            dd_log("Item: no tutorial popup open here; nothing to close");
+            return 1;
         }
         dd_log("Item: tutorial popup closed (role=%s)", dd_role_name(g_cfg.role));
         g_panel_close(functor);

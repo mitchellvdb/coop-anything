@@ -1,59 +1,130 @@
-# Development candidate: test75 / duo58 (Codex, 11 Nov 2026)
+# Current: test80 (Claude Code, 11 Nov 2026): test79 + local tutorial popups, curio double clicks
 
-Latest delivered gameplay baseline remains74. Claude's current repo baseline
-296222c adds campaign mod preflight and the Stagecoach task after an owner raid.
+- **19:49:37 stop (owner, test78):** player 2 clicked an open curio three times. Each duplicate OPEN made the host
+  send its Rules number (already past the curio's draws) before finding the overlay open; the guest took it over
+  before its own curio drew, rolled differently, had no loot window, and the host's Take all failed there after
+  30 s. Now a duplicate/refused OPEN returns before walk_rules_send (2135ec0).
+- **20:04:12 stop:** player 2 had a tutorial popup the host did not; the shared close was refused four times while
+  the host waited for that window, then Resync. Tutorial popups now close locally on each copy; an old TUTORIAL
+  order closes an open popup or does nothing.
+- **Skills:** player 2 sent skill toggles at 19:36:52-19:37:01 (hero 1078); one was applied, five refused by the
+  host's precheck. The host now logs which value differed. Player 2's own logs were not sent.
 
-Implemented candidate75:
-- Logical Stagecoach candidate/pool fingerprints (ID, availability, class/name,
-  XP/equipment, learned/selected skills and persisted quirks). Same-ID different
-  content refuses before local native clone. No raw pointer/padding hashing.
-- Anchored all-peer pool probe/report/release after load/raid return. Recruitment,
-  provisions and departure wait for every connected player's matching pool.
-  No manual host approval. FIFO and late-control/late-town races are covered.
-- Native RaidFinish shares host Rules before week generation, including automatic
-  wipes. Network worker only latches data; bounded wait pumps no game/FIFO.
-  Always complete native once on failure; exact automatic activity work finishes
-  after STOP while player UI remains blocked. No old save repair claimed.
-- Claude's campaign mod check retained, with unknown/empty/duplicate layouts and
-  linked/unreadable/incompletely enumerated mod trees now refused before writes.
-- Runtime34/exacthello75, launcher wire3;137 pins/133 addresses (132 native
-  function entries plus1 witness),89 hooks. See runtime/STAGECOACH-WEEK.md.
+- 0.5.0-test80: C:\dev\ddcoop-handoff\0.5.0-test80\DDCoop-install.zip
+  Kit SHA256 63133acf3f00f4782ad672139a4c98a3ca74c26af94b31881e1b25cf6de05ea3
+  Runtime a031e1a2a22e05029d5eeab5408d47827d828a56b02754b042b46109ca61fce1
+  Launcher 6c91d5043ffb7f48c2f6ab6bfdf4a2d639f3ca4f2d160d0c21eb95ba2cf9d4b5
+  ddcoop-kit.sig (serial 80) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests 0 failures; launcher suites passed except test_lr_prepare_win (refused: the owner's
+  game was running). Not tested in a real session. test79 was built but superseded before the owner installed it.
 
-Validation completed: native/protocol/fuzz/FIFO and MSVC ASan bridge (all4 roles,
-3guests, cross-thread week seed, anchored pool, delayed native/UI frames,
-STOP/disconnect/timeouts and full real queues),16 native proofs, both launcher
-unit/core/fake-transfer suites, mod14-failure-before-fix/native+ASan regressions,
-isolated overlay/English preview/GIF and static analysis. Old74 control accepts
-sameID40/different named heroes on both copies. New tests prevent local clone.
-Native effects modeled; no real game launched. Linux/MinGW/Capstone not run.
+## test79 (Claude Code, 11 Nov 2026): Tavern/Abbey and skill choices saved
 
-RELEASE PENDING: preparation/restore helper integration tests must run with all
-real Darkest processes closed (BUILD.md). Owner is still playing. The baseline
-helper refused correctly while the game was running; this is not a passing
-restore test. No75 player kit has been delivered or installed. Existing kits and
-Cdev checkouts/saves untouched. Pending artifacts and source are in the workspace
-outputs/0.5.0-test75-pending and outputs/0.5.0-duo58-pending.
+- **Finding (owner, test77/78):** Tavern/Abbey treatments done before a restart were gone, the gold stayed spent.
+  The host's save (profile_5, read only) had every Tavern/Abbey slot empty, also for the test78 session;
+  persist.town.json was last written at 19:25 (Stagecoach recruit), estate later. The game's accept button
+  (68b080) and red X (68c320) call the roster/town/raid writers after the native change; the shared path did
+  not (the assign only notifies the wallet). The sheet's skill toggles (805208) also write the roster.
+- **test79 (ab2862e, runtime 4b22351f):** every copy calls the same writers after a shared placement, removal
+  or skill toggle (guests write nothing with -nosave). Proof: tests/test_town_save_layout.py. Guest skill
+  clicks that stop before the host now log the reason or the unshared caller: no guest skill request appears
+  in any log so far, so the owner's "only the host can choose skills" is not explained yet.
+- **Update via the host works:** in the owner's 19:28 session both test77 friends were offered test78, left
+  and rejoined 11 s later with the new kit.
+- Open: Stagecoach "candidate content mismatch" at 19:23:16 and 19:24:43 (test77, right after resyncs) not
+  analysed yet. The test78 wallet logging has not seen a raid yet.
 
-Next action: after the owner closes every game, run each built launcher's fake-
-Steam preparation test; then package normal75/duo58, verify hashes/patches/payload,
-publish final release metadata and deliver new Cdev version folders. Preserve
-immutable older outputs. Do not rebuild runtime unless source changes; pins below
-match the compiled source. Host checkbox/guest-nosave/selected slots1..9 retained.
+- 0.5.0-test79: C:\dev\ddcoop-handoff\0.5.0-test79\DDCoop-install.zip
+  Kit SHA256 d4a6ad5e2d228bbbc43ec3face717e0fd6e02e31390af1bf33b96db8859ca394
+  Runtime 4b22351f1eaa444961a3263d8f32d0cbfbb098dcf3e60d12aac4d47d19e86b14
+  Launcher e986121cfd357b214748152583761a2d1eb71a3e31454d9b5b8f675b88686bb7
+  ddcoop-kit.sig (serial 79) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests 0 failures; launcher suites passed except test_lr_prepare_win (refused: the owner's
+  game was running). Not tested in a real session. No duo kit for test79.
 
-Open: live normal mission return/recruit verification; full native/live DLC,
-direct loot-to-hero equip, complete state checks and older provisions crash.
-Checkpoint recovery may lose unsaved progress; solo batch guests restart manually.
-Written by Codex; Claude Code's launcher work and prior contributions retained.
+## test78 (Claude Code, 11 Nov 2026): after-raid currencies per kind; first update via the host
 
-[
-  {
-    "version": "0.5.0-test75",
-    "runtime_sha256": "d17d5b42b35ab76c07de143432a0f159ae8c0e1f0d6186ce44018100dbae384f",
-    "launcher_sha256": "ce0b30a4cb1f6afd76dfde6073425abdbf43be94fd0885bf1e3ec3deb0709000"
-  },
-  {
-    "version": "0.5.0-duo58",
-    "runtime_sha256": "60708a9f365791e06cfc5249b3dcc8b804d09ccf6218ca59ae777dfef54741c6",
-    "launcher_sha256": "61862b0a54c5bbf3a82803d8bfd013eebb088025bbec8c83b564aacb5899b692"
-  }
-]
+- **Finding (owner test77, 19:18):** after a raid the guest stopped with "Town: differs ... currencies
+  df398e40/c2891da7, heroes equal". Both game logs show identical loot rolls (gold included), heirloom
+  conversions, quest rewards and town entry; the week Rules and guid counter were shared correctly. The old
+  digest hashed the native wallet vector in its order including zero currencies and logged no amounts.
+- **test78 (4120b3e, runtime b6a63a34):** the check sorts currencies by kind, skips empty ones, refuses a
+  duplicate kind, and logs "Town: wallet here <kind>=<amount> ..." (host every check, guest on a mismatch). If
+  it recurs, those two lines name the currency. Not a proven fix: the cause is not identified yet.
+- **First real update test:** only the host installs test78 by hand; friends on test77 are offered it.
+
+- 0.5.0-test78: C:\dev\ddcoop-handoff\0.5.0-test78\DDCoop-install.zip
+  Kit SHA256 1117fad94a2515c64c10acb0a6003873911983c9c4dabdbc8b31b8f7df42ac62
+  Runtime b6a63a34ef5b9ab2a2b3e296a0605e5966a9c27555481b1d7c32855eb6765526
+  Launcher 19333028efbca1796b9298858086f868e79e0ebe9bfa6a241e628b5fb9d183aa
+  ddcoop-kit.sig (serial 78) verified with the launcher's code and the owner key.
+- Validation: runtime tests 0 failures; launcher suites passed except test_lr_prepare_win, which refused because
+  the owner's game was running (launcher code unchanged since test77, where it passed); Defender: no threats.
+  No duo kit for test78.
+
+## test77 (Claude Code, 11 Nov 2026): updates from the host; gameplay as test76
+
+test77 adds signed kit updates to the launcher (launcher/UPDATE.md, commits 9b5483d, 4217a5b): a friend with an
+older kit is offered the host's own installed kit and can install it with one click. Only kits signed with the
+owner's key (tools/sign_kit.ps1; private key DPAPI-encrypted in %USERPROFILE%\DDCoop-signing, public key
+LR_KIT_PUBKEY) are accepted. test77 must be installed by hand once; it uses the test76 runtime (719b6e74), so
+test76 and test77 players play together. Offers start working with the next kit that changes the runtime.
+
+- 0.5.0-test77: C:\dev\ddcoop-handoff\0.5.0-test77\DDCoop-install.zip
+  Kit SHA256 22acda7f382d09272280165aa29c2a078bc7ecf04f4aa2813f8fcce2e46b41a9
+  Runtime 719b6e74b13b25826ae764aff36f8e420e258c839ed8f1df6ad5289be7c89db6 (same as test76)
+  Launcher 57f6a71e9fa677731dffdec9f8a9278318da40d85c240fb8b23525e3a2e371dd
+  Signed manifest ddcoop-kit.sig (serial 77) checked with the launcher's own code and key: valid.
+- Validation: launcher Windows suites (incl. test_lr_kit, test_lr_kitsig_win, core update scenario,
+  test_lr_prepare_win) and Linux ASan/UBSan suite all passed; Defender finds no threat in the kit. Not tested:
+  installing an update against a real install (first possible with the next kit). duo59 stays the duo kit.
+- Every later test kit: build, then `tools/sign_kit.ps1 -Sign <kit folder> -Version 0.5.0-testNN` before
+  tools/make_dropkit.py, so the zip carries ddcoop-kit.sig.
+
+## test76 / duo59 (Claude Code, 11 Nov 2026, on top of Codex's test75)
+
+The owner asked Claude Code to fix the two findings from the 11 Nov sessions while Codex was unavailable.
+Runtime code is Codex's area (AGENTS.md section 3); these are exceptions at the owner's explicit request, each
+in its own commit. Codex: please review 0117582 and 5dc63f3.
+
+- **Camp Leave together (0117582).** 70b7c0 (Leave) returns at once while camp overlay+0x24 is 0; the overlay's
+  frame update 70a1e0 holds +0x24 at 0 while another panel covers the camp. A shared Leave was acknowledged
+  on a covered copy that never left camp (the guest then fought alone; the tutorial popup the host could not
+  close was a symptom). The Leave order now waits at the FIFO head until +0x24 is set (up to 5 minutes, with
+  a notice to close the open window); the apply refuses a Leave that could not start.
+- **Same Stagecoach ids after a raid (5dc63f3).** Campaign+0x58 is nextGuid. New heroes take guid =
+  nextGuid++, and so do listener handles that screens like the roster panel (6b48d0) register whenever a
+  player opens them, so every copy's counter drifts with its own UI use (host 1-2 ahead in the logs; even the
+  fight's monsters had other guids). The test75 RaidFinish boundary now also carries the counter: the host
+  announces its own value + 1024 in DD_MSG_WEEKLY (body 12 bytes) and every copy sets campaign+0x58 to it
+  right before the native RaidFinish. A copy whose counter is already higher refuses (never moved down: a
+  live handle could be reused). Protocol 35, runtime version 0.5.0-test76.
+- New read-only proof tests/test_camp_guid_layout.py pins both assumptions in the exe.
+
+test75 (Codex) is unchanged underneath: Stagecoach pool comparison after load/raid, content fingerprint per
+recruit, shared week Rules at RaidFinish, stricter campaign mod check (runtime/STAGECOACH-WEEK.md,
+launcher/MODS.md).
+
+Validation (Claude Code, every Darkest process closed): runtime\test-windows-msvc.cmd 0 failures (new camp
+and guid regressions included); all 17 tests/test_*_layout.py proofs PASS against the installed exe; launcher
+Windows suites passed for both the test76 and the duo59 build, including test_lr_prepare_win. Launcher code
+is unchanged since test75 except the runtime pin (Linux suite last run on test75). Not tested: a real game
+session.
+
+- 0.5.0-test76: C:\dev\ddcoop-handoff\0.5.0-test76\DDCoop-install.zip
+  Kit SHA256 33351744cf883e9284396ff7242b2300f45927128569db8bf6724b98f8f20bcc
+  Runtime 719b6e74b13b25826ae764aff36f8e420e258c839ed8f1df6ad5289be7c89db6
+  Launcher 9e0af7c1600708cfe093b1aa9ea93d7d81e9c407712654d8c7987247bcdd8949
+- 0.5.0-duo59: C:\dev\ddcoop-handoff\0.5.0-duo59\DDCoop-install.zip
+  Kit SHA256 21449f0fa488dbab36f75707492b14d9283b90c16def10fb631fcb5228997805
+  Runtime 5fbf47a9983027a79346acbc31e9e9f7f5b744c7bae8d7e14a59a98f3a5daae1
+  Launcher cea1e2d360099c1584c0f832781f10d461ff06e09804a7dec88f04db651bb58c
+  (duo59 differs from git only in launcher/src/lr_hashes.h and TESTSTAPPEN-test76.txt; its source-full.zip
+  holds both.)
+
+Next owner check (TESTSTAPPEN-test76.txt): camp once with one player covering the camp while the other
+leaves; after a mission compare the new Stagecoach on every copy and recruit from different players.
+
+Open: other in-week UI-driven guid use (e.g. a hero created outside RaidFinish) is not shared; live DLC,
+direct loot-to-hero equip, complete state checks, older provisions crash. Unchanged rules: guests -nosave, host
+save checkbox, selected slots 1..9, profile_9 forbidden, no Circus/PlayFab path.

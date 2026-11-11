@@ -44,6 +44,9 @@ typedef enum {
     LR_RESTART = 21,     /* generation=id, phase=a, runtime kit=b; automatic checkpoint restart */
     LR_CLAIM = 20,       /* guest -> host: hero id in id, a = 1 tick (mine) / 0 untick */
     LR_MODS = 22,        /* host -> guest: the campaign's mods with fingerprints (count in id, lr_mods body in data, may be empty) */
+    LR_KIT_OFFER = 23,   /* host -> a friend with another kit: the signed manifest (serial in id, lr_kit text in data) */
+    LR_KIT_CHUNK = 24,   /* host -> that friend: kit file index (0..2) in id, offset in a, bytes */
+    LR_KIT_END = 25,     /* host -> that friend: all kit files sent */
 } lr_type;
 
 typedef enum {

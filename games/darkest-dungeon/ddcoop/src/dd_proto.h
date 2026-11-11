@@ -15,7 +15,8 @@
 #include "dd_trinket.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
-#define DD_PROTO_VERSION 34 /* candidate content, pool barrier and weekly Rules seed */
+#define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
+#define DD_PROTO_VERSION 35 /* weekly message also carries the shared campaign guid counter */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -123,7 +124,7 @@ typedef struct {
         struct { int32_t direction; } intent;                     /* -1, 0 or +1 */
         struct { uint32_t slot; } load;                           /* 1..9 */
         struct {uint32_t epoch,anchor;uint64_t digest;uint32_t count;uint8_t op,player;} pool;
-        struct {uint32_t epoch,rules;} weekly;
+        struct {uint32_t epoch,rules,guid;} weekly; /* guid: Campaign nextGuid every copy takes before RaidFinish */
         struct { uint32_t busy; } busy;                           /* 0 or 1 */
     } u;
 } dd_msg;

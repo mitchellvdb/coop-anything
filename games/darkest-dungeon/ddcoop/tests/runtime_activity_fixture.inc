@@ -100,6 +100,8 @@ static void activity_bridge_checks(void) {
         dd_msg request={0};request.type=DD_MSG_TOWN_REQUEST;request.u.town.request_id=(initiator<<24)|3;
         request.u.town.action=ar_action(3,0,0,1,2);ar_receive(request);accept=last_message;
         CHECK(accept.type==DD_MSG_TOWN_APPLY && accept.seq==2 && ar_commits==1 && !ar_clears && !ar_unsafe);
+        /* Saved as the accept button does: roster entry marked, roster, town and raid writers once each. */
+        CHECK(hm_saves[0]==1 && hm_saves[2]==1 && hm_saves[3]==1 && hm_entries[0][0x162c]==1);
         /* Native model occupied + stale NULL picture reproduced the owner's
          *7e20ac crash. New drop guard never invokes the unsafe native path. */
         putptr(ar_widgets[0][0]+0x28,0);
@@ -110,16 +112,17 @@ static void activity_bridge_checks(void) {
         request.u.town.request_id=0x03000004u;request.u.town.action=ar_action(4,0,0,1,3);
         ar_receive(request);release=last_message;
         CHECK(release.type==DD_MSG_TOWN_APPLY && release.seq==3 && ar_clears==1 && !ar_shown(0,0));
+        CHECK(hm_saves[0]==2 && hm_saves[2]==2 && hm_saves[3]==2); /* and as the red X does */
         CHECK(!ar_unsafe && !g_town.needs_resync);
         for(unsigned receiver=1;receiver<=3;receiver++) {
             ar_reset(DD_ROLE_GUEST,receiver!=2);g_cfg.player=(int)receiver;
-            ar_receive(reserve);CHECK(!g_town.needs_resync && !ar_commits && !ar_clears);
+            ar_receive(reserve);CHECK(!g_town.needs_resync && !ar_commits && !ar_clears && !hm_saves[2]);
             if(receiver==2)ar_widget(0,0); /* first open after another player's drop */
             CHECK(ar_shown(0,0)==(uintptr_t)(hm_entries[0]+8));
             unsigned before=sent;CHECK(!hook_activity_drop(ar_widgets[0][0]+0x10,NULL,drag));
             CHECK((unsigned)sent==before && !ar_unsafe && ar_shown(0,0)==(uintptr_t)(hm_entries[0]+8));
-            ar_receive(accept);CHECK(ar_commits==1 && !g_town.needs_resync);
-            ar_receive(release);CHECK(ar_clears==1 && !ar_shown(0,0) && !g_town.needs_resync);
+            ar_receive(accept);CHECK(ar_commits==1 && !g_town.needs_resync && hm_saves[2]==1);
+            ar_receive(release);CHECK(ar_clears==1 && !ar_shown(0,0) && !g_town.needs_resync && hm_saves[2]==2);
             CHECK(g_activity_res.slots[0][0].revision==4 && !ar_unsafe);
         }
     }
@@ -158,9 +161,9 @@ static void activity_bridge_checks(void) {
     CHECK(!hook_activity_drop(ar_widgets[0][0]+0x10,NULL,drag));hook_activity_source_remove(ar_widgets[0][0],drag);
     CHECK(!ar_unsafe && !ar_commits && !ar_clears);
     ar_reset(DD_ROLE_HOST,0);ar_locked=1;CHECK(!activity_submit(1,0,0,1) && !ar_commits && !g_activity_res.slots[0][0].hero);
-    /* A partial native success cannot be ACKed or repeated. */
+    /* A partial native success cannot be ACKed or repeated, and is not saved. */
     ar_reset(DD_ROLE_HOST,1);CHECK(activity_submit(1,0,0,1));ar_partial=1;
-    CHECK(!activity_submit(3,0,0,1) && g_town.needs_resync && ar_commits==1);
+    CHECK(!activity_submit(3,0,0,1) && g_town.needs_resync && ar_commits==1 && !hm_saves[2]);
     activity_reset();g_activity_kind=old_kind;g_activity_model=old_model;g_original_assign=old_assign;
     g_activity_user_clear=activity_user_clear;
     puts("Activity bridge: all4 initiators/3 guests, closed host panel, live/reopened widgets, first-wins slot/hero identity, commit once, confirmed clear, source cleanup and observed NULL-widget drop guard; epochs/navigation/STOP/partial effects verified");

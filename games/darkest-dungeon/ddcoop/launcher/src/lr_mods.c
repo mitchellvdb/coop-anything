@@ -124,11 +124,11 @@ static void xml_value(const char *dir, const char *tag, char *out, size_t cap) {
             static const char *const ent[][2] = {{"&amp;", "&"}, {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""}, {"&apos;", "'"}};
             size_t k = 0;
             while (a < b && k + 1 < cap) {
-                size_t e = 0, len = 1;
+                size_t e = 0, step = 1;
                 const char *put = NULL;
                 for (; e < 5; e++)
                     if ((size_t)(b - a) >= strlen(ent[e][0]) && !strncmp(a, ent[e][0], strlen(ent[e][0]))) break;
-                if (e < 5) put = ent[e][1], len = strlen(ent[e][0]);
+                if (e < 5) put = ent[e][1], step = strlen(ent[e][0]);
                 if (!put && ((unsigned char)*a & 0xc0) == 0xc0) { /* a whole UTF-8 character, or stop */
                     size_t need = ((unsigned char)*a & 0xe0) == 0xc0 ? 2 : ((unsigned char)*a & 0xf0) == 0xe0 ? 3 : 4;
                     if (need > (size_t)(b - a) || k + need >= cap) break;
@@ -137,7 +137,7 @@ static void xml_value(const char *dir, const char *tag, char *out, size_t cap) {
                     continue;
                 }
                 out[k++] = put ? *put : ((unsigned char)*a < 0x20 || *a == 0x7f ? ' ' : *a);
-                a += len;
+                a += step;
             }
             out[k] = 0;
         }

@@ -268,11 +268,13 @@ static void selection_and_popup_checks(void) {
         CHECK(wk_select_index == 2 && g_walk_selected == 2 && !sent);
         { int32_t field = 0; memcpy(&field, wk_display + 0x3f88, 4); CHECK(field == 1); }
     }
-    /* The tutorial popup: the close of that panel is an order; another panel's passes; it waits for the popup here. */
+    /* The tutorial popup: each copy closes its own (a guest's popup may have no counterpart on the host, owner's
+     * run 20:03:58: refused four times, then Resync). Nothing is sent; an old order closes an open popup here, else
+     * does nothing, and never stops the session. */
     {
         static uint8_t popup[0x100], other[0x100];
         uint64_t functor[2] = {0, (uintptr_t)popup}, elsewhere[2] = {0, (uintptr_t)other};
-        uint32_t open = 2, closing = 6;
+        uint32_t open = 2;
         g_tutorial_show = it_show;
         g_panel_close = it_panel_close;
         it_reset(DD_ROLE_HOST);
@@ -282,32 +284,34 @@ static void selection_and_popup_checks(void) {
         hook_panel_close(elsewhere);
         CHECK(it_closes_panel == 1 && !sent);
         hook_panel_close(functor);
-        CHECK(it_closes_panel == 2 && sent == 1 && last_message.u.town.action.u.item.op == DD_ITEM_OP_TUTORIAL);
-        dd_action close_it = last_message.u.town.action;
+        CHECK(it_closes_panel == 2 && !sent);
         it_reset(DD_ROLE_GUEST);
         it_closes_panel = 0;
         hook_tutorial_show(popup, 0, 0, 0);
         hook_panel_close(functor);
-        CHECK(!it_closes_panel && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
+        CHECK(it_closes_panel == 1 && !sent);
+        dd_action close_it;
+        memset(&close_it, 0, sizeof close_it);
+        close_it.kind = DD_ACT_ITEM;
+        close_it.u.item.op = DD_ITEM_OP_TUTORIAL;
+        close_it.u.item.hero = 255;
+        close_it.u.item.area = wk_view.area;
+        memcpy(&close_it.u.item.pos, &wk_view.pos, 4);
+        CHECK(dd_action_valid(&close_it));
         it_reset(DD_ROLE_GUEST);
         it_closes_panel = 0;
         memset(popup, 0, sizeof popup);
         hook_tutorial_show(popup, 0, 0, 0);
         wk_push(1, &close_it);
         dd_runtime_poll();
-        CHECK(!it_closes_panel && g_incoming.count == 1);
-        memcpy(popup + 0x58, &open, 4);
-        dd_runtime_poll();
-        CHECK(it_closes_panel == 1 && g_town.applied_seq == 1);
-        /* Already closing here: nothing runs, the queue goes on. */
+        CHECK(!it_closes_panel && g_town.applied_seq == 1 && !g_town.needs_resync && !g_sync_stop_sent);
         it_reset(DD_ROLE_GUEST);
         it_closes_panel = 0;
         hook_tutorial_show(popup, 0, 0, 0);
-        memcpy(popup + 0x58, &closing, 4);
-        g_item_wait_until = 1;
+        memcpy(popup + 0x58, &open, 4);
         wk_push(1, &close_it);
         dd_runtime_poll();
-        CHECK(!it_closes_panel && !g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent);
+        CHECK(it_closes_panel == 1 && g_town.applied_seq == 1 && !g_town.needs_resync);
         g_tutorial_show = NULL;
         g_panel_close = NULL;
     }
@@ -362,6 +366,8 @@ static void it_camp_reset(int role, uint32_t stage) {
     it_retreats = it_meals = it_skills = it_leaves = 0;
     memset(it_meal_args, 0, sizeof it_meal_args);
     memcpy(wk_raid_lists + DD_ITEM_CAMP_STAGE, &stage, 4);
+    wk_display[DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE] = 1; /* an open camp, not covered by another panel */
+    g_camp_leave_wait_told = 0;
 }
 static unsigned it_ones, it_twos;
 static uint64_t it_quest_panel;
@@ -497,6 +503,22 @@ static void retreat_and_camp_checks(void) {
         wk_push(1, &leave);
         dd_runtime_poll();
         CHECK(it_leaves == 1 && it_leave_overlay == camp);
+        /* Owner test74: a panel over this camp made the native Leave a silent no-op, yet the order was acknowledged.
+         * Now the order waits (FIFO head kept, no resync), tells the player, and leaves once the camp is uncovered. */
+        it_camp_reset(DD_ROLE_GUEST, 6);
+        wk_display[DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE] = 0;
+        wk_push(1, &leave);
+        for (int i = 0; i < 3; i++) dd_runtime_poll();
+        CHECK(!it_leaves && !g_town.applied_seq && !g_town.needs_resync && !g_sync_stop_sent && g_camp_leave_wait_told);
+        wk_display[DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE] = 1;
+        dd_runtime_poll();
+        CHECK(it_leaves == 1 && it_leave_overlay == camp && g_town.applied_seq == 1 && !g_camp_leave_wait_told);
+        /* Host too: a guest's Leave waits on a covered host camp instead of being accepted without effect. */
+        it_camp_reset(DD_ROLE_HOST, 6);
+        wk_display[DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE] = 0;
+        CHECK(!camp_leave_ready(&(walk_view){.display = (uintptr_t)wk_display}));
+        wk_display[DD_ITEM_CAMP_OVERLAY + DD_ITEM_CAMP_ACTIVE] = 1;
+        CHECK(camp_leave_ready(&(walk_view){.display = (uintptr_t)wk_display}));
     }
     /* After a finished quest: the choice reaches both, each with its own panel. */
     {

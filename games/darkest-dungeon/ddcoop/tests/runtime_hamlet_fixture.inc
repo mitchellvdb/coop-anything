@@ -152,6 +152,15 @@ static void __fastcall hm_changed(void *wallet) {
     CHECK(wallet == world_campaign + 0xe50);
     hm_notify++;
 }
+/* The game's writers of persist.roster (585a60), .town (591540) and the raid files (3d3110). */
+static unsigned hm_saves[4];
+static void __fastcall hm_save_roster(void *o, int f) { CHECK(o == world_campaign && !f); hm_saves[0]++; }
+static void __fastcall hm_save_progress(void *o, int f) { (void)o; (void)f; CHECK(0); }
+static void __fastcall hm_save_town(void *o, int f) { CHECK(o == world_campaign + 0x1138 && !f); hm_saves[2]++; }
+static void __fastcall hm_save_raid(void *o, int f) {
+    CHECK((uintptr_t)o == image_base() + 0x2a6cf70 && !f);
+    hm_saves[3]++;
+}
 static void __fastcall hm_unused_exchange(void *capture) {
     (void)capture;
     CHECK(0);
@@ -205,6 +214,11 @@ static void hm_reset(int role) {
     hm_slot_calls = 0;
     memset(world_campaign, 0, sizeof world_campaign);
     memset(hm_entries, 0, sizeof hm_entries);
+    memset(hm_saves, 0, sizeof hm_saves);
+    g_recruit_save[0] = hm_save_roster;
+    g_recruit_save[1] = hm_save_progress;
+    g_recruit_save[2] = hm_save_town;
+    g_recruit_save[3] = hm_save_raid;
     memset(hm_levels, 0, sizeof hm_levels);
     memset(hm_selected, 0, sizeof hm_selected);
     memset(hm_wallet, 0, sizeof hm_wallet);
@@ -346,6 +360,8 @@ static void hm_names_and_skills(void) {
         request = last_message;
         apply = hm_host_apply(request);
         CHECK(hm_native == 1);
+        /* Saved as the character sheet does: roster written, wallet notified, raid writer called. */
+        CHECK(hm_saves[0] == 1 && !hm_saves[2] && hm_saves[3] == 1 && hm_notify == 1 && hm_entries[0][0x162c] == 1);
         CHECK(!hm_display_refreshes && hm_display_masks[camping] == 5);
         dd_runtime_poll();
         CHECK(hm_native == 1 && hm_display_refreshes == 1 && hm_display_masks[camping] == 13);
@@ -357,6 +373,7 @@ static void hm_names_and_skills(void) {
         int active = 0;
         CHECK(hm_open(&s) && dd_hamlet_find(&s, 1, &hero) == 1 &&
               dd_hamlet_skill(&s, &hero, camping, 3, &active) && active);
+        CHECK(hm_saves[0] == 1 && hm_saves[3] == 1 && hm_notify == 1 && hm_entries[0][0x162c] == 1);
         CHECK(!hm_display_refreshes && hm_display_masks[camping] == 5);
         dd_runtime_poll();
         CHECK(hm_native == 1 && hm_display_refreshes == 1 && hm_display_masks[camping] == 13);
@@ -367,7 +384,7 @@ static void hm_names_and_skills(void) {
         hm_selected[0][camping][1] = 3;
         CHECK(queue_push(&g_incoming, &request));
         dd_runtime_poll();
-        CHECK(!hm_native && g_town.rejected == 1);
+        CHECK(!hm_native && g_town.rejected == 1 && !hm_saves[0] && !hm_saves[3] && !hm_notify);
     }
     puts("Hamlet bridge: names, combat/camping selection, stale names/masks and unlearned skills verified");
 }
@@ -692,6 +709,28 @@ static void hm_town_check(void) {
         m.seq = 2; CHECK(queue_push(&g_incoming, &m));
         dd_runtime_poll();
         CHECK(!g_town.applied_seq && g_town.needs_resync && g_sync_stop_sent && g_incoming.count == 1);
+    }
+    /* test78: the order of the native wallet vector, and a currency present with 0 on one copy only, are not
+     * differences; the same currency twice is not a wallet we understand. The wallet text names every amount. */
+    {
+        uint32_t a[3], b[3];
+        uint8_t t[0x48];
+        char text[32 * 24 + 1];
+        hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 0;
+        CHECK(town_check_here(a) && g_town_wallet_count == 4);
+        memcpy(t, hm_wallet, 0x48); memcpy(hm_wallet, hm_wallet + 0x48, 0x48); memcpy(hm_wallet + 0x48, t, 0x48);
+        CHECK(town_check_here(b) && a[0] == b[0] && a[1] == b[1]);
+        putint(hm_wallet + 3 * 0x48, 0);
+        CHECK(town_check_here(a) && g_town_wallet_count == 3);
+        putptr(world_campaign + 0xe78, (uintptr_t)(hm_wallet + 3 * 0x48));
+        CHECK(town_check_here(b) && a[0] == b[0] && g_town_wallet_count == 3);
+        putptr(world_campaign + 0xe78, (uintptr_t)(hm_wallet + sizeof hm_wallet));
+        putint(hm_wallet + 3 * 0x48, 1);
+        CHECK(town_check_here(b) && a[0] != b[0]); /* a real amount still counts */
+        memcpy(hm_wallet + 3 * 0x48 + 0x44, hm_wallet + 0x44, 4);
+        CHECK(!town_check_here(b));
+        town_wallet_text(text, sizeof text);
+        CHECK(strstr(text, "=20") && strstr(text, "=1"));
     }
     /* Not readable after the bounded load wait is also a failed comparison. */
     hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 1;

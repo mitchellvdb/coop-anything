@@ -1,0 +1,43 @@
+DDCoop test80 - saves, local tutorial popups, curio double clicks, skill logs
+Only the host installs test80 by hand. Friends with test77, test78 or test79
+just join: their launcher asks "Update now?"; after Yes and the install, open
+DDCoop and join again. A friend on test76 or older installs test80 by hand.
+
+0. Update: on the friend's PC DDCoop-launcher.log shows "host offers DDCoop
+   0.5.0-test80 ... receiving" and "verified"; after Yes the install window
+   says "DDCoop updated". Send both launchers' logs if anything fails.
+1. Tavern/Abbey saved: put two heroes in the Tavern or Abbey (one from the
+   host, one from a guest), then close every game and start a new session.
+   Both heroes must still be in their places and the gold spent only once.
+   Remove one with the X, restart again: that hero stays free.
+2. Skills: on a guest, open one of your own heroes with more than four learned
+   skills and click a skill on and off. The host's copy must follow. If nothing
+   happens on the guest, send the guest's logs at once: they now say why.
+   Also choose skills on the host, restart, and check they are kept.
+2a. Tutorials: when a tutorial popup appears on any PC, that player closes it
+   with its own button; nobody else needs to. Walking waits until it is closed.
+2b. Curios: click an open curio a second time on a guest; nothing extra may
+   happen, and the curio and its loot must be the same on every PC.
+1a. After every raid: if a synchronization notice appears, send the logs from
+   every launcher. They contain "Town: wallet here ..." with each currency.
+
+3. Close every game before installing. Use the usual Install DDCoop.bat.
+4. Host or join the same campaign. Wait for the initial candidate comparison.
+   Compare Stagecoach names/classes/skills/quirks on every copy. Recruit once
+   from a guest and once from the host; the same heroes must join every roster.
+5. Finish a normal mission together. Return to the Hamlet, close the reward
+   screens and wait for the comparison to finish.
+6. If candidates differ or a synchronization notice appears, stop and Copy logs
+   from every launcher. Use the host's Resync with all launchers kept open.
+   Never recruit different heroes to work around a refusal.
+
+Campaign mods: a listed mod must be present with the same files on every PC.
+Missing/different/unknown or unreadable mod data is refused before the guest's
+save is replaced. No mods are downloaded or enabled automatically. This file
+comparison does not establish gameplay compatibility for arbitrary mods or DLC.
+Use an otherwise disposable test campaign for any optional mod comparison test.
+
+Guests always use -nosave; host saving follows its checkbox. Backups/restore
+borrow only the selected slot1..9; profile_9 is forbidden. Checkpoint Resync may
+lose unsaved progress. The host game and launcher stay running, without manual
+host approval for shared choices. Solo batch guests still restart manually.

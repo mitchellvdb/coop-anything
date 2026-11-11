@@ -11,6 +11,10 @@ static dd_msg wx_packet;
 static HANDLE wx_begin,wx_done;
 static int wx_worker_result;
 static int wx_context;
+/* Campaign nextGuid stand-in: every copy starts with its own UI-driven value. */
+static uint32_t wx_guid;static unsigned wx_guid_writes;static int wx_guid_readable;
+static int wx_guid_get(uint32_t *v) { if(!wx_guid_readable)return 0;*v=wx_guid;return 1; }
+static int wx_guid_set(uint32_t v) { ++wx_guid_writes;wx_guid=v;return 1; }
 static uint32_t wx_state(void) { uint32_t n=0;memcpy(&n,wx_rng+8,4);return n; }
 static uint32_t wx_draw(uint32_t *n) { *n=(uint32_t)(((uint64_t)*n*16807u)%2147483647u);return *n; }
 static void __fastcall wx_native(void *p) {
@@ -61,9 +65,11 @@ static void wx_reset(unsigned player,uint32_t seed) {
     wx_send_ok=1;wx_delay_mode=0;wx_expected_depth=1;wx_main_thread=GetCurrentThreadId();
     g_weekly_finish=wx_native;g_weekly_now=wx_now;g_weekly_pause=wx_pause;
     g_weekly_send=wx_send;g_weekly_finish_caller=wx_caller;g_weekly_rules_set=wx_set;
+    wx_guid=100+3*player;wx_guid_writes=0;wx_guid_readable=1;
+    g_weekly_guid_get=wx_guid_get;g_weekly_guid_set=wx_guid_set;
 }
 static dd_msg wx_seed(uint32_t epoch,uint32_t rules) {
-    dd_msg m={0};m.type=DD_MSG_WEEKLY;m.u.weekly.epoch=epoch;m.u.weekly.rules=rules;return m;
+    dd_msg m={0};m.type=DD_MSG_WEEKLY;m.u.weekly.epoch=epoch;m.u.weekly.rules=rules;m.u.weekly.guid=100+DD_WEEKLY_GUID_MARGIN;return m;
 }
 static void wx_success(void) {
     CHECK(wx_native_calls==1 && wx_seed_writes==1 && !g_town.needs_resync && !g_peer_sync_stop &&
@@ -79,6 +85,8 @@ static void weekly_bridge_checks(void) {
     int (*save_send)(const dd_msg *)=g_weekly_send;
     int (*save_caller)(uintptr_t)=g_weekly_finish_caller;
     int (*save_set)(uint32_t)=g_weekly_rules_set;
+    int (*save_guid_get)(uint32_t *)=g_weekly_guid_get;
+    int (*save_guid_set)(uint32_t)=g_weekly_guid_set;
     void *save_rules=g_rules_object;
     CHECK(save_caller(0x3e24c6) && !save_caller(0x3e24c5) && !save_caller(0x3e24c7) && !save_caller(0x3e2500));
 
@@ -87,6 +95,8 @@ static void weekly_bridge_checks(void) {
     wx_reset(0,1234567);hook_weekly_finish(&wx_context);wx_success();
     CHECK(wx_send_calls==1 && wx_packet.type==DD_MSG_WEEKLY && wx_packet.u.weekly.epoch==1 &&
           wx_packet.u.weekly.rules==1234567 && g_weekly_consumed==1 && g_weekly_received==1);
+    /* The host jumps its own counter to the shared value it announced. */
+    CHECK(wx_packet.u.weekly.guid==100+DD_WEEKLY_GUID_MARGIN && wx_guid==wx_packet.u.weekly.guid && wx_guid_writes==1);
     dd_msg canonical=wx_wire(wx_packet);uint32_t expected[12];memcpy(expected,wx_world,sizeof expected);
     for(unsigned player=1;player<4;player++)for(unsigned delayed=0;delayed<2;delayed++) {
         wx_reset(player,8765+player);wx_packet=canonical;
@@ -99,9 +109,10 @@ static void weekly_bridge_checks(void) {
         hook_weekly_finish(&wx_context);wx_success();
         CHECK(!memcmp(wx_world,expected,sizeof expected) && !wx_send_calls &&
               g_incoming.count==1 && !g_town.applied_seq && !g_weekly_pending);
+        CHECK(wx_guid==canonical.u.weekly.guid && wx_guid_writes==1); /* every copy now draws the same next ids */
         CHECK(weekly_receive(&canonical,0,0)); /* Same last duplicate after use. */
         CHECK(!g_weekly_pending && g_weekly_consumed==1);
-        CHECK(weekly_receive(&(dd_msg){.type=DD_MSG_WEEKLY,.u.weekly={2,7654321}},0,0));
+        CHECK(weekly_receive(&(dd_msg){.type=DD_MSG_WEEKLY,.u.weekly={2,7654321,2*DD_WEEKLY_GUID_MARGIN}},0,0));
         hook_weekly_finish(&wx_context);
         CHECK(wx_native_calls==2 && wx_seed_writes==2 && g_weekly_consumed==2 && !g_town.needs_resync);
         uint32_t after_second=wx_state();
@@ -123,7 +134,7 @@ static void weekly_bridge_checks(void) {
     /* Direction, sequence, semantic range and epoch mistakes cannot authorize
      * a reset. An identical last duplicate is idempotent; changed/reordered
      * announcements stop before any new shared/native seed effect. */
-    for(unsigned which=0;which<9;which++) {
+    for(unsigned which=0;which<11;which++) {
         wx_reset(1,123);dd_msg bad=canonical;int host=0;
         switch(which) {
         case 0:host=1;break;
@@ -134,7 +145,9 @@ static void weekly_bridge_checks(void) {
         case 5:bad.u.weekly.epoch=2;break;
         case 6:CHECK(weekly_receive(&canonical,0,0));bad.u.weekly.rules++;break;
         case 7:CHECK(weekly_receive(&canonical,0,0));bad.u.weekly.epoch=2;break;
-        default:bad.type=DD_MSG_PING;break;
+        case 8:bad.type=DD_MSG_PING;break;
+        case 9:bad.u.weekly.guid=0;break;
+        default:bad.u.weekly.guid=DD_PROTO_GUID_MAX+1u;break;
         }
         CHECK(!weekly_receive(&bad,host,1) && weekly_faulted() && wx_state()==123);
         hook_weekly_finish(&wx_context);wx_failure();CHECK(!wx_send_calls);
@@ -168,6 +181,21 @@ static void weekly_bridge_checks(void) {
         hook_weekly_finish(&wx_context);
         CHECK(wx_native_calls==1 && wx_seed_writes==1 && g_town.needs_resync && !weekly_busy());
     }
+    /* A guest whose own counter is already above the host's value refuses rather than move it down (a live
+     * handle could be handed out twice); an unreadable counter or a host too close to the limit refuses too.
+     * Native completion still runs once and the counter is left untouched. */
+    for(unsigned why=0;why<4;why++) {
+        unsigned player=why==2?0u:1u;wx_reset(player,123);
+        if(why==0)wx_guid=canonical.u.weekly.guid+1;
+        if(why==1)wx_guid_readable=0;
+        if(why==2)wx_guid=DD_PROTO_GUID_MAX-DD_WEEKLY_GUID_MARGIN+1;
+        if(why==3)wx_guid=canonical.u.weekly.guid; /* equal is fine */
+        uint32_t before=wx_guid;
+        if(player)CHECK(weekly_receive(&canonical,0,0));
+        hook_weekly_finish(&wx_context);
+        if(why==3)CHECK(wx_native_calls==1 && !g_town.needs_resync && wx_guid==canonical.u.weekly.guid);
+        else CHECK(wx_native_calls==1 && g_town.needs_resync && !wx_guid_writes && wx_guid==before && !weekly_busy());
+    }
     wx_reset(0,123);InterlockedExchange(&g_weekly_in_finish,1);
     hook_weekly_finish(&wx_context);
     CHECK(wx_native_calls==1 && !wx_seed_writes && !wx_send_calls && g_town.needs_resync && weekly_busy());
@@ -179,5 +207,6 @@ static void weekly_bridge_checks(void) {
 
     wx_reset(0,123);weekly_reset();g_weekly_finish=save_finish;g_weekly_now=save_now;g_weekly_pause=save_pause;
     g_weekly_send=save_send;g_weekly_finish_caller=save_caller;g_weekly_rules_set=save_set;g_rules_object=save_rules;
-    puts("Weekly bridge: native boundary all4 roles, early/delayed/cross-thread host seed, no FIFO reentry, epoch/range/direction/duplicate/STOP/timeout/send-write failures, original native completion once; synthetic week effects match");
+    g_weekly_guid_get=save_guid_get;g_weekly_guid_set=save_guid_set;
+    puts("Weekly bridge: native boundary all4 roles, early/delayed/cross-thread host seed, no FIFO reentry, epoch/range/direction/duplicate/STOP/timeout/send-write failures, original native completion once; synthetic week effects match; shared guid counter jumps on every copy, never down");
 }

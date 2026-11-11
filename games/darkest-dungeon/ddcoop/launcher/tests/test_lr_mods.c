@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <winioctl.h>
 #else
+#include <limits.h>
 #include <unistd.h>
 #endif
 
@@ -204,7 +205,7 @@ static int directory_link(const char *link, const char *target) {
     if (!ok) RemoveDirectoryW(wl);
     return ok;
 #else
-    char absolute[LR_PATH_MAX];
+    char absolute[PATH_MAX]; /* realpath needs PATH_MAX bytes (glibc checks it) */
     return realpath(target, absolute) && symlink(absolute, link) == 0;
 #endif
 }

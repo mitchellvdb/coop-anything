@@ -63,6 +63,9 @@ def main():
                 z.writestr(top + name, b'\xef\xbb\xbf' + crlf(os.path.join(kit, name)))
         for name, path in files.items():
             z.write(path, top + 'files/' + name)
+        sig = os.path.join(codex, 'ddcoop-kit.sig')  # tools/sign_kit.ps1; lets this launcher offer its kit (UPDATE.md)
+        if os.path.isfile(sig):
+            z.write(sig, top + 'files/ddcoop-kit.sig')
     os.replace(tmp, out)
     print(f'{out}: {os.path.getsize(out)} bytes, sha256 {sha(out)}')
     for line in lines:

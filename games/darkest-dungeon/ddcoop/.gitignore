@@ -1,9 +1,5 @@
+testkit/SDL2.dll
 build/
-__pycache__/
-*.obj
-*.pdb
-*.dll
-*.exe
 *.zip
 *.log
-local/
+__pycache__/

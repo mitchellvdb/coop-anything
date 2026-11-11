@@ -1,3 +1,7 @@
+# Text files are LF in every working folder, whatever core.autocrlf says (shell scripts break on CRLF).
 * text=auto eol=lf
+# Files that end up in the owner's Windows kits (scripts, READMEs, ini) are stored and checked out byte for byte.
 *.bat -text
-*.cmd -text
+*.ps1 -text
+*.txt -text
+*.ini -text

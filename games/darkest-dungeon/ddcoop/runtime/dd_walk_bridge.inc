@@ -531,23 +531,29 @@ static int walk_use_apply(const dd_action *a) {
         (uint64_t)a->u.use.hero >= (end - begin) / 8 || !safe_read((uintptr_t)(begin + (uint64_t)a->u.use.hero * 8), &hero, 8) || !hero || !g_party_select)
         return 0;
     if(a->u.use.actor_id) {uint32_t id=0;if(!safe_read((uintptr_t)hero+0x137c,&id,4) || id!=a->u.use.actor_id)return 0;}
-    walk_rules_send(&v); /* Only after read-only area/actor preflight. */
+    uint32_t mode = 0;
+    /* A duplicate or refused OPEN changes nothing, so it must not send the host's Rules either: that number
+     * already holds the open curio's draws, and a guest whose own curio has not drawn yet took it over first
+     * and rolled the curio differently (owner's run 19:48:54: player 2 clicked a curio three times; the host's
+     * loot window had no counterpart on the guest, whose loot order then failed). */
+    if (a->u.use.door != 1) {
+        if (!walk_overlay_state(&v,&mode)) return 0;
+        if (mode) {
+            if (walk_overlay_matches(&v,prop,0)) {
+                dd_log("Walk: prop %u already open; duplicate OPEN has no effect",a->u.use.prop);
+                return 1;
+            }
+            dd_log("Walk: new prop refused while another overlay is active");
+            return 0;
+        }
+    }
+    walk_rules_send(&v); /* Only after read-only area/actor/overlay preflight. */
     /* The same hero acts on both copies: the display sets the selection from its own field every frame (75a5f3). */
     walk_select(&v, a->u.use.hero);
-    uint32_t mode = 0;
     if (a->u.use.door == 1) {
         uint8_t disarming = g_raid_trap ? g_raid_trap((void *)(uintptr_t)v.display, (void *)(uintptr_t)prop) : 0;
         if (!disarming) dd_log("Walk: the game declined trap %u here (position %f)", a->u.use.prop, v.pos);
         return g_cfg.role == DD_ROLE_HOST ? disarming : 1;
-    }
-    if (!walk_overlay_state(&v,&mode)) return 0;
-    if (mode) {
-        if (walk_overlay_matches(&v,prop,0)) {
-            dd_log("Walk: prop %u already open; duplicate OPEN has no effect",a->u.use.prop);
-            return 1;
-        }
-        dd_log("Walk: new prop refused while another overlay is active");
-        return 0;
     }
     /* The game's own click, here too: it opens the same overlay or interacts, and decides by its own draws. */
     uint8_t done = g_raid_use ? g_raid_use((void *)(uintptr_t)v.display, (void *)(uintptr_t)prop, (int32_t)a->u.use.option, a->u.use.flag) : 0;

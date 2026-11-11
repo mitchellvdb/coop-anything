@@ -11,6 +11,7 @@
 #define LR_CORE_H
 
 #include "lr_files.h"
+#include "lr_kit.h"
 #include "lr_mods.h"
 #include "lr_owners.h"
 #include "lr_relay.h"
@@ -42,6 +43,12 @@ typedef struct {
     /* Finds a campaign mod on this PC and fingerprints it (lr_mods_print with the game folder). NULL = mods
      * are not checked on this side (tests, callers without a game folder). */
     void (*mod_print)(void *ctx, const lr_ugc *mod, lr_mod_print *out);
+    /* Kit updates (launcher/UPDATE.md). Host: this launcher's own installed kit, verified at startup, offered to a
+     * friend who runs another kit; NULL = nothing to offer. Guest: the signature check and this build's serial;
+     * serial 0 (dev and duo builds) never takes an update. */
+    const lr_kit_bundle *kit_offer;
+    lr_kit_verify_fn kit_verify;
+    uint32_t kit_serial;
     void (*random)(void *ctx, uint8_t *buf, size_t len);
     void (*log)(void *ctx, const char *line);   /* NULL = no log */
     uint32_t build;                              /* first 4 bytes of the Darkest.exe SHA-256 */
@@ -118,6 +125,13 @@ typedef struct {
     lr_mod_print mods[LR_MAX_UGC];
     int mod_count;
     int mods_known;           /* host: fingerprinted; guest: the host's list arrived (an older host sends none) */
+    /* Host: the friend our kit is being sent to (one at a time), and the last one, not offered again for 30 s. */
+    uint64_t kit_peer, kit_last_peer, kit_last_at;
+    int kit_phase;
+    uint32_t kit_file, kit_offset;
+    /* Guest: the host's kit as it arrives; ready = signed, newer and every file checked. */
+    lr_kit_bundle kit_rx;
+    int kit_rx_state;         /* 0 none, 1 receiving, 2 ready */
 } lr_core;
 
 void lr_core_init(lr_core *c, const lr_config *cfg);
@@ -150,6 +164,9 @@ void lr_core_host_spent(lr_core *c);
 
 /* Player index in the ownership table: LR_PLAYER_HOST (0), or this guest's number 1..3. */
 int lr_core_player(const lr_core *c);
+
+/* Guest: a signed, newer kit the host sent (all files checked), or NULL. Valid until the next join or free. */
+const lr_kit_bundle *lr_core_update(const lr_core *c);
 
 /* Guest: returns 1 once when the game should be started now (state moves to PLAYING). */
 int lr_core_take_launch(lr_core *c);

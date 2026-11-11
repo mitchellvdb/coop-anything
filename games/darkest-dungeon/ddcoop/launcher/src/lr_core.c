@@ -57,7 +57,11 @@ void lr_core_free(lr_core *c) {
     if (c->relay_up) lr_relay_free(&c->relay);
     c->relay_up = 0;
     files_free(c);
+    lr_kit_bundle_free(&c->kit_rx);
+    c->kit_rx_state = 0;
 }
+
+const lr_kit_bundle *lr_core_update(const lr_core *c) { return c->kit_rx_state == 2 ? &c->kit_rx : NULL; }
 
 /* ---- sending ---- */
 
@@ -618,6 +622,7 @@ void lr_core_host_spent(lr_core *c) {
 int lr_core_host_start(lr_core *c, uint64_t now_ms) {
     lr_core_free(c);
     c->host_spent = 0;
+    c->kit_peer = c->kit_last_peer = c->kit_last_at = 0;
     memset(c->restart_peers,0,sizeof c->restart_peers);
     c->resync_requested = 0; c->resync_sent_at = 0;
     c->role = LR_ROLE_HOST;
@@ -711,6 +716,16 @@ static void host_accept(lr_core *c, uint64_t peer, const lr_msg *hello, uint64_t
         return;
     }
     if (hello->id != c->cfg.kit) {
+        if (c->kit_peer == peer) return; /* a repeated HELLO while our kit is on its way */
+        /* Offer our signed kit first; the friend's launcher decides whether it is newer. BYE follows it. */
+        if (c->cfg.kit_offer && !c->kit_peer && !(c->kit_last_peer == peer && now_ms - c->kit_last_at < 30000)) {
+            logf_(c, "friend runs another DDCoop kit (%08x, ours %08x): offering our signed DDCoop %s", hello->id,
+                  c->cfg.kit, c->cfg.kit_offer->m.version);
+            c->kit_peer = peer;
+            c->kit_phase = 0;
+            c->kit_file = c->kit_offset = 0;
+            return;
+        }
         logf_(c, "friend runs another DDCoop kit (%08x, ours %08x): refused", hello->id, c->cfg.kit);
         send_simple_to(c, peer, LR_BYE, LR_BYE_VERSION);
         return;
@@ -751,6 +766,55 @@ static void host_accept(lr_core *c, uint64_t peer, const lr_msg *hello, uint64_t
     host_update(c);
     logf_(c, "friend joins as player %d (%d in the session)", guest_player(c, g), lr_core_guest_count(c));
     set_status(c, "Friend found; sending campaign.");
+}
+
+/* Sends our kit (manifest, the three files, END, then BYE version) to the friend in kit_peer, as much as the
+ * transport takes right now. */
+static void host_send_kit(lr_core *c, uint64_t now_ms) {
+    const lr_kit_bundle *k = c->cfg.kit_offer;
+    for (int budget = 0; budget < 64 && c->kit_peer && k; budget++) {
+        lr_msg m = {0};
+        if (c->kit_phase == 0) {
+            m.type = LR_KIT_OFFER;
+            m.id = k->m.serial;
+            m.data = k->manifest;
+            m.len = k->manifest_len;
+        } else if (c->kit_phase == 1) {
+            while (c->kit_file < LR_KIT_FILES && c->kit_offset >= k->m.size[c->kit_file]) {
+                c->kit_file++;
+                c->kit_offset = 0;
+            }
+            if (c->kit_file >= LR_KIT_FILES) {
+                c->kit_phase = 2;
+                continue;
+            }
+            uint32_t left = k->m.size[c->kit_file] - c->kit_offset;
+            m.type = LR_KIT_CHUNK;
+            m.id = c->kit_file;
+            m.a = c->kit_offset;
+            m.data = k->data[c->kit_file] + c->kit_offset;
+            m.len = left < LR_CHUNK ? left : LR_CHUNK;
+        } else if (c->kit_phase == 2) {
+            m.type = LR_KIT_END;
+        } else {
+            m.type = LR_BYE;
+            m.a = LR_BYE_VERSION;
+        }
+        int r = send_to(c, c->kit_peer, &m);
+        if (r == 0) return; /* full: continue next tick */
+        if (r < 0) {
+            logf_(c, "kit offer: friend unreachable");
+            c->kit_peer = 0;
+            return;
+        }
+        if (c->kit_phase == 1) c->kit_offset += (uint32_t)m.len;
+        else if (c->kit_phase == 3) {
+            logf_(c, "kit offer: DDCoop %s sent (%u + %u + %u bytes)", k->m.version, k->m.size[0], k->m.size[1], k->m.size[2]);
+            c->kit_last_peer = c->kit_peer;
+            c->kit_last_at = now_ms;
+            c->kit_peer = 0;
+        } else c->kit_phase++;
+    }
 }
 
 /* Sends HELLO, SESSION and the campaign to one friend, as much as the transport takes right now. */
@@ -846,6 +910,8 @@ int lr_core_guest_join(lr_core *c, uint64_t host_peer, uint64_t now_ms) {
     c->claim_count = 0;
     c->mod_count = 0;
     c->mods_known = 0;
+    lr_kit_bundle_free(&c->kit_rx);
+    c->kit_rx_state = 0;
     if (c->cfg.game_running && c->cfg.game_running(c->cfg.ctx)) {
         fail(c, lr_bye_text(LR_BYE_GAME_RUNNING));
         return 0;
@@ -898,6 +964,76 @@ static int campaign_dlc_ok(lr_core *c, const lr_game_info *game) {
              missing);
     fail(c, msg);
     return 0;
+}
+
+static void guest_kit_drop(lr_core *c, const char *why) {
+    logf_(c, "kit from host ignored: %s", why);
+    lr_kit_bundle_free(&c->kit_rx);
+    c->kit_rx_state = -1; /* nothing more from this offer */
+}
+
+/* Guest: the host's kit. Taken only when signed by the owner, newer than ours and every file matches; the
+ * window then asks the player (main.c). Nothing is written here. */
+static void guest_kit_message(lr_core *c, const lr_msg *m) {
+    lr_kit_bundle *k = &c->kit_rx;
+    if (m->type == LR_KIT_OFFER) {
+        if (c->state != LR_ST_GUEST_HELLO || c->kit_rx_state) return;
+        if (!c->cfg.kit_verify || !c->cfg.kit_serial) {
+            guest_kit_drop(c, "this build takes no updates");
+            return;
+        }
+        if (m->len > sizeof k->manifest) {
+            guest_kit_drop(c, "manifest too long");
+            return;
+        }
+        memcpy(k->manifest, m->data, m->len);
+        k->manifest_len = m->len;
+        if (!lr_kit_parse(k->manifest, k->manifest_len, &k->m) || k->m.serial != m->id) {
+            guest_kit_drop(c, "malformed manifest");
+            return;
+        }
+        if (k->m.kit == c->cfg.kit || k->m.serial <= c->cfg.kit_serial) {
+            char why[96];
+            snprintf(why, sizeof why, "DDCoop %s (serial %u) is not newer than ours (serial %u)", k->m.version, k->m.serial,
+                     c->cfg.kit_serial);
+            guest_kit_drop(c, why);
+            return;
+        }
+        if (!c->cfg.kit_verify(k->manifest, k->m.signed_len, k->m.signature)) {
+            guest_kit_drop(c, "the signature is not the owner's");
+            return;
+        }
+        for (int f = 0; f < LR_KIT_FILES; f++)
+            if (!(k->data[f] = malloc(k->m.size[f]))) {
+                guest_kit_drop(c, "not enough memory");
+                return;
+            }
+        c->kit_rx_state = 1;
+        logf_(c, "host offers DDCoop %s (serial %u, signed by the owner): receiving", k->m.version, k->m.serial);
+        set_status(c, "The host runs a newer DDCoop; receiving its signed update...");
+        return;
+    }
+    if (c->kit_rx_state != 1) return;
+    if (m->type == LR_KIT_CHUNK) {
+        if (m->id >= LR_KIT_FILES || m->a != k->got[m->id] || m->len > k->m.size[m->id] - k->got[m->id]) {
+            guest_kit_drop(c, "chunk out of order");
+            return;
+        }
+        memcpy(k->data[m->id] + m->a, m->data, m->len);
+        k->got[m->id] += (uint32_t)m->len;
+        return;
+    }
+    for (int f = 0; f < LR_KIT_FILES; f++)
+        if (k->got[f] != k->m.size[f]) {
+            guest_kit_drop(c, "incomplete");
+            return;
+        }
+    if (!lr_kit_bundle_ok(k, c->cfg.kit_verify, 0)) {
+        guest_kit_drop(c, "a file does not match the signed manifest");
+        return;
+    }
+    c->kit_rx_state = 2;
+    logf_(c, "host kit DDCoop %s verified (signature and all files); ready to install", k->m.version);
 }
 
 /* Guest: a mod that is missing here or has another version makes this game simulate differently, without
@@ -1122,10 +1258,18 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
                 c->resync_requested = 2;
             }
             char msg[256];
-            snprintf(msg, sizeof msg, "The host closed the connection: %s", lr_bye_text(m.a));
+            if (m.a == LR_BYE_VERSION && c->kit_rx_state == 2)
+                snprintf(msg, sizeof msg, "The host runs a newer DDCoop (%s), and its signed update is ready to install.", c->kit_rx.m.version);
+            else
+                snprintf(msg, sizeof msg, "The host closed the connection: %s", lr_bye_text(m.a));
             fail(c, msg);
             break;
         }
+        case LR_KIT_OFFER:
+        case LR_KIT_CHUNK:
+        case LR_KIT_END:
+            guest_kit_message(c, &m);
+            break;
         case LR_MODS: {
             if (!c->password[0] || c->state != LR_ST_GUEST_HELLO) return; /* after SESSION, before the campaign */
             int n = lr_mods_decode(m.data, m.len, m.id, c->mods, LR_MAX_UGC);
@@ -1167,6 +1311,7 @@ void lr_core_on_message(lr_core *c, uint64_t peer, int channel, const uint8_t *b
 
 void lr_core_peer_left(lr_core *c, uint64_t peer) {
     if (c->role == LR_ROLE_HOST) {
+        if (peer && peer == c->kit_peer) c->kit_peer = 0;
         lr_guest *g = guest_of(c, peer);
         if (!g) return;
         guest_drop(c, g);
@@ -1237,6 +1382,7 @@ void lr_core_tick(lr_core *c, uint64_t now_ms) {
             }
             if (!g->playing) host_send_campaign(c, g);
         }
+        if (c->kit_peer) host_send_kit(c, now_ms);
     } else {
         if (c->peer && now_ms >= c->last_tx && now_ms - c->last_tx >= LR_KEEPALIVE_MS) {
             lr_msg m = {0};

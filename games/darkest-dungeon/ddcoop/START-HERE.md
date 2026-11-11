@@ -140,6 +140,7 @@ launcher\test-windows-msvc.cmd         & rem close every Darkest Dungeon first
 | [BUILD.md](BUILD.md) | Supported build, all build/test commands, per-version notes |
 | [launcher/README.md](launcher/README.md), [launcher/OWNERSHIP.md](launcher/OWNERSHIP.md) | Launcher, campaign transfer, hero ownership format |
 | [launcher/MODS.md](launcher/MODS.md) | Campaign mods: the check that every PC has the same mod files |
+| [launcher/UPDATE.md](launcher/UPDATE.md) | Signed kit updates from the host to friends with an older launcher |
 | [runtime/PROVISIONS.md](runtime/PROVISIONS.md) | Shared supplies / provisions |
 | [runtime/DUNGEON.md](runtime/DUNGEON.md), [runtime/PARALLEL-AUDIT.md](runtime/PARALLEL-AUDIT.md) | Dungeon actions, which inputs each player may give |
 | [runtime/DESYNC.md](runtime/DESYNC.md), [runtime/FORMATION.md](runtime/FORMATION.md), [runtime/FRESH-RAIDS.md](runtime/FRESH-RAIDS.md), [runtime/PARTY-RETURN.md](runtime/PARTY-RETURN.md) | Desyncs found in real sessions and their fixes |

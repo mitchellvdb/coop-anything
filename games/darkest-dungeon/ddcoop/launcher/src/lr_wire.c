@@ -60,7 +60,10 @@ uint32_t lr_crc32(uint32_t crc, const uint8_t *p, size_t len) {
  *   SAVE_RESULT      result
  *   ROSTER           revision, table (1..LR_CHUNK bytes; checked by lr_owners_decode)
  *   CLAIM            hero id, tick (0 or 1)
- *   MODS             count, entries (0..LR_CHUNK bytes; checked by lr_mods_decode) */
+ *   MODS             count, entries (0..LR_CHUNK bytes; checked by lr_mods_decode)
+ *   KIT_OFFER        serial, manifest (1..LR_CHUNK bytes; checked by lr_kit_parse)
+ *   KIT_CHUNK        file index (0..2), offset, bytes (1..LR_CHUNK)
+ *   KIT_END          (nothing) */
 size_t lr_encode(const lr_msg *m, uint8_t *out) {
     uint8_t *p = out + LR_HEADER;
     out[0] = 'D';
@@ -75,11 +78,14 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
     case LR_STREAM_DATA:
     case LR_SAVE_CHUNK:
     case LR_ROSTER:
+    case LR_KIT_OFFER:
+    case LR_KIT_CHUNK:
         if (m->len == 0 || m->len > LR_CHUNK || !m->data) return 0;
+        if ((m->type == LR_KIT_OFFER && !m->id) || (m->type == LR_KIT_CHUNK && m->id > 2)) return 0;
         put32(p, m->id);
         p += 4;
         if(m->type==LR_STREAM_DATA){put32(p,m->b);p+=4;}
-        if (m->type == LR_SAVE_CHUNK) {
+        if (m->type == LR_SAVE_CHUNK || m->type == LR_KIT_CHUNK) {
             put32(p, m->a);
             p += 4;
         }
@@ -107,6 +113,7 @@ size_t lr_encode(const lr_msg *m, uint8_t *out) {
     }
     case LR_KEEPALIVE:
     case LR_SAVE_END:
+    case LR_KIT_END:
         break;
     case LR_BYE:
     case LR_SAVE_RESULT:
@@ -167,17 +174,21 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
         if(n<9 || n>8+LR_CHUNK)return 0;
         out->id=get32(p);out->b=get32(p+4);out->data=p+8;out->len=n-8;break;
     case LR_ROSTER:
+    case LR_KIT_OFFER:
         if (n < 5 || n > 4 + LR_CHUNK) return 0;
         out->id = get32(p);
         out->data = p + 4;
         out->len = n - 4;
+        if (t == LR_KIT_OFFER && !out->id) return 0;
         break;
     case LR_SAVE_CHUNK:
+    case LR_KIT_CHUNK:
         if (n < 9 || n > 8 + LR_CHUNK) return 0;
         out->id = get32(p);
         out->a = get32(p + 4);
         out->data = p + 8;
         out->len = n - 8;
+        if (t == LR_KIT_CHUNK && out->id > 2) return 0;
         break;
     case LR_HELLO:
         if (n != 8 && n != 12) return 0;
@@ -200,6 +211,7 @@ int lr_decode(const uint8_t *buf, size_t len, int channel, lr_msg *out) {
     }
     case LR_KEEPALIVE:
     case LR_SAVE_END:
+    case LR_KIT_END:
         if (n != 0) return 0;
         break;
     case LR_BYE:

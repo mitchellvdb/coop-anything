@@ -52,6 +52,7 @@ typedef struct qmsg {
 static qmsg *q_head, *q_tail;
 static int backpressure;   /* every Nth send says "full" (0 = never) */
 static int corrupt_chunks; /* flip a byte in the next SAVE_CHUNK */
+static int corrupt_kit;    /* flip a byte in the next KIT_CHUNK */
 static long send_count;
 
 typedef struct {
@@ -79,6 +80,10 @@ static int fake_send(void *ctx, uint64_t peer, int channel, const uint8_t *buf, 
     if (corrupt_chunks && len > 20 && buf[3] == LR_SAVE_CHUNK) {
         m->data[len - 1] ^= 1;
         corrupt_chunks = 0;
+    }
+    if (corrupt_kit && len > 12 && buf[3] == LR_KIT_CHUNK) {
+        m->data[len - 1] ^= 1;
+        corrupt_kit = 0;
     }
     if (q_tail) q_tail->next = m; else q_head = m;
     q_tail = m;
@@ -725,6 +730,90 @@ static void test_campaign_mods(void) {
     printf("Campaign mods end to end: identical Workshop mod joins; missing, other version, host without the mod, host that cannot confirm, older host launcher and a malformed list are refused before the guest's save is touched\n");
 }
 
+/* ---- kit updates (UPDATE.md) ---- */
+
+/* The manifest tools/sign_kit.ps1 wrote for three small files, with a throwaway key (test_lr_kit.c). The core
+ * does not check signatures itself: the callback below accepts exactly this signature. */
+static const char KIT_VECTOR[] =
+    "DDCoop kit 1\n"
+    "version=0.5.0-test77\n"
+    "serial=77\n"
+    "kit=7fc50367\n"
+    "file=DDCoop.exe 14 9197dbc13fca2f5d6ad6516ef9822295749bd4bd2a1fe41d0d90adf4bda0792b\n"
+    "file=SDL2.dll 15 1d624b6ae4e9ce0ce174f872a5d05f6491b0cb388d1ba053f87f902708320a23\n"
+    "file=ddcoop-runtime.dll 13 7fc5036745ec73b6169495830cf3ef3b58127addf27fcc0d0b8fe87b4de5808c\n"
+    "signature=fac195a323e4e6698aa955ae16f1f996c723ce7357e3df145e061a38a91d0f5ed372dfb134aef0cf61ce025a8b715ce5455f47f14961d1df75c3be6eb9f9f044\n";
+static const char *const KIT_FILES[3] = {"launcher bytes", "bootstrap bytes", "runtime bytes"};
+static int kit_sig_ok = 1;
+static int kit_verify(const uint8_t *msg, size_t n, const uint8_t sig[64]) {
+    return kit_sig_ok && n == (size_t)(strstr(KIT_VECTOR, "signature=") - KIT_VECTOR) && !memcmp(msg, KIT_VECTOR, n) &&
+           sig[0] == 0xfa && sig[63] == 0x44;
+}
+static void kit_bundle_make(lr_kit_bundle *b) {
+    memset(b, 0, sizeof *b);
+    b->manifest_len = strlen(KIT_VECTOR);
+    memcpy(b->manifest, KIT_VECTOR, b->manifest_len);
+    CHECK(lr_kit_parse(b->manifest, b->manifest_len, &b->m));
+    for (int f = 0; f < 3; f++) {
+        b->got[f] = (uint32_t)strlen(KIT_FILES[f]);
+        b->data[f] = malloc(b->got[f]);
+        memcpy(b->data[f], KIT_FILES[f], b->got[f]);
+    }
+}
+
+/* Host offers its signed kit to a friend with another kit; the friend takes it only when it is newer, signed and
+ * intact, and its own save is never touched by any of this. */
+static void test_kit_update(void) {
+    static node h, g;
+    static lr_kit_bundle offer;
+    char name[64];
+    kit_bundle_make(&offer);
+    for (int kind = 0; kind < 7; kind++) {
+        snprintf(name, sizeof name, "kit-host-%d", kind);
+        setup_node(&h, 1, name);
+        snprintf(name, sizeof name, "kit-guest-%d", kind);
+        setup_node(&g, 2, name);
+        make_host_campaign(h.core.cfg.remote_dir);
+        make_guest_campaign(g.core.cfg.remote_dir);
+        if (kind != 5) h.core.cfg.kit_offer = &offer; /* 5: an older host with nothing to offer */
+        g.core.cfg.kit = 0x12345678;                  /* the guest runs another kit */
+        g.core.cfg.kit_verify = kit_verify;
+        g.core.cfg.kit_serial = kind == 1 ? 77 : kind == 2 ? 80 : kind == 6 ? 0 : 76;
+        kit_sig_ok = kind != 3;
+        corrupt_kit = kind == 4;
+        backpressure = kind == 0 ? 3 : 0;
+        CHECK(lr_core_host_start(&h.core, now_ms()));
+        CHECK(lr_core_guest_join(&g.core, 1, now_ms()));
+        CHECK(run_until(&h, &g, failed, &g, 10000));
+        backpressure = 0;
+        const lr_kit_bundle *u = lr_core_update(&g.core);
+        if (kind == 0) {
+            CHECK(u && !strcmp(u->m.version, "0.5.0-test77") && strstr(g.core.error, "newer DDCoop (0.5.0-test77)"));
+            for (int f = 0; f < 3 && u; f++) CHECK(!memcmp(u->data[f], KIT_FILES[f], strlen(KIT_FILES[f])));
+            /* the host is free again, and a repeated HELLO from this friend within 30 s is refused without a resend */
+            CHECK(!h.core.kit_peer && h.core.kit_last_peer == 2);
+            lr_core_free(&g.core);
+            setup_node(&g, 2, "kit-guest-again");
+            make_guest_campaign(g.core.cfg.remote_dir);
+            g.core.cfg.kit = 0x12345678; g.core.cfg.kit_verify = kit_verify; g.core.cfg.kit_serial = 76;
+            CHECK(lr_core_guest_join(&g.core, 1, now_ms()));
+            CHECK(run_until(&h, &g, failed, &g, 5000));
+            CHECK(!lr_core_update(&g.core) && strstr(g.core.error, "versions differ"));
+        } else {
+            CHECK(!u && strstr(g.core.error, "versions differ"));
+        }
+        /* nothing of the guest's own campaign changed and no session started */
+        CHECK(g.core.state == LR_ST_FAILED && !g.core.backup_path[0]);
+        corrupt_kit = 0;
+        kit_sig_ok = 1;
+        lr_core_free(&h.core);
+        lr_core_free(&g.core);
+        drop_queue();
+    }
+    lr_kit_bundle_free(&offer);
+    printf("Kit update end to end: signed newer kit offered and verified with backpressure; same/older serial, bad signature, corrupted chunk, host without kit, build without updates refused; no resend within 30 s; guest save untouched\n");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(4242);
@@ -1229,6 +1318,7 @@ int main(void) {
     test_automatic_transfer_restart();
     test_campaign_metadata_refusal();
     test_campaign_mods();
+    test_kit_update();
     printf(failures ? "test_lr_core: %d FAILURES\n" : "test_lr_core: all passed\n", failures);
     return failures != 0;
 }

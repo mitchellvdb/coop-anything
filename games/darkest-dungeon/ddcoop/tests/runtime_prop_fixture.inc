@@ -104,6 +104,12 @@ static void prop_lifecycle_checks(void) {
     {dd_action crossed=opened;crossed.u.use.door=2;
      CHECK(!walk_use_apply(&crossed) && !pcx_asserts);
      crossed.u.use.door=1;CHECK(!walk_use_apply(&crossed) && !wk_traps);}
+    /* A second click on the open curio (owner's run 19:48:54): no effect and no Rules order, because the host's
+     * number already holds this curio's draws; a guest that took it over first rolled the curio differently. */
+    {static uint8_t rules[0x10];uint32_t state=0x1111;unsigned before=sent;
+     g_rules_object=rules;memcpy(rules+8,&state,4);
+     CHECK(walk_use_apply(&opened) && sent==before && pcx_opens==1 && !pcx_asserts);
+     g_rules_object=NULL;}
     /* Guest already auto-opened that prop on arrival. OPEN must not confirm it. */
     pcx_reset(DD_ROLE_GUEST);pcx_panel(2,0);
     wk_push(1,&opened);dd_runtime_poll();
