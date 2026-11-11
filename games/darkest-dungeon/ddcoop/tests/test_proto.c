@@ -466,7 +466,31 @@ static void test_prop_choice_packets(void) {
     puts("Prop choices protocol33: all terminal operations, four actors/nullable arguments, exact revision/identity length and legacy bypass refusal verified");
 }
 #include "recruit_wire_fixture.inc"
+static void full_notice_wire_checks(void) {
+    dd_msg m={0}, decoded; uint8_t wire[512]; size_t used=0;
+    m.type=DD_MSG_TOWN_APPLY;m.seq=24;m.u.town.action.kind=DD_ACT_ITEM;
+    dd_action *a=&m.u.town.action;a->u.item.op=DD_ITEM_OP_FULL_NOTICE;a->u.item.hero=255;
+    a->u.item.area=0x4d4c6f63;a->u.item.id=23;
+    size_t n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&decoded,&used)==DD_DECODE_OK && used==n,"full notice roundtrip");
+    CHECK(decoded.seq==24 && decoded.u.town.action.u.item.id==23 && decoded.u.town.action.u.item.area==0x4d4c6f63,"loot cause and area preserved");
+    for(unsigned field=0;field<8;++field) {
+        dd_msg bad=m;
+        switch(field) {
+        case 0:bad.u.town.action.u.item.id=0;break;
+        case 1:bad.u.town.action.u.item.id=UINT32_MAX;break;
+        case 2:bad.u.town.action.u.item.flag=1;break;
+        case 3:bad.u.town.action.u.item.inv=1;break;
+        case 4:bad.u.town.action.u.item.state=29;break;
+        case 5:bad.u.town.action.u.item.hero=0;break;
+        case 6:bad.u.town.action.u.item.slot=1;break;
+        case 7:bad.u.town.action.u.item.rules=1;break;
+        }
+        CHECK(!dd_encode(&bad,wire,sizeof wire),"malformed full notice refused");
+    }
+}
 int main(void) {
+    full_notice_wire_checks();
     recruit_wire_checks();
     test_desync_wire();
     test_roundtrip();

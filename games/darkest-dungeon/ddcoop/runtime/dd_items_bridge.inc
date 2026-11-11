@@ -30,7 +30,9 @@ static uint64_t (*g_item_controller)(void) = item_controller;
 static void results_bag_reset(void);
 static void hunger_reset(void);
 static void quest_return_reset(void);
+#include "dd_full_notice_bridge.inc"
 static void items_reset(void) {
+    full_notice_reset();
     g_tutorial_panel_reset();
     results_bag_reset();
     hunger_reset();
@@ -155,6 +157,10 @@ static int loot_open(const walk_view *v) {
  * blocking overlay (display+4118) or queued presentation (+40e0/+40e8).
  * Earlier states clear both flags at 717014. In the owner's first fight
  * the guest applied take-all while still in battle state 34, losing it. */
+static int loot_pending(const walk_view *v) {
+    uint8_t pending[2] = {0};
+    return !safe_read((uintptr_t)v->display + DD_WALK_LOOT_OVERLAY + 0x218, pending, 2) || pending[0] || pending[1];
+}
 static int loot_ready(const walk_view *v) {
     uint32_t state = 0;
     uint8_t enabled = 0, blocked = 0;
@@ -174,7 +180,7 @@ static int loot_local(void) {
 static int loot_click_counts(const walk_view *v, uint8_t op, int32_t slot) {
     uint64_t now = GetTickCount64();
     uint32_t key = ((uint32_t)op << 16) | ((uint32_t)slot & 0xffffu);
-    if (!loot_ready(v)) {
+    if (!loot_ready(v) || loot_pending(v)) {
         dd_log("Item: a loot click on a window that is not ready; dropped");
         return 0;
     }
@@ -193,7 +199,10 @@ static int loot_click_counts(const walk_view *v, uint8_t op, int32_t slot) {
 static void loot_send(const dd_action *a) {
     dd_log("Item: op=%u slot=%d inv=%u hero=%u state=%u rules=%08x (role=%s)", a->u.item.op, a->u.item.slot, a->u.item.inv, a->u.item.hero, a->u.item.state, a->u.item.rules, dd_role_name(g_cfg.role));
     if (g_cfg.role == DD_ROLE_GUEST) g_loot_request = dd_town_guest_local(&g_town, a);
-    else dd_town_host_observed(&g_town, a);
+    else {
+        dd_town_host_observed(&g_town, a);
+        full_notice_loot(g_town.applied_seq, a->u.item.area);
+    }
 }
 /* The host said no to this copy's loot click. If this window is still open, nothing shared can close it any more. */
 static void loot_request_done(uint32_t request) {
@@ -1149,7 +1158,7 @@ static int item_gate(const dd_msg *m) {
         go = g_results_display && g_results_can && g_results_can((void *)(uintptr_t)g_results_display);
     } else if (item_is_loot(a->u.item.op)) {
         limit = 30000;
-        go = have && (loot_ready(&v) || loot_settled(&v));
+        go = have && ((loot_ready(&v) && !loot_pending(&v)) || loot_settled(&v));
     } else if (a->u.item.op == DD_ITEM_OP_CURIO) {
         limit = 5000;
         go = have && curio_open(&v);
@@ -1170,7 +1179,7 @@ static int item_gate(const dd_msg *m) {
             go = camp_leave_ready(&v);
             camp_leave_wait_notice(!go);
         }
-    } else if (a->u.item.op == DD_ITEM_OP_TUTORIAL) {
+    } else if (a->u.item.op == DD_ITEM_OP_FULL_NOTICE || a->u.item.op == DD_ITEM_OP_TUTORIAL) {
         go = 1; /* No longer sent; an old order closes a popup that is open here, else does nothing. */
     } else if (a->u.item.state) {
         limit = 30000;
@@ -1228,6 +1237,7 @@ static int item_select_apply(const walk_view *v, const dd_action *a) {
     return 1;
 }
 static int item_apply(const dd_action *a) {
+    if (a->u.item.op == DD_ITEM_OP_FULL_NOTICE) return full_notice_apply(a);
     if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) return quest_return_apply(a);
     if (a->u.item.op == DD_ITEM_OP_HUNGER) return hunger_apply(a);
     walk_view v;
@@ -1369,6 +1379,7 @@ static int item_apply(const dd_action *a) {
             dd_log("Item: loot window not ready here for op=%u", a->u.item.op);
             return 0;
         }
+        full_notice_loot(g_town.applied_seq + 1, a->u.item.area);
         dd_log("Item: loot op=%u slot=%d (role=%s)", a->u.item.op, a->u.item.slot, dd_role_name(g_cfg.role));
         g_loot_done_at = GetTickCount64();
         g_loot_asked_at = 0;

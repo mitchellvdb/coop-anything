@@ -690,6 +690,7 @@ static void activity_transactions(void) {
 
 #include "runtime_transport_stop_fixture.inc"
 #include "runtime_recruit_pool_fixture.inc"
+#include "runtime_notice_fixture.inc"
 int main(void) {
     queue_init(&g_pool_controls);
     queue_init(&g_incoming);
@@ -760,6 +761,9 @@ int main(void) {
     prop_choice_checks();
     prop_cancel_checks();
     battle_input_phase_checks();
+    loot_pending_checks();
+    full_notice_checks();
+    battle_animation_checks();
     runtime_review_checks();
     selection_transition_checks();
     hunger_transactions();

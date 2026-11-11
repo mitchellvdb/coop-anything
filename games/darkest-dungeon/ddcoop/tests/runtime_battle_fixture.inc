@@ -203,6 +203,7 @@ static void it_reset(int role) {
     it_amount = 0;
     it_inventory = it_hero = NULL;
     memcpy(wk_display + DD_WALK_LOOT_OVERLAY, &closed, 4);
+    memset(wk_display + DD_WALK_LOOT_OVERLAY + 0x218, 0, 2);
 }
 static void it_loot(uint32_t state) {
     memcpy(wk_display + DD_WALK_LOOT_OVERLAY, &state, 4);
@@ -1227,7 +1228,11 @@ static void item_transactions(void) {
     it_loot(2);
     dd_runtime_poll();
     CHECK(wk_display[DD_WALK_LOOT_OVERLAY + 0x218] == 1 && !wk_display[DD_WALK_LOOT_OVERLAY + 0x219] && g_town.applied_seq == 1);
-    /* The shared click must not enable unshared clicks in the next loot window. */
+    /* Until the engine consumes take-all, another click cannot queue a second
+     * command for the same native frame. A later window stays shared. */
+    hook_loot_close(functor);
+    CHECK(!it_closes && !sent);
+    memset(wk_display + DD_WALK_LOOT_OVERLAY + 0x218, 0, 2);
     hook_loot_close(functor);
     CHECK(!it_closes && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
     /* Close. */

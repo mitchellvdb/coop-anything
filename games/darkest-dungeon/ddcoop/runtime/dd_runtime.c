@@ -578,7 +578,7 @@ static int recruit_apply(const dd_action *a) {
         dd_log("Stagecoach refused: candidate/display mismatch hero=%u screen=%d",a->u.hero.hero_id,screen);return 0;
     }
     if(!dd_recruit_fingerprint(&s,before.id,&fingerprint) || fingerprint!=a->u.recruit.fingerprint) {
-        dd_log("Stagecoach candidate content mismatch hero=%u",before.id);
+        dd_log("Stagecoach candidate content mismatch hero=%u local=%016llx requested=%016llx screen=%d",before.id,(unsigned long long)fingerprint,(unsigned long long)a->u.recruit.fingerprint,screen);
         pool_fail();return 0;
     }
     if(screen && !before.enabled) {

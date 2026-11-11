@@ -491,7 +491,10 @@ static uint64_t item_in_bag(uint64_t raid, uint32_t type, uint32_t id);
 #include "dd_prop_choice_bridge.inc"
 static int walk_use_apply(const dd_action *a) {
     if(a->u.use.door>=3)return walk_choice_apply(a);
-    if(!a->u.use.door && a->u.use.revision!=g_prop_revision)return 0;
+    if(!a->u.use.door && a->u.use.revision!=g_prop_revision) {
+        dd_log("Prop OPEN refused: revision wanted=%u local=%u area=%08x prop=%u",a->u.use.revision,g_prop_revision,a->u.use.area,a->u.use.prop);
+        return 0;
+    }
     walk_view v;
     uint64_t prop = 0, begin = 0, end = 0, hero = 0;
     uint32_t kind = 0;
@@ -529,8 +532,10 @@ static int walk_use_apply(const dd_action *a) {
     }
     if (!safe_read((uintptr_t)v.raid + 8, &begin, 8) || !safe_read((uintptr_t)v.raid + 0x10, &end, 8) || end < begin ||
         (uint64_t)a->u.use.hero >= (end - begin) / 8 || !safe_read((uintptr_t)(begin + (uint64_t)a->u.use.hero * 8), &hero, 8) || !hero || !g_party_select)
-        return 0;
-    if(a->u.use.actor_id) {uint32_t id=0;if(!safe_read((uintptr_t)hero+0x137c,&id,4) || id!=a->u.use.actor_id)return 0;}
+        { dd_log("Prop OPEN refused: party/rank unreadable (rank=%u expected actor=%u)",a->u.use.hero,a->u.use.actor_id); return 0; }
+    if(a->u.use.actor_id) {uint32_t id=0;if(!safe_read((uintptr_t)hero+0x137c,&id,4) || id!=a->u.use.actor_id) {
+        dd_log("Prop OPEN refused: actor wanted=%u local=%u rank=%u",a->u.use.actor_id,id,a->u.use.hero); return 0;
+    }}
     uint32_t mode = 0;
     /* A duplicate or refused OPEN changes nothing, so it must not send the host's Rules either: that number
      * already holds the open curio's draws, and a guest whose own curio has not drawn yet took it over first
@@ -1044,6 +1049,9 @@ static const hamlet_hook_spec g_walk_hooks[] = {
     {"rules_uniform", (uintptr_t)hook_rules_uniform, &g_rules_uniform, 11},
     {"curio_item", (uintptr_t)hook_curio_item, &g_curio_item, 12},
     {"bark_moving", (uintptr_t)hook_bark_moving, &g_bark_moving, 13},
+    {"confirm_enqueue", (uintptr_t)hook_confirm_enqueue, &g_confirm_enqueue, 8},
+    {"confirm_show_entry", (uintptr_t)hook_confirm_show_entry, &g_confirm_show_entry, 12},
+    {"confirm_ack", (uintptr_t)hook_confirm_ack, &g_confirm_ack, 9},
     {"tutorial_show", (uintptr_t)hook_tutorial_show, &g_tutorial_show, 11},
     {"panel_close", (uintptr_t)hook_panel_close, &g_panel_close, 13},
     {"results_setup", (uintptr_t)hook_results_setup, &g_results_setup, 10},

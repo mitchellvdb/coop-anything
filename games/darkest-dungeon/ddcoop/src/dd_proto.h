@@ -16,7 +16,7 @@
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
 #define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
-#define DD_PROTO_VERSION 35 /* weekly message also carries the shared campaign guid counter */
+#define DD_PROTO_VERSION 36 /* shared inventory-full acknowledgement, tied to its loot order */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -97,7 +97,7 @@ typedef struct {
 } dd_action;
 enum { DD_SUPPLY_BUY=1, DD_SUPPLY_RETURN=2, DD_SUPPLY_CANCEL=3 };
 enum { DD_BATTLE_OP_SKILL = 0, DD_BATTLE_OP_ENEMY = 1, DD_BATTLE_OP_FRIEND = 2, DD_BATTLE_OP_MOVE = 3 };
-enum { DD_ITEM_OP_USE = 0, DD_ITEM_OP_TORCH = 1, DD_ITEM_OP_LOOT_ALL = 2, DD_ITEM_OP_LOOT_CLOSE = 3, DD_ITEM_OP_LOOT_ITEM = 4, DD_ITEM_OP_CURIO = 5, DD_ITEM_OP_SELECT = 6, DD_ITEM_OP_TUTORIAL = 7, DD_ITEM_OP_RETREAT = 8, DD_ITEM_OP_CAMP_MEAL = 9, DD_ITEM_OP_CAMP_SKILL = 10, DD_ITEM_OP_CAMP_LEAVE = 11, DD_ITEM_OP_QUEST_ONE = 12, DD_ITEM_OP_QUEST_TWO = 13, DD_ITEM_OP_RULES = 14, DD_ITEM_OP_RESULTS_NEXT = 15, DD_ITEM_OP_BAG_SLOT = 16, DD_ITEM_OP_BAG_ASK = 17, DD_ITEM_OP_TOWN = 18, DD_ITEM_OP_HUNGER = 19, DD_ITEM_OP_QUEST_RETURN = 20, DD_ITEM_OP_BAG_CHECK = 21 }; /* TOWN: host -> guest after a raid; type currencies, id heroes, round count (hashes) */
+enum { DD_ITEM_OP_USE = 0, DD_ITEM_OP_TORCH = 1, DD_ITEM_OP_LOOT_ALL = 2, DD_ITEM_OP_LOOT_CLOSE = 3, DD_ITEM_OP_LOOT_ITEM = 4, DD_ITEM_OP_CURIO = 5, DD_ITEM_OP_SELECT = 6, DD_ITEM_OP_TUTORIAL = 7, DD_ITEM_OP_RETREAT = 8, DD_ITEM_OP_CAMP_MEAL = 9, DD_ITEM_OP_CAMP_SKILL = 10, DD_ITEM_OP_CAMP_LEAVE = 11, DD_ITEM_OP_QUEST_ONE = 12, DD_ITEM_OP_QUEST_TWO = 13, DD_ITEM_OP_RULES = 14, DD_ITEM_OP_RESULTS_NEXT = 15, DD_ITEM_OP_BAG_SLOT = 16, DD_ITEM_OP_BAG_ASK = 17, DD_ITEM_OP_TOWN = 18, DD_ITEM_OP_HUNGER = 19, DD_ITEM_OP_QUEST_RETURN = 20, DD_ITEM_OP_BAG_CHECK = 21, DD_ITEM_OP_FULL_NOTICE = 22 }; /* TOWN: host -> guest after a raid; type currencies, id heroes, round count (hashes) */
 
 typedef struct {
     uint32_t protocol;

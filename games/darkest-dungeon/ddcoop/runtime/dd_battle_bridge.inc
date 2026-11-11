@@ -392,7 +392,15 @@ static int battle_gate(const dd_msg *m) {
     const dd_action *a = &m->u.town.action;
     uint64_t now = GetTickCount64();
     if (!g_battle_wait_until) g_battle_wait_until = now + 30000;
-    if (g_walk_view(&v) && battle_read(&v, &b)) go = battle_compare(&b, a) >= 0;
+    if (g_walk_view(&v) && battle_read(&v, &b)) {
+        /* Phase numbers are not a clock. Presentation33 can still belong to
+         * the action that ends at the very same round/turn as input29/30.
+         * Only round/turn can prove an order stale. At equal coordinates,
+         * wait for input instead of popping a still-valid choice too early. */
+        int same_turn = b.round == a->u.battle.round && b.turn == a->u.battle.turn;
+        int choosing = b.state == DD_BATTLE_CHOOSE_SKILL_STATE || b.state == DD_BATTLE_CHOOSE_TARGET_STATE;
+        go = same_turn ? (choosing && battle_compare(&b, a) >= 0) : battle_compare(&b, a) >= 0;
+    }
     if (!go && now <= g_battle_wait_until) {
         if (!g_battle_gate_told) {
             g_battle_gate_told = 1;
