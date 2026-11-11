@@ -1,0 +1,29 @@
+DDCoop test81 / solo duo60 - shared inventory-full dismissal and combat timing
+
+1. Close all game windows before installing. Keep the launchers open during a
+   session. All players need the same kit. Hosts install test81 normally;
+   friends on test77 or newer can accept the signed update when joining.
+2. Fill the inventory, then try to take another loot item. When the game shows
+   its inventory-full message, click OK on one guest. The matching messages
+   must close on all copies. Repeat with the host, and another guest if present.
+   The loot itself must stay in the chest if there is still no room.
+3. Free a slot and take the item. Compare bags on all copies. Repeat taking
+   all loot, and closing the loot window. Do not skip a desync warning.
+4. Play a fight with heroes assigned to different players. Try the next skill
+   while another copy is finishing its previous animation. The slower copy
+   should follow once ready; nobody should need the host to click for them.
+5. Complete the raid, return to town and compare Stagecoach candidates. Test
+   Tavern/Abbey draft, Accept and X, plus learned/active skills. Restart once
+   and confirm that the host kept the paid activities and selected skills.
+6. If anything differs or controls stop, copy logs from every launcher before
+   resyncing. Send the latest full set, not an older guest log of the same name.
+
+Solo duo60: install the duo kit, start DDCoop and click Host. The companion
+Start second/third/fourth window batch files start local guest windows. This
+variant supports up to four windows for testing; it is not a multi-PC kit.
+Duo does not participate in signed host updates. Install it manually and use
+one kit variant consistently. Solo batch guests restart manually after resync.
+
+These fixes pass simulated/native-adapter tests; real gameplay needs this run.
+The Stagecoach mismatch and some earlier curio/loot refusals remain under
+investigation. The kit logs more detail and retains the refusal guards.
