@@ -50,3 +50,22 @@ backpressure failed before this guard, then passed with every sender following.
 Negative receipts stop failed uploads without touching gameplay. Windows adapter
 fixtures use only workspace files and fake membership/transport, with independent
 Python ZIP verification. Live Steam delivery remains a next owner test.
+
+## Test86 local event and guest report location
+
+A locally detected native synchronization failure also posts local overlay
+command6 with the current process ID to its attached launcher. The launcher
+accepts its tracked game only, once per game, and requests the existing report
+before the next one-second log scan or a blocking connection-error notice.
+Ordinary connection loss and a generic stop received from another copy do not
+emit this event. The bounded new-log detector remains a fallback. No new Steam
+message, external upload or gameplay mutation is introduced.
+
+The host still writes one grouped report/ZIP to Desktop. A guest's local fallback
+uses %LOCALAPPDATA%\DDCoop\Reports, never the guest Desktop. Known-folder failure
+refuses that local output rather than falling back to Desktop. This does not
+remove existing reports or delete anyone's files. Missing disconnected launchers
+remain explicit: closing them before collection prevents remote retrieval.
+Windows adapter fixtures cover host/guest folder selection, current/foreign PID,
+once-only event requests, normal-end behavior and the existing report transport.
+Written by Codex, 12 November 2026.

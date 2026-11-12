@@ -308,3 +308,19 @@ Campaign mod preflight from Claude Code is included with strict malformed-list
 and unreadable/linked-tree refusal. Launcher wire3 remains; all peers need75.
 No owner-file/mapping or host save preference/guest-nosave change. See
 runtime/STAGECOACH-WEEK.md and launcher/MODS.md for scope and limits.
+
+## Test86 live self-claim and living roster
+
+Assign remains an arbitrary player selector on the host. On a guest, selecting a
+hero exposes Take control for that guest's authenticated player index. It uses the
+existing LR_CLAIM route; only the host publishes the revised table. The runtime's
+existing safe-boundary ownership updates apply it during the current expedition.
+A guest cannot forge an assignment to another player through this adapter. Existing
+checkbox/F9 claims remain. Core tests relinquish and retake a hero from a playing
+guest and check the host-written INI and refusal of a different requested owner.
+
+The save reader omits status3 graveyard entries from the living roster, before
+capacity counting. Missing/status4 heroes remain visible. Dismissed entries that
+are removed from the saved roster disappear on refresh as before. This is not a
+read of arbitrary other save slots, nor a new synchronous native roster feed.
+Written by Codex; isolated launcher changes for the owner's requested fixes.

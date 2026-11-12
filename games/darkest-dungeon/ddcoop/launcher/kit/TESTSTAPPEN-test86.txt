@@ -1,0 +1,34 @@
+DDCoop test86 - focused regression test (2-4 players)
+
+Close game windows before installing. The host installs86; supported older
+signed-update launchers can accept the offered86 kit. Everyone uses86.
+No new solo/duo kit is included; duo61 does not contain these repairs.
+
+1. Start in the Hamlet. Recruit from each player's Stagecoach. Hover/open a
+   candidate's quirks on one screen only before recruiting. Shared heroes must
+   match. If checking candidates stops, keep launchers open for the report.
+2. With a guest, move trinkets between inventory and heroes, including a hero
+   placed in the Tavern/Abbey. A legitimate class or duplicate restriction may
+   still refuse. Gold and inventory must match. Try learning/selecting skills
+   and buying food; a remaining failure now has more precise diagnostic traces.
+3. In a fight, select a hero in the guest launcher and press Take control.
+   The guest should gain its turn through the shared ownership update. On a
+   Houndmaster's own turn try Dog Treats and compare buff and item quantity.
+4. After a fight immediately drag the same party into another order. Wait for
+   animation and check every copy, then travel. Repeat with a different player.
+5. With a full bag, Take All loot. One player dismisses inventory-full OK.
+   The same informational popup must close everywhere. Repeat as a guest.
+   Try a trinket directly from loot onto a hero. Note any refusal; this engine
+   behavior still needs live confirmation despite passing modeled regressions.
+6. Return to the Hamlet after a normal mission, then recruit, provision and
+   embark again with a guest leading. A candidate-pool stop is still possible:
+   the root of all reported return failures is not yet confirmed. Send that
+   combined report; do not force past a stop with independent local actions.
+7. F9 must omit dead heroes after the saved roster refresh. The guest desktop
+   should stay clear of new fallback reports. One combined host Desktop ZIP
+   contains each available participant or explicitly marks a missing one.
+
+Keep every launcher open until report collection/recovery finishes, even after
+closing a game. If the link is already lost, missing logs cannot be retrieved.
+If no report appears, use Copy logs on the host. Reports stay private.
+Press-any-key screens still need each player's click in this kit.

@@ -21,11 +21,11 @@ typedef struct {
     char name[LR_HERO_NAME_MAX + 1];     /* UTF-8, control characters replaced */
     char cls[LR_HERO_CLASS_MAX + 1];     /* "crusader", "plague_doctor", ... */
     int32_t xp;                          /* resolveXp */
-    int32_t status;                      /* roster.status: 0 = in the party, 1 = in town, 2 = in a building */
+    int32_t status;                      /* roster.status: 0 = in town, 1 = in the party, 2 = in a building, 3 = dead */
 } lr_hero;
 
 /* Parses a roster file. Returns the number of heroes stored in out (sorted by id), -1 if the file is
- * not a readable roster. Heroes beyond cap are dropped. */
+ * not a readable roster. Graveyard records (status 3) are omitted before applying cap; a dead hero still exists in the save. Heroes beyond cap are dropped. */
 int lr_roster_parse(const uint8_t *buf, size_t len, lr_hero *out, int cap);
 
 /* Level shown in the game (0-6) for a resolveXp value. */

@@ -160,7 +160,7 @@ void lr_core_host_roster(lr_core *c, const uint8_t *buf, size_t len);
 
 /* This player ticks (1 = mine) or unticks (0) a hero. Host: applied at once. Guest: asks the host, and the
  * answer arrives as a new table. Returns 1 if applied or sent. */
-/* Host-only direct assignment to a player in this session. */
+/* Host: direct assignment to a player in this session. Guest: authenticated self-claim only (Take control). */
 int lr_core_assign(lr_core *c, uint32_t hero_id, int player);
 int lr_core_claim(lr_core *c, uint32_t hero_id, int claim);
 

@@ -63,7 +63,20 @@ static void test_game_metadata(void) {
  printf("Campaign metadata: all nine known feature flags, strict complete DLC list, duplicate/malformed/oversized/hidden names and damaged object boundaries checked\n");
 }
 
+static void test_living_roster(void) {
+    static uint8_t bytes[65536];
+    const dw_hero list[]={{"1","Fallen","crusader",6,3},{"2","Living","vestal",6,0},{"3","Missing","highwayman",6,4}};
+    lr_hero out[4];size_t n=dw_roster(bytes,list,3);
+    CHECK(lr_roster_parse(bytes,n,out,4)==2 && out[0].id==2 && out[1].id==3);
+    CHECK(lr_roster_parse(bytes,n,out,1)==1 && out[0].id==2); /* Dead entries cannot fill the cap. */
+    dw_hero risen=list[0];risen.status=0;
+    n=dw_roster(bytes,&risen,1);CHECK(lr_roster_parse(bytes,n,out,4)==1 && out[0].id==1);
+    risen.status=3;n=dw_roster(bytes,&risen,1);CHECK(lr_roster_parse(bytes,n,out,4)==0);
+    n=dw_roster(bytes,NULL,0);CHECK(lr_roster_parse(bytes,n,out,4)==0); /* Last living hero dismissed. */
+}
+
 int main(void) {
+    test_living_roster();
     static uint8_t file[65536], copy[65536];
     static const dw_hero roster[] = {
         {"8", "Bourneville", "vestal", 13, 2},

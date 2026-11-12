@@ -188,7 +188,7 @@ int lr_roster_parse(const uint8_t *buf, size_t len, lr_hero *out, int cap) {
         raw = raw >= 0 ? child(&d, (uint32_t)raw, "raw_data") : -1;
         const uint8_t *p;
         uint32_t n;
-        if (count < cap && parse_id(nm, &h.id) && value_blob(&d, raw, &p, &n) && read_hero(p, n, &h))
+        if (count < cap && parse_id(nm, &h.id) && value_blob(&d, raw, &p, &n) && read_hero(p, n, &h) && h.status != 3)
             out[count++] = h;
     }
     qsort(out, (size_t)count, sizeof *out, by_id);

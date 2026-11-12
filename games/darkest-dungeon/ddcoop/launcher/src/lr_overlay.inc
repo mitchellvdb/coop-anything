@@ -74,6 +74,13 @@ static void overlay_publish(void) {
     InterlockedIncrement((volatile LONG *)&g_overlay_view->sequence);
 }
 static void overlay_command(WPARAM command, LPARAM value) {
+    /* A runtime failure can precede the next one-second file poll or a connection-error modal.
+     * Accept only the currently tracked process, once per game; ordinary peer/session loss emits no event. */
+    if(command==DD_OVERLAY_SYNC_STOP) {
+        if(G.game && (DWORD)value==GetProcessId(G.game) && !G.diag_seen_stop && diagnostics_request(LR_DIAG_DESYNC,0))
+            G.diag_seen_stop=1;
+        return;
+    }
     if (!G.game || !session_active()) return;
     switch (command) {
     case DD_OVERLAY_LAUNCHER:

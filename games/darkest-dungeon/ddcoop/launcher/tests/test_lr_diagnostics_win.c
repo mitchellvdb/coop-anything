@@ -67,6 +67,29 @@ static void setup_(const char *root, const char *report) {
     lr_diag_config cfg = {NULL, fake_send_, diagnostics_collect, diagnostics_save, diagnostics_changed};
     lr_diag_init(&G.diagnostics, &cfg, LR_ROLE_HOST, 0, G.core.cfg.kit, 98);
 }
+static char test_folder_root[LR_PATH_MAX];
+static int test_folder_id;
+static HRESULT WINAPI test_known_folder(HWND w,int id,HANDLE h,DWORD flags,LPWSTR out) {
+    (void)w;(void)h;(void)flags;
+    CHECK(id==test_folder_id);
+    return MultiByteToWideChar(CP_UTF8,0,test_folder_root,-1,out,MAX_PATH)>0?S_OK:E_FAIL;
+}
+static void report_location_test(const char *root) {
+    HRESULT (WINAPI *original)(HWND,int,HANDLE,DWORD,LPWSTR)=g_diagnostics_folder;
+    g_diagnostics_folder=test_known_folder;
+    for(int guest=0;guest<2;guest++) {
+        setup_(root,"location-fixture");G.diagnostics.role=guest?LR_ROLE_GUEST:LR_ROLE_HOST;
+        path_(test_folder_root,root,guest?"guest-appdata":"host-desktop");
+        test_folder_id=guest?CSIDL_LOCAL_APPDATA:CSIDL_DESKTOPDIRECTORY;
+        diagnostics_directory(321u+(unsigned)guest);
+        char expected[LR_PATH_MAX];
+        if(guest)lr_join(expected,sizeof expected,test_folder_root,"DDCoop/Reports");
+        else snprintf(expected,sizeof expected,"%s",test_folder_root);
+        CHECK(G.diag_dir[0] && !strncmp(G.diag_dir,expected,strlen(expected)));
+        CHECK(!guest || !strstr(G.diag_dir,"host-desktop"));
+    }
+    g_diagnostics_folder=original;
+}
 int main(int argc, char **argv) {
     if (argc != 2)
         return 2;
@@ -75,6 +98,15 @@ int main(int argc, char **argv) {
     if (!got || got >= sizeof root)
         return 2;
     CHECK(lr_make_dirs(root));
+    report_location_test(root);
+    setup_(root,"runtime-event-report");
+    G.game=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,GetCurrentProcessId());CHECK(G.game!=NULL);
+    overlay_command(DD_OVERLAY_SYNC_STOP,(LPARAM)(GetCurrentProcessId()+1));CHECK(!G.diag_seen_stop && !G.diagnostics.report);
+    overlay_command(DD_OVERLAY_SYNC_STOP,(LPARAM)GetCurrentProcessId());
+    CHECK(G.diag_seen_stop && G.diagnostics.report && G.diagnostics.reason==LR_DIAG_DESYNC);
+    uint32_t event_report=G.diagnostics.report;
+    overlay_command(DD_OVERLAY_SYNC_STOP,(LPARAM)GetCurrentProcessId());CHECK(G.diagnostics.report==event_report);
+    CloseHandle(G.game);G.game=NULL;diagnostics_reset();
     setup_(root, "packet-report");
     char path[LR_PATH_MAX];
     path_(path, G.moddir, "DDCoop-launcher.log");

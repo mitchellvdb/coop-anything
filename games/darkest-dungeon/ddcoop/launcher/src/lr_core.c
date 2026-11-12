@@ -305,6 +305,9 @@ static void guest_send_claims(lr_core *c) {
 
 int lr_core_assign(lr_core *c, uint32_t hero_id, int player) {
     if (c->resync_requested) return 0;
+    /* The guest's Take control button follows the same authenticated self-claim as its checkbox.
+     * The host persists the resulting table, which the runtime orders at a safe live boundary. */
+    if(c->role==LR_ROLE_GUEST)return player==lr_core_player(c) ? lr_core_claim(c,hero_id,1) : 0;
     if (c->role != LR_ROLE_HOST || (c->state != LR_ST_HOST_WAITING &&
         c->state != LR_ST_HOST_SENDING && c->state != LR_ST_HOST_PLAYING)) return 0;
     int guests = c->cfg.max_guests >= 1 && c->cfg.max_guests <= LR_MAX_GUESTS ? c->cfg.max_guests : LR_MAX_GUESTS;

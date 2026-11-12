@@ -1,6 +1,15 @@
 DDCoop - development test kit {VERSION}
 
-New in test85
+New in test86
+Stagecoach startup retries and quirk display-flag handling; post-combat party
+reorder; shared inventory-full OK even when handled after drawing; guest Hamlet
+trinket slot mapping; combat item turn ownership; dead heroes hidden in F9; guest
+Take control; earlier desync report requests. Guest fallback reports go to
+%LOCALAPPDATA%\DDCoop\Reports; the combined host report remains on Desktop.
+Some return-to-Hamlet, skill and gold mismatches remain under investigation.
+Follow TESTSTAPPEN-test86.txt. Use the same86 kit on every PC.
+
+Retained from test85
 Back in the provisions screen (the shop before a mission) now closes that shop on
 every player's screen by itself. Until test84 the other screens stayed open and
 everyone had to press Back by hand, and pressing Escape twice could leave a
@@ -63,7 +72,7 @@ the host's id counter is shared together with the new-week Rules state. A
 shared camp Leave waits until the camp is not covered by another window on
 that PC, instead of leaving only some games in camp.
 From test75: Stagecoach candidates are compared before recruiting, and each
-recruit checks the hero's content. Read TESTSTAPPEN-test76.txt and
+recruit checks the hero's content. Read TESTSTAPPEN-test86.txt and
 STAGECOACH-WEEK.md.
 
 Campaign mod files are compared when joining a modded campaign. Unknown lists,
@@ -101,16 +110,16 @@ need a fresh Host/Join or manual test-window restart. Do not rejoin an old runni
 session or copy a different campaign to work around a synchronization stop.
 
 Testing and logs
-Follow TESTSTAPPEN-test82.txt. Send the combined DDCoop-report ZIP from the host desktop.
+Follow TESTSTAPPEN-test86.txt. Send the combined DDCoop-report ZIP from the host desktop.
 Copied logs redact known authentication secrets; review them before sharing.
 
 Scope
 Two to four players, supported Steam Windows x64 build28385. Shared Hamlet,
 provisions/departure, dungeon actions and combat remain development features.
 DLC groundwork is included; full native/live DLC validation, shard purchases,
-direct loot-to-hero trinket equipping and complete game-state verification remain
-open. The default-order button/shortcut is shared; arbitrary manual dungeon
-formation dragging is not newly synchronized by this kit.
+direct loot-to-hero trinket equipping and complete game-state verification still
+need live validation. Default-order and manual dungeon formation changes are
+shared. Shared press-any-key continuation remains planned.
 
 Files (SHA-256)
 {HASHES}

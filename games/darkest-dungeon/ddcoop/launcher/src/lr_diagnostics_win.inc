@@ -41,17 +41,26 @@ static int diagnostics_tail(const char *path, size_t cap, uint8_t **out, size_t 
     *len = got - skip;
     return 1;
 }
+/* Redirectable only for the isolated adapter fixture. Runtime defaults to the Windows known-folder API. */
+static HRESULT (WINAPI *g_diagnostics_folder)(HWND,int,HANDLE,DWORD,LPWSTR)=SHGetFolderPathW;
 static void diagnostics_directory(uint32_t report) {
     if (G.diag_folder_id == report && G.diag_dir[0])
         return;
     G.diag_folder_id = report;
     G.diag_dir[0] = 0;
     memset(G.diag_files, 0, sizeof G.diag_files);
-    wchar_t desktop[MAX_PATH];
-    if (SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktop) != S_OK)
+    wchar_t folder[MAX_PATH];
+    int guest=G.diagnostics.role==LR_ROLE_GUEST;
+    if (g_diagnostics_folder(NULL, guest?CSIDL_LOCAL_APPDATA:CSIDL_DESKTOPDIRECTORY, NULL, 0, folder) != S_OK)
         return;
     char base[LR_PATH_MAX], stamp[120];
-    to_utf8(desktop, base, sizeof base);
+    to_utf8(folder, base, sizeof base);
+    if(!base[0])return;
+    if(guest) {
+        char local[LR_PATH_MAX];
+        lr_join(local,sizeof local,base,"DDCoop/Reports");
+        snprintf(base,sizeof base,"%s",local);
+    }
     time_t now = time(NULL);
     struct tm when;
     localtime_s(&when, &now);

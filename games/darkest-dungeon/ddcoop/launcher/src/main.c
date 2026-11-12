@@ -1362,9 +1362,11 @@ static void update_heroes(void) {
         G.heroes_recheck_at = 0;
         G.heroes_shown = 0xFFFFFFFFu;
     }
-    int can_assign = role == LR_ROLE_HOST && lr_owners_find(o, G.assign_hero) >= 0;
-    EnableWindow(G.assign_player, can_assign);
+    int can_assign = role != 0 && lr_owners_find(o, G.assign_hero) >= 0;
+    if(role==LR_ROLE_GUEST)SendMessageW(G.assign_player,CB_SETCURSEL,(WPARAM)lr_core_player(&G.core),0);
+    EnableWindow(G.assign_player, can_assign && role==LR_ROLE_HOST);
     EnableWindow(G.assign_button, can_assign);
+    SetWindowTextW(G.assign_button,role==LR_ROLE_GUEST?L"Take control":L"Assign");
     if (o->revision == G.heroes_shown && role == G.heroes_role) return;
     G.heroes_shown = o->revision;
     G.heroes_role = role;
@@ -1413,7 +1415,7 @@ static void update_heroes(void) {
                                              : "Waiting for the host hero list...");
     else
         set_heroes_hint("\xe2\x97\x8f = current in-game party, shown first. Tick the heroes you control; "
-                        "changes apply at the next supported choice boundary. The host can also select a row and assign a player.");
+                        "changes apply at the next supported choice boundary. Guests can select a row and click Take control; hosts can assign any player.");
 }
 
 /* A tick box was clicked: ask lr_core (the host decides). The list then follows the table again: the host's

@@ -948,6 +948,15 @@ int main(void) {
     CHECK(ini && strstr(ini, "hero.2=1"));
     free(ini);
 
+    /* Same self-claim from the guest button, including an already running game. */
+    CHECK(lr_core_assign(&host.core,2,0));
+    CHECK(run_until(&host,&guest,owners_match,NULL,3000));
+    guest.core.state=LR_ST_GUEST_PLAYING;
+    CHECK(lr_core_assign(&guest.core,2,lr_core_player(&guest.core)));
+    CHECK(run_until(&host,&guest,owner_is,(void*)"2g",3000));
+    CHECK(!lr_core_assign(&guest.core,2,0)); /* Self-claim is not arbitrary reassignment. */
+    ini=read_text(host.core.cfg.heroes_path);CHECK(ini && strstr(ini,"written_by=host") && strstr(ini,"hero.2=1"));free(ini);
+
     /* 4d. the guest cannot give away the host's hero, nor tick an unknown one: refused, the table comes back */
     uint32_t rev = host.core.owners.revision;
     CHECK(lr_core_claim(&guest.core, 1, 0));
