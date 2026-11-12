@@ -8,7 +8,7 @@
 #define LR_HASH_BOOTSTRAP "ad3c25374e9fb23ff5e388cde052a7359abad1cda9bf5afb6aad399e25e82589"     /* test12 SDL input + GL swap bootstrap */
 #define LR_HASH_BOOTSTRAP_TEST11 "e7f1c4a7aa8a96144b17497fd774aefac71af3625a69e3e1f2e57be59c24a627" /* verified predecessor, upgrade only with intact original */
 #define LR_HASH_TOWN_PROBE_V12 "e3d4796686656c496715ab0d9917d4413b12b34ef8eef3cb6929b9c27c7dd8fc" /* read-only probe */
-#define LR_HASH_RUNTIME "721427250e527245adcac86535bdd75770f869d6635aa554ebeb06bb20ebbd35" /* test85: test84 plus the provisions Back fix (77b07f8) */
+#define LR_HASH_RUNTIME "873086879e17fa87ec67b0b326c33eb2cc19109f60eefb2fe7de2c0634265106" /* test86: Stagecoach, shared items/notices, formation and direct diagnostics */
 /* The owner's kit-signing key (ECDSA P-256 public point X||Y; tools/sign_kit.ps1, launcher/UPDATE.md). */
 #define LR_KIT_PUBKEY "58ea828163113e335f01fc6dff9838d695077b3a073f1536398f6f950cae1c3a049d88637ebc8417b2c93518f3c1daff02e9ab26167119d7567c04f124118a5c"
 
