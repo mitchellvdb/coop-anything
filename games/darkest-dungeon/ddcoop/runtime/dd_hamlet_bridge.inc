@@ -76,6 +76,10 @@ static int (*g_hamlet_open_model)(dd_hamlet *) = hamlet_open;
 static int hamlet_read(const dd_hamlet *s, uint64_t p, void *out, size_t n) {
     return p && p <= UINT64_MAX - n && s->read(s->ctx, p, out, n);
 }
+static int runtime_gold_read(int32_t *gold) {
+    dd_hamlet s;return g_hamlet_open_model(&s) && dd_hamlet_currency(&s,DD_SUPPLIES_GOLD,gold);
+}
+static void hamlet_skill_trace(const dd_hamlet *,uint32_t,unsigned,unsigned,const char *);
 /* A hero's upgrade (Blacksmith weapon/armour, Guild skills) changes the hero only through a callback that the building's
  * screen registers for that hero, upgrade and level (59b2f0; 59ad80 calls and removes it after the purchase). The copy
  * whose screen never showed that hero has no callback: in the owner's run of 8 Nov 02:50 the guest bought weapon upgrades,
@@ -101,6 +105,8 @@ static void hamlet_upgrade_refresh(uint32_t id) {
     if (hamlet_read(&s, hero.hero, &vt, 8) && hamlet_read(&s, vt + 0x88, &entry, 8) && image_range((uintptr_t)entry, 1))
         ((hero_virtual_fn)(uintptr_t)entry)((void *)(uintptr_t)hero.hero, 0);
     hamlet_read(&s, hero.hero + 0x132c, after, sizeof after);
+    hamlet_skill_trace(&s,id,0,0,"upgrade combat");
+    hamlet_skill_trace(&s,id,1,0,"upgrade camping");
     dd_log("Upgrade: hero %u refreshed, weapon %d->%d, armour %d->%d, skills", id, before[0], after[0], before[1], after[1]);
 }
 static void hamlet_refresh_schedule(uint32_t id) {
@@ -198,10 +204,31 @@ static void hamlet_request_done(uint32_t request, int rejected) {
     for (unsigned i = DD_ACT_DISMISS; i < DD_ACT_COUNT_; i++)
         if (request && g_hamlet_requests[i] == request) {
             g_hamlet_requests[i] = 0;
-            if (rejected)
-                shop_notice("The host refused this change. Check the current state and "
-                            "try the action again.");
+            if (rejected) {
+                if(i==DD_ACT_TRINKET_MOVE)
+                    shop_notice("This trinket move could not be applied. Any player may move trinkets. Check the slots, class restriction and duplicate equipment, then try again.");
+                else shop_notice("The change could not be applied to the current state. Check the current state and try again.");
+            }
         }
+}
+/* Read-only skill-model evidence. A displayed zero mask must not conceal an unreadable/unlearned vector. */
+static void hamlet_skill_trace(const dd_hamlet *s,uint32_t id,unsigned camping,unsigned index,const char *stage) {
+    dd_hamlet_hero h;uint64_t lb=0,le=0,sb=0,se=0;uint32_t level=UINT32_MAX,mask=0;int known=0;
+    if(dd_hamlet_find(s,id,&h)!=1) {dd_log("Skill detail %s hero=%u missing",stage,id);return;}
+    uint64_t lp=h.hero+(camping?0x13b0:0x13e0),sp=h.hero+(camping?0x1398:0x13c8);
+    if(!hamlet_read(s,lp,&lb,8) || !hamlet_read(s,lp+8,&le,8) || !hamlet_read(s,sp,&sb,8) || !hamlet_read(s,sp+8,&se,8) ||
+       le<lb || se<sb || (le-lb)%4 || (se-sb)%4 || (le-lb)/4>32 || (se-sb)/4>8) {
+        dd_log("Skill detail %s hero=%u camping=%u vectors unreadable",stage,id,camping);return;
+    }
+    if(index<(le-lb)/4)known=hamlet_read(s,lb+index*4,&level,4);
+    int valid=dd_hamlet_skill_mask(s,&h,camping,&mask);uint32_t learned=0;
+    for(unsigned i=0;i<(le-lb)/4;i++) {
+        uint32_t v=UINT32_MAX;
+        if(!hamlet_read(s,lb+i*4,&v,4)){valid=0;break;}
+        if(v<=4)learned|=1u<<i;
+    }
+    dd_log("Skill detail %s hero=%u camping=%u index=%u learned_count=%u selected_count=%u level=%u known=%d learned_mask=%08x mask=%08x valid=%d location=%u",
+        stage,id,camping,index,(unsigned)((le-lb)/4),(unsigned)((se-sb)/4),level,known,learned,mask,valid,h.location);
 }
 static int hamlet_skill_apply(const dd_hamlet *s, const dd_action *a) {
     dd_hamlet_hero hero;
@@ -215,6 +242,7 @@ static int hamlet_skill_apply(const dd_hamlet *s, const dd_action *a) {
         dd_log("Hamlet skill refused hero=%u camping=%u index=%u: selected here=%d sender=%u, mask here=%08x sender=%08x",
                a->u.skill.hero_id, a->u.skill.camping, a->u.skill.index, active, a->u.skill.before, before,
                a->u.skill.selected_mask);
+        hamlet_skill_trace(s,a->u.skill.hero_id,a->u.skill.camping,a->u.skill.index,"refused");
         return hamlet_fail("skill not learned, stale selection or invalid hero", 0);
     }
     g_hamlet_toggle[a->u.skill.camping]((void *)(uintptr_t)hero.hero, a->u.skill.index);
@@ -232,6 +260,7 @@ static int hamlet_skill_apply(const dd_hamlet *s, const dd_action *a) {
         if (g_recruit_save[0]) g_recruit_save[0]((void *)(uintptr_t)s->campaign, 0);
         if (g_hamlet_notify) g_hamlet_notify((void *)(uintptr_t)(s->campaign + 0xe50));
         if (g_recruit_save[3]) g_recruit_save[3]((void *)(image_base() + 0x2a6cf70), 0);
+        hamlet_skill_trace(s,hero.id,a->u.skill.camping,a->u.skill.index,"after writers");
         hamlet_refresh_schedule(hero.id);
         return 1;
     }
@@ -534,7 +563,7 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
         return hamlet_fail("trinket native operations unavailable", 0);
     for (unsigned i = 0; i < 2; i++) {
         dd_hamlet_hero hero;
-        if ((DD_TRINKET_IS_HERO(owners[i]) && (dd_hamlet_find(s, owners[i], &hero) != 1 || hero.location > 1)) ||
+        if ((DD_TRINKET_IS_HERO(owners[i]) && (dd_hamlet_find(s, owners[i], &hero) != 1 || hero.location > 2)) ||
             !dd_hamlet_inventory(s, owners[i], &inv[i], &sizes[i]) ||
             !dd_hamlet_item(s, inv[i], slots[i], &type[i], &id[i], &q[i]) || (q[i] && type[i] != normal) ||
             !hamlet_read(s, inv[i] + 8, &items[i], 8))
@@ -542,12 +571,12 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
         base[i] = items[i];
         items[i] += (uint64_t)slots[i] * 0x5a8;
     }
-    /* The guest, for the raid's bag or loot: the host's slot may hold something else here, because a loot item landed in
+    /* Remote transactions (including a guest's estate move reaching the host), for estate/bag/loot: the host's slot may hold something else here, because a loot item landed in
      * another slot on this copy. In the owner's test59 run (9 Nov 18:27) the trinket was at bag slot 13 on the host and 14
      * on the guest; the host's move to its hero failed here, the trinket stayed in this bag, and the door's bag repair
      * then dropped it, so the guest's hero had no trinket. The same trinket (type and ID) elsewhere in that inventory, or
      * for a move into it an empty slot, is just as good: those items are alike. Heroes keep their exact slots. */
-    if (g_cfg.role == DD_ROLE_GUEST)
+    if (g_cfg.role == DD_ROLE_GUEST || (g_cfg.role == DD_ROLE_HOST && g_request_player))
         for (unsigned i = 0; i < 2; i++) {
             uint32_t want_type = i ? a->u.move.dst_type : a->u.move.src_type, want_id = i ? a->u.move.dst_id : a->u.move.src_id;
             if (DD_TRINKET_IS_HERO(owners[i]) || (type[i] == want_type && id[i] == want_id && (i || q[i] == 1))) continue;
@@ -556,7 +585,7 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
                 if (owners[0] == owners[1] && k == slots[1 - i]) continue;
                 if (!dd_hamlet_item(s, inv[i], k, &t, &d, &n)) break;
                 if (t != want_type || d != want_id || (want_type ? n != 1 : n != 0) || (n && t != normal)) continue;
-                dd_log("Trinket: the host's raid slot %u holds something else here; the same %s is at slot %u", slots[i],
+                dd_log("Trinket: remote inventory slot %u holds something else here; the same %s is at slot %u", slots[i],
                        i ? "place" : "trinket", k);
                 slots[i] = k;
                 type[i] = t;
@@ -570,7 +599,12 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
         type[1] != a->u.move.dst_type || id[1] != a->u.move.dst_id ||
         !dd_hamlet_can_equip(s, owners[1], slots[1], id[0], owners[0] == owners[1] ? slots[0] : UINT32_MAX) ||
         !dd_hamlet_can_equip(s, owners[0], slots[0], id[1], owners[0] == owners[1] ? slots[1] : UINT32_MAX))
+    {
+        dd_log("Trinket refused: source=%u:%u actual=%08x/%08x/%u expected=%08x/%08x destination=%u:%u actual=%08x/%08x expected=%08x/%08x player=%d",
+            owners[0],slots[0],type[0],id[0],q[0],a->u.move.src_type,a->u.move.src_id,
+            owners[1],slots[1],type[1],id[1],a->u.move.dst_type,a->u.move.dst_id,g_request_player);
         return hamlet_fail("stale trinket endpoints, duplicate equipment or class restriction", 0);
+    }
     /* Item owns C++ containers. Construct, clear, swap and destroy using the pinned game functions;
      * never memcpy a live Item or use a zero-initialized Item as a native argument. */
 #ifdef _MSC_VER
@@ -926,6 +960,26 @@ static int hamlet_raid_drag_source(const dd_hamlet *s, uint64_t selected, uint64
     }
     return 0;
 }
+/* Native loot InventorySlot widgets can point to an Item presentation copy. Only the exact known raid
+ * inventory wrapper (+100 is the native inventory) may use this fallback. Require one unique logical
+ * trinket in that container; duplicates or unrelated/foreign widgets still refuse without effects. */
+static int hamlet_raid_drag_copy(const dd_hamlet *s,uint64_t wrapper,uint64_t selected,uint64_t *inventory,uint32_t *owner,uint32_t *slot) {
+    uint32_t type=0,id=0,q=0,normal=0;
+    if(!wrapper || wrapper>UINT64_MAX-0x100 || !selected || selected>UINT64_MAX-0x8c ||
+       !hamlet_read(s,selected,&q,4) || q!=1 || !hamlet_read(s,selected+0x44,&type,4) ||
+       !hamlet_read(s,selected+0x88,&id,4) || !id || !hamlet_read(s,s->image+0x2a6f868,&normal,4) || type!=normal)return 0;
+    for(unsigned which=0;which<2;which++) {
+        uint32_t candidate=which?DD_TRINKET_LOOT:DD_TRINKET_BAG;uint64_t inv=0;unsigned count=0,found=0,at=0;
+        if(!dd_hamlet_inventory(s,candidate,&inv,&count) || wrapper+0x100!=inv)continue;
+        for(unsigned i=0;i<count;i++) {
+            uint32_t t=0,key=0,n=0;if(!dd_hamlet_item(s,inv,i,&t,&key,&n))return 0;
+            if(n==1 && t==type && key==id){found++;at=i;}
+        }
+        if(found!=1)return 0;
+        *inventory=inv;*owner=candidate;*slot=at;return 1;
+    }
+    return 0;
+}
 static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg3, void *data) {
     if (!g_trinket_pickup[kind]) return;
     prop_item_pickup(kind,ui,data);
@@ -939,8 +993,11 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
         int model=g_hamlet_open_model(&s);
         int endpoint=model && safe_read((uintptr_t)ui+0x28,&inventory,8) &&
             dd_hamlet_inventory_owner(&s,inventory,&owner) && safe_read((uintptr_t)ui+0xb8,&slot,4);
+        uint64_t wrapper=0;
+        (void)safe_read((uintptr_t)ui+0x28,&wrapper,8);
         if (model && safe_read((uintptr_t)ui+0x30,&selected,8) &&
-            hamlet_raid_drag_source(&s,selected,&inventory,&owner,&slot)) {
+            (hamlet_raid_drag_source(&s,selected,&inventory,&owner,&slot) ||
+             hamlet_raid_drag_copy(&s,wrapper,selected,&inventory,&owner,&slot))) {
             endpoint=1;
             dd_log("Trinket: canonical raid source=%u slot=%u",owner,slot);
         }

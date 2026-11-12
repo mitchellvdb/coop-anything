@@ -30,6 +30,7 @@ static uint64_t (*g_item_controller)(void) = item_controller;
 static void results_bag_reset(void);
 static void hunger_reset(void);
 static void quest_return_reset(void);
+static int loot_open(const walk_view *v);
 #include "dd_full_notice_bridge.inc"
 static void items_reset(void) {
     full_notice_reset();
@@ -107,9 +108,14 @@ static uint64_t __fastcall hook_item_use(void *controller, void *hero, void *inv
         dd_log("Item: hero not in the party; dropped");
         return 0;
     }
-    if (a.u.item.state && !hero_is_mine((uintptr_t)hero)) {
-        dd_log("Item: this hero belongs to the other player; dropped");
-        return 0;
+    if (a.u.item.state) {
+        battle_view b;
+        /* A combat consumable belongs to the active hero's turn. Its target may be a teammate, or NULL
+         * for the game's ordinary untargeted/self-use path (e.g. a right-clicked supply). Preserve that target. */
+        if(!battle_read(&v,&b) || !hero_is_mine(b.actor)) {
+            dd_log("Item: use waits for your hero's turn (slot=%d target=%u player=%d)",slot,a.u.item.hero,g_cfg.player);
+            return 0;
+        }
     }
     dd_action choice={0};
     int route=prop_item_route(&v,controller,inventory,slot,&choice);
@@ -1422,8 +1428,8 @@ static int item_apply(const dd_action *a) {
         dd_log("Item: cannot use it here");
         return refused;
     }
-    if (g_cfg.role == DD_ROLE_HOST && a->u.item.state && hero_owner(hero) != (g_request_player ? g_request_player : 1)) {
-        dd_log("Item: guest player %d asked for a hero that is not theirs", g_request_player);
+    if (g_cfg.role == DD_ROLE_HOST && a->u.item.state && hero_owner(b.actor) != (g_request_player ? g_request_player : 1)) {
+        dd_log("Item: guest player %d asked outside their active hero's turn", g_request_player);
         return 0;
     }
     dd_action choice={0};

@@ -40,7 +40,7 @@ static int full_notice_name(uintptr_t address) {
     char name[sizeof g_full_name];
     return safe_read(address, name, sizeof name) && !memcmp(name, g_full_name, sizeof name);
 }
-static uintptr_t full_notice_newest(uintptr_t manager) {
+static uintptr_t full_notice_entry(uintptr_t manager,int newest) {
     uint64_t slots = 0, capacity = 0, offset = 0, count = 0, entry = 0;
     /* Native deque of large Entry objects (one object per map slot): +10 is
      * power-of-two map capacity, +18 its front offset, +20 live count. Show
@@ -49,7 +49,7 @@ static uintptr_t full_notice_newest(uintptr_t manager) {
         !safe_read(manager + 0x10, &capacity, 8) || !capacity || capacity > 4096 || (capacity & (capacity-1)) ||
         !safe_read(manager + 0x18, &offset, 8) ||
         !safe_read(manager + 0x20, &count, 8) || !count || count > capacity ||
-        !safe_read(slots + ((offset + count - 1) & (capacity-1)) * 8, &entry, 8)) return 0;
+        !safe_read(slots + ((offset + (newest?count-1:0)) & (capacity-1)) * 8, &entry, 8)) return 0;
     return (uintptr_t)entry;
 }
 static void __fastcall hook_confirm_enqueue(void *manager, const char *name, void *params) {
@@ -58,11 +58,11 @@ static void __fastcall hook_confirm_enqueue(void *manager, const char *name, voi
     int track = walk_shared() && g_full_loot_seq &&
         g_full_notice_caller((uintptr_t)_ReturnAddress() - image_base()) &&
         full_notice_name((uintptr_t)name) && params && safe_read((uintptr_t)params + 0x38, &callback, 8) && !callback &&
-        g_walk_view(&v) && !v.battle && v.area == g_full_loot_area;
+        g_walk_view(&v) && (!v.battle || loot_open(&v)) && v.area == g_full_loot_area;
     if (!g_confirm_enqueue) return;
     g_confirm_enqueue(manager, name, params);
     if (!track) return;
-    uintptr_t entry = full_notice_newest((uintptr_t)manager);
+    uintptr_t entry = full_notice_entry((uintptr_t)manager,1);
     if (!entry || !full_notice_name(entry)) {
         dd_log("Inventory-full: native entry could not be identified"); runtime_sync_stop(3); return;
     }
@@ -93,6 +93,17 @@ static void __fastcall hook_confirm_ack(void *capture) {
     uintptr_t manager = 0, callback = 1;
     full_entry *entry = g_full_render;
     if (!g_confirm_ack) return;
+    /* The UI can dispatch a stored OK callback after ShowEntry returned. Its capture has the manager,
+     * not our render stack. Resolve only that manager's current front Entry, with the same loot token,
+     * exact informational name and empty callback. Never dismiss another queued confirmation. */
+    if(!entry && walk_shared() && !g_town.needs_resync &&
+       safe_read((uintptr_t)capture+8,&manager,8) && manager) {
+        uintptr_t front=full_notice_entry(manager,0);walk_view v;
+        if(front && full_notice_name(front) && g_walk_view(&v))
+            for(unsigned i=0;i<DD_FULL_HISTORY;i++)if(g_full_entries[i].entry==front &&
+                g_full_entries[i].manager==manager && g_full_entries[i].area==v.area &&
+                full_notice_token(g_full_entries[i].seq,v.area)) {entry=&g_full_entries[i];break;}
+    }
     if (!entry || !walk_shared() || g_town.needs_resync ||
         !safe_read((uintptr_t)capture + 8, &manager, 8) || manager != entry->manager ||
         !safe_read((uintptr_t)capture + 0x48, &callback, 8) || callback) {

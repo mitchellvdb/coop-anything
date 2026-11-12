@@ -170,18 +170,23 @@ static int fingerprint_vectors(const dd_recruit *s,uint64_t hero,unsigned campin
     return vec(s,lp,4,32,&levels_after,&la) && levels==levels_after && ln==la &&
            vec(s,sp,4,8,&selected_after,&sa) && selected==selected_after && sn==sa;
 }
-static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *out,uint32_t *id_out) {
+static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *out,uint32_t *id_out,uint64_t parts[5]) {
     uint32_t id=0,klass_id=0,level[3]={0};uint64_t klass=0,quirks=0,after=0;
     unsigned qn=0,an=0;uint8_t available=0;
-    uint64_t hash=UINT64_C(14695981039346656037);fingerprint_word(&hash,1); /* schema */
+    uint64_t hash=UINT64_C(14695981039346656037);fingerprint_word(&hash,2); /* gameplay schema: UI-only new/viewed flags excluded */
     if(hero>UINT64_MAX-0x15b0 || !rd(s,hero+0x137c,&id,4) || !id || !rd(s,hero+0x15a8,&available,1) || available>1 ||
        !ptr(s,hero+0x1320,&klass) || !klass || klass>UINT64_MAX-0xd8 || !rd(s,klass+0xd4,&klass_id,4) || !klass_id ||
        !rd(s,hero+0x1328,level,sizeof level))return 0;
     fingerprint_word(&hash,id);fingerprint_word(&hash,available);fingerprint_word(&hash,klass_id);
     if(!fingerprint_name(s,hero+8,&hash) || !fingerprint_name(s,klass+8,&hash))return 0;
+    if(parts)parts[0]=hash;
     for(unsigned i=0;i<3;i++)fingerprint_word(&hash,level[i]);
-    if(!fingerprint_vectors(s,hero,0,&hash) || !fingerprint_vectors(s,hero,1,&hash) ||
-       !vec(s,hero+0x1380,0x38,64,&quirks,&qn))return 0;
+    if(parts)parts[1]=hash;
+    if(!fingerprint_vectors(s,hero,0,&hash))return 0;
+    if(parts)parts[2]=hash;
+    if(!fingerprint_vectors(s,hero,1,&hash))return 0;
+    if(parts)parts[3]=hash;
+    if(!vec(s,hero+0x1380,0x38,64,&quirks,&qn))return 0;
     fingerprint_word(&hash,qn);uint32_t ids[64]={0};
     for(unsigned i=0;i<qn;i++) {
         uint64_t q=quirks+(uint64_t)i*0x38,definition=0;uint32_t data[4]={0};uint8_t flags[3]={0};
@@ -192,7 +197,9 @@ static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *ou
         for(unsigned j=0;j<3;j++)if(flags[j]>1)return 0;
         fingerprint_word(&hash,ids[i]);if(!fingerprint_name(s,definition,&hash))return 0;
         fingerprint_word(&hash,data[0]);fingerprint_word(&hash,data[1]);
-        for(unsigned j=0;j<3;j++)fingerprint_word(&hash,flags[j]);
+        /* +28 replaces_quirk_viewed and +29 is_new are presentation flags. Opening a hero/tooltip
+         * can change these on one screen. +2a is_locked changes gameplay and remains compared. */
+        fingerprint_word(&hash,flags[2]);
         fingerprint_word(&hash,data[2]);fingerprint_word(&hash,data[3]);
     }
     uint32_t id_after=0;uint8_t available_after=0;uint64_t klass_after=0;
@@ -200,11 +207,12 @@ static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *ou
        !rd(s,hero+0x137c,&id_after,4) || id_after!=id ||
        !rd(s,hero+0x15a8,&available_after,1) || available_after!=available ||
        !ptr(s,hero+0x1320,&klass_after) || klass_after!=klass)return 0;
+    if(parts)parts[4]=hash?hash:UINT64_MAX;
     *id_out=id;*out=hash?hash:UINT64_MAX;return 1;
 }
 static int fingerprint_entry(const dd_recruit *s,uint64_t hero,uint64_t *out,uint32_t *id) {
     uint64_t first=0,second=0;uint32_t a=0,b=0;
-    if(!fingerprint_entry_once(s,hero,&first,&a) || !fingerprint_entry_once(s,hero,&second,&b) ||
+    if(!fingerprint_entry_once(s,hero,&first,&a,NULL) || !fingerprint_entry_once(s,hero,&second,&b,NULL) ||
        first!=second || a!=b)return 0;
     *out=first;*id=a;return 1;
 }
@@ -218,6 +226,16 @@ int dd_recruit_fingerprint(const dd_recruit *s,uint32_t id,uint64_t *out) {
        !vec(s,s->store+0x68,0x15b0,DD_RECRUIT_MAX_CANDIDATES,&end_begin,&end_n) ||
        begin!=end_begin || n!=end_n)return 0;
     *out=hash;return 1;
+}
+/* Read-only cumulative component hashes: first differing prefix locates the category, never reveals names. */
+int dd_recruit_fingerprint_parts(const dd_recruit *s,uint32_t id,uint64_t out[5]) {
+    if(!out)return 0;
+    memset(out,0,5*sizeof *out);
+    dd_recruit_choice c;uint64_t a[5],b[5],hash=0;uint32_t first=0,second=0;
+    if(!s || !s->read || !id || !dd_recruit_candidate(s,id,&c) ||
+       !fingerprint_entry_once(s,c.entry,&hash,&first,a) || first!=id ||
+       !fingerprint_entry_once(s,c.entry,&hash,&second,b) || second!=id || memcmp(a,b,sizeof a))return 0;
+    memcpy(out,a,sizeof a);return 1;
 }
 static int pool_digest_once(const dd_recruit *s,uint64_t *out,unsigned *count) {
     if(out)*out=0;if(count)*count=0;

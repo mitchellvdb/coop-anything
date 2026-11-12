@@ -17,7 +17,8 @@ static int WINAPI test_message_box(HWND w, LPCSTR text, LPCSTR caption, UINT fla
 #include "../runtime/dd_runtime.c"
 #undef MessageBoxA
 /* The panel itself is tested in test_overlay.c. A refusing panel must fall back to the popup. */
-static int overlay_refuses;
+static int overlay_refuses,overlay_stop_reports;
+void dd_overlay_sync_stop(void) {overlay_stop_reports++;}
 int dd_overlay_notice(const char *utf8) {
     (void)utf8;
     if (overlay_refuses) return 0;
@@ -65,6 +66,7 @@ static void fake_send(void *ctx, int to, const dd_msg *m) {
     sent++;
 }
 static void reset(int role) {
+    overlay_stop_reports=0;
     pool_reset();g_pool_verified=1;weekly_reset(); /* Other fixtures start after the pool handshake; its own fixture starts unverified. */
     queue_clear(&g_incoming);
     queue_clear(&g_outgoing);

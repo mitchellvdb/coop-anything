@@ -17,11 +17,10 @@ static formation_default_fn g_formation_default_orig; /* trampoline of the hooke
 static const uint32_t *g_formation_override;          /* the IDs the native rerank is to produce, during that call only */
 static uint32_t g_formation_known[4], g_formation_known_area, g_formation_sent[4], g_formation_revert[4];
 static int g_formation_known_valid, g_formation_revert_due;
-static uint64_t g_formation_quiet_until;              /* after a fight: the game settles ranks itself, adopted */
 static dd_action g_formation_pending;                 /* guest: the order asked for in g_formation_request */
 static void formation_reset(void) {
     g_formation_request = 0; g_formation_wait = 0;
-    g_formation_known_valid = 0; g_formation_revert_due = 0; g_formation_quiet_until = 0;
+    g_formation_known_valid = 0; g_formation_revert_due = 0;
     memset(g_formation_sent, 0, sizeof g_formation_sent);
     memset(&g_formation_pending, 0, sizeof g_formation_pending);
 }
@@ -134,7 +133,7 @@ static int formation_set_apply(const dd_action *a) {
 /* Every frame in a raid. A different order of the same heroes outside a fight that no shared action made is a player's
  * own drag: the host orders it for everyone, a guest asks the host (and the host waits with walking meanwhile). */
 static void formation_watch(const walk_view *v) {
-    uint32_t ids[4];uint64_t now=GetTickCount64();
+    uint32_t ids[4];
     if(!formation_ids(v->raid,ids))return;
     if(g_formation_revert_due && !g_formation_request && formation_ready(v)) {
         g_formation_revert_due=0;
@@ -151,10 +150,13 @@ static void formation_watch(const walk_view *v) {
         formation_adopt(v,ids);return;
     }
     if(!g_formation_known_valid || v->area!=g_formation_known_area || v->battle || !walk_shared() || g_game_apply_depth ||
-       now<g_formation_quiet_until || v->state<=1 || v->state==6 || v->state==7) {
-        if(v->battle)g_formation_quiet_until=now+1000;
+       v->state<=1 || v->state==6 || v->state==7) {
         formation_adopt(v,ids);return;
     }
+    /* Wait for the native animation/block flags, preserving the last shared order. A timed grace period that
+     * adopted every frame swallowed a ready player's drag in the first second after combat. Once native work
+     * has settled, publish the final order once; never share an intermediate animation vector. */
+    if(!formation_ready(v))return;
     if(!memcmp(ids,g_formation_known,16) || !memcmp(ids,g_formation_sent,16))return;
     if(!formation_same_members(ids,g_formation_known)) {
         dd_log("Formation: party members changed outside a fight; the new party is taken as it stands");

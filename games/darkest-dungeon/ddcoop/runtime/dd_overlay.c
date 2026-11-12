@@ -220,6 +220,10 @@ static void command(unsigned action, uint32_t value) {
     if (!O.message) O.message = RegisterWindowMessageW(DD_OVERLAY_MESSAGE);
     if (O.message) PostMessageW(launcher, O.message, action, (LPARAM)value);
 }
+void dd_overlay_sync_stop(void) {
+    read_snapshot();
+    command(DD_OVERLAY_SYNC_STOP,GetCurrentProcessId());
+}
 static int inside(void) {
     float scale = O.scale > 0 ? O.scale : 1;
     return O.mouse_x >= 12 && O.mouse_y >= 12 && O.mouse_x < 12 + PANEL_W * scale &&
@@ -678,7 +682,10 @@ static void draw_texture(GLuint id, const void *pixels, int tw, int th, float x,
  * when a label or the block size changes; between those the texture is drawn as it is. */
 static const char *party_label(int i, char *out, size_t cap) {
     int player = O.party_player[i] - 1;
-    if (player < 0) return "";
+    if (player < 0) {
+        if (cap) out[0] = 0;
+        return out;
+    }
     if (O.fresh && O.snapshot.players[player][0]) snprintf(out, cap, "%s", O.snapshot.players[player]);
     else if (player == 0) snprintf(out, cap, "Host");
     else snprintf(out, cap, "Player %d", player + 1);

@@ -20,4 +20,6 @@ void dd_overlay_party(int count, const int owner[4], const float stress[4]);
 void dd_overlay_party_players(const int player[4]);
 /* A waiting message that no longer applies. */
 void dd_overlay_notice_clear(const char *utf8);
+/* A locally detected synchronization failure: notify this game's launcher promptly; no remote/UI gameplay action. */
+void dd_overlay_sync_stop(void);
 #endif

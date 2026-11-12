@@ -20,6 +20,9 @@ static void ts_fill(dd_msg_queue *q) {
     for (unsigned i = 0; i < DD_QUEUE_CAP; i++) CHECK(queue_push(q, &m));
 }
 static void transport_stop_checks(void) {
+    ts_reset(DD_ROLE_HOST);runtime_sync_stop(1);CHECK(overlay_stop_reports==1);
+    runtime_sync_stop(1);CHECK(overlay_stop_reports==1);
+    ts_reset(DD_ROLE_HOST);g_session_lost=1;CHECK(runtime_shared_blocked() && !overlay_stop_reports);
     dd_conn c = {0}; dd_msg m = {0}; m.type = DD_MSG_PING;
     /* One congested receiver must stop every healthy receiver too. */
     ts_reset(DD_ROLE_HOST); ts_fill(&g_outgoing);

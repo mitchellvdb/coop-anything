@@ -208,8 +208,8 @@ static void fingerprints(void) {
         {0x13080000+0x1328,11},{0x13080000+0x132c,2},{0x13080000+0x1330,3},
         {0x13080000+0x15a8,0},{0x130b0000,1},{0x130b0000+4,0},{0x130b0000+0x40,0},
         {0x130b0000+0x60,1},{0x130b0000+0x80,0},{0x130d0000+0x40,5},{0x130d0000,0x78697271},
-        {0x130c0000+0x20,9},{0x130c0000+0x24,9},{0x130c0000+0x28,0},
-        {0x130c0000+0x29,1},{0x130c0000+0x2a,0},{0x130c0000+0x2c,9},{0x130c0000+0x30,9}
+        {0x130c0000+0x20,9},{0x130c0000+0x24,9},
+        {0x130c0000+0x2a,0},{0x130c0000+0x2c,9},{0x130c0000+0x30,9}
     };
     for(unsigned i=0;i<sizeof changes/sizeof *changes;i++) {
         content_setup();CHECK(open(&s));
@@ -222,6 +222,16 @@ static void fingerprints(void) {
         CHECK(!valid || other!=candidate);
         CHECK(!dd_recruit_pool_digest(&s,&other,&count) || other!=initial);
     }
+    /* Opening a candidate card changes only these two presentation flags, never its gameplay identity. */
+    content_setup();CHECK(open(&s));uint64_t details[5];
+    CHECK(dd_recruit_fingerprint_parts(&s,40,details) && details[4]==candidate);
+    for(unsigned mask=0;mask<4;mask++) {
+        p8(0x130c0000+0x28,(uint8_t)(mask&1));p8(0x130c0000+0x29,(uint8_t)((mask>>1)&1));
+        CHECK(dd_recruit_fingerprint(&s,40,&other) && other==candidate);
+        CHECK(dd_recruit_pool_digest(&s,&other,&count) && other==initial);
+        CHECK(dd_recruit_fingerprint_parts(&s,40,details) && details[4]==candidate);
+    }
+    CHECK(!dd_recruit_fingerprint_parts(&s,999,details) && !details[4]);
     content_setup();CHECK(open(&s));reads=0;CHECK(dd_recruit_pool_digest(&s,&other,&count));int total=reads;
     for(int i=1;i<=total;i++) {
         content_setup();CHECK(open(&s));reads=0;fail_at=i;other=123;count=123;

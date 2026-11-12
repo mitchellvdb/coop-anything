@@ -89,3 +89,31 @@ on any refusal. Full live native/DLC, direct loot-to-hero equipping, an older
 provisions crash and complete state verification remain open. Guests-nosave and
 host save preference remain. Checkpoint recovery may lose unsaved progress;
 solo batch guests still restart manually. Linux/MinGW/Capstone were not run.
+
+## Test86: startup retries, cosmetic quirk flags and return diagnostics
+
+A TCP-ready guest may still be loading the chosen campaign. Its inactive runtime
+poll clears controls. The host now retries the same pool probe only to missing
+reporters, at most once per second and within the original 60-second deadline.
+Epoch, anchor, content and required membership remain unchanged. Duplicate probes
+do not create reports, native mutations or an early release. The regression
+actually clears the first probe through the inactive campaign poll, then recovers
+all three guests through the retransmission and ordinary comparison.
+
+Entry fingerprint schema2 omits only the quirk presentation flags at +28
+(replaces_quirk_viewed) and +29 (is_new). They are still validated as booleans.
+The native save routine names those fields separately from +2a (is_locked),
+which remains compared along with all previous gameplay fields. Merely viewing
+quirks may differ between independent screens. Four flag combinations now give
+the same fingerprint; gameplay changes still differ. No candidate is copied or
+repaired in memory, and no genuine content mismatch is waived.
+
+Private return reports show matching currencies and roster digests immediately
+before a failing new candidate-pool check. They do not establish which candidate
+field differed. New read-only per-candidate cumulative hashes split identity,
+gear/XP, combat, camping and quirks. Baseline/read/release failures include their
+anchor/epoch and local/remote hashes. A repeat with test86 is needed to establish
+whether cosmetic flags were the return cause or another native difference remains.
+The earlier selected-skill and 150-gold differences also remain unexplained;
+ordered wallet and learned/selected-skill traces now locate their first change.
+Written by Codex, 12 November 2026.

@@ -67,6 +67,22 @@ static void full_notice_checks(void) {
             fn_render(0);CHECK(fn_acks==1 && !g_town.needs_resync);
         }
     }
+    /* UI input may dispatch an OK callback after ShowEntry returned, not from inside drawing. */
+    for(unsigned player=0;player<4;player++) {
+        fn_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);g_cfg.player=(int)player;
+        if(player)g_town.next_request=(player<<24)|1u;
+        fn_open();fn_click=0;fn_render(0);CHECK(!g_full_render && !fn_acks);
+        uint64_t capture[10]={0};capture[1]=(uintptr_t)fn_manager;
+        hook_confirm_ack(capture);
+        CHECK(sent==1 && !fn_acks && last_message.u.town.action.u.item.op==DD_ITEM_OP_FULL_NOTICE);
+        /* Native removal remains deferred until the ordered close is drawn, once. */
+        CHECK(full_notice_apply(&close));fn_render(0);CHECK(fn_acks==1);
+    }
+    fn_reset(DD_ROLE_GUEST);wk_view.battle=DD_BATTLE_CHOOSE_TARGET_STATE;fn_open();
+    fn_click=1;fn_render(0);CHECK(sent==1 && !fn_acks);
+    fn_reset(DD_ROLE_GUEST);hook_confirm_enqueue(fn_manager,"unrelated_confirmation",fn_params);fn_open();
+    {uint64_t capture[10]={0};capture[1]=(uintptr_t)fn_manager;hook_confirm_ack(capture);}
+    CHECK(fn_acks==1 && !sent); /* A full notice queued behind the unrelated front cannot hijack its OK. */
     /* The other copy may not have rendered/enqueued its information yet. */
     fn_reset(DD_ROLE_GUEST);wk_push(8,&close);dd_runtime_poll();
     CHECK(g_town.applied_seq==8 && !fn_acks && !g_town.needs_resync);

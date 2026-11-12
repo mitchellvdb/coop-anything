@@ -79,3 +79,15 @@ network latency could still meet the travel guard; the guest's busy flag makes t
 host wait otherwise.
 
 Written by Claude Code, 12 Nov 2026 (runtime work allowed by the owner).
+
+## Test86: keep the last shared order during native settling
+
+The former one-second post-combat grace period adopted local changes as the new
+baseline. A player drag in that interval could therefore disappear without a
+FORMATION_SET order. Keep the last shared order while native reorder animation
+or another readiness condition is active. At the first safe boundary, publish
+the final order once. Combat, loading and changed membership still establish
+their own baseline. No timer grants an unshared order permission to travel.
+Actual-bridge regressions cover all four initiators, immediate post-combat
+changes, delayed animation, persistent IDs, one order and guest acknowledgement.
+Written by Codex, 12 November 2026; Claude's protocol37 implementation retained.

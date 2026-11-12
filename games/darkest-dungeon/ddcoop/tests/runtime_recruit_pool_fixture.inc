@@ -71,6 +71,37 @@ static void recruit_pool_checks(void) {
     uint64_t drag[2] = {0, (uintptr_t)world_entries};
     dd_msg probe, reports[3], release;
 
+    /* An authenticated PROBE may arrive before the selected campaign is active: inactive poll clears it.
+     * A bounded retry to the missing guest must recover the same epoch, not bypass the content check. */
+    {
+        dd_msg initial=rp_start(0), retry={0};
+        for(unsigned player=1;player<=3;player++)reports[player-1]=rp_report(player,initial);
+        (void)rp_start(0);
+        CHECK(rp_deliver(reports[0],1,1) && rp_deliver(reports[1],1,2));pool_poll();
+        queue_clear(&g_outgoing);queue_clear(&g_guests[1].out);queue_clear(&g_guests[2].out);
+        g_town.send=outgoing_send;
+        Sleep(1100);pool_poll();
+        CHECK(!g_town.needs_resync && !g_pool_verified && g_pool_acks==6);
+        CHECK(!g_outgoing.count && !g_guests[1].out.count && g_guests[2].out.count==1);
+        if(!queue_pop(&g_guests[2].out,&retry)) {CHECK(0);retry=initial;}
+        CHECK(retry.type==DD_MSG_POOL && retry.u.pool.op==1 && retry.u.pool.epoch==initial.u.pool.epoch &&
+              retry.u.pool.anchor==initial.u.pool.anchor && retry.u.pool.digest==initial.u.pool.digest);
+        pool_poll();CHECK(!g_guests[2].out.count); /* No frame-by-frame flood. */
+        for(unsigned player=1;player<=3;player++) {
+            rp_reset(DD_ROLE_GUEST,player);CHECK(rp_deliver(initial,0,0));
+            InterlockedExchange(&g_campaign_active,0);dd_runtime_poll();
+            CHECK(!g_pool_controls.count && !g_pool_pending && !g_pool_epoch && !sent);
+            InterlockedExchange(&g_campaign_active,1);
+            CHECK(rp_deliver(retry,0,0));pool_poll();
+            CHECK(sent==1 && g_pool_acks && !g_pool_verified && !g_town.needs_resync);
+            reports[player-1]=last_message;
+            CHECK(rp_deliver(retry,0,0));pool_poll();CHECK(sent==1); /* Same epoch is idempotent. */
+        }
+        release=rp_host_release(initial,reports);
+        for(unsigned player=1;player<=3;player++)rp_guest_release(player,initial,release);
+        puts("Stagecoach startup: a PROBE cleared by inactive campaign loading is retried only to unreported guests, same epoch/content, rate bounded, all3 guests recover then verify normally");
+    }
+
     /* Nobody may recruit before the barrier, including the host's own native
      * drag callback. A report alone does not release an individual guest. */
     for (unsigned player = 0; player < 4; player++) {

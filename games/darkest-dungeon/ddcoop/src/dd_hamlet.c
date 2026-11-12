@@ -264,7 +264,8 @@ int dd_hamlet_can_equip(const dd_hamlet *s, uint32_t owner, unsigned slot, uint3
     uint64_t inventory = 0, definitions = 0, klass = 0;
     unsigned n = 0, definition_n = 0;
     uint32_t class_id = 0;
-    if (dd_hamlet_find(s, owner, &hero) != 1 || hero.location > 1 ||
+    /* Living heroes in a stress building may change equipment too. Status 3 is the graveyard. */
+    if (dd_hamlet_find(s, owner, &hero) != 1 || hero.location > 2 ||
         !dd_hamlet_inventory(s, owner, &inventory, &n) || slot >= n || !ptr(s, hero.hero + 0x1320, &klass) ||
         !klass || !word(s, klass + 0xd4, &class_id) ||
         !vector(s, s->image + 0x2c3c570, 0x488, 8192, &definitions, &definition_n))

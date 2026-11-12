@@ -27,6 +27,7 @@ static volatile LONG g_peer_sync_stop;
 static volatile LONG g_transport_sync_stop;
 static int g_sync_stop_sent;
 static void runtime_sync_stop(uint32_t reason);
+static void runtime_stop_shared(uint32_t reason,int notify);
 static int bag_repair_busy(void);
 static void bag_templates_clear(void);
 static int formation_busy(void);
@@ -155,6 +156,7 @@ static roster_size_fn g_roster_count,g_roster_capacity;
 static uint64_t g_recruit_panel,g_recruit_ready_at;
 static uint32_t g_recruit_request;
 static int g_recruit_waiting;
+static int runtime_gold_read(int32_t *gold);
 static int pool_recruit_ready(void);
 static void pool_fail(void);
 static void pool_start(void),pool_reset(void),pool_enter_raid(void),pool_poll(void);
@@ -334,7 +336,7 @@ static int runtime_shared_blocked(void) {
     if (lost) {
         if (!g_session_loss_notified) {
             g_session_loss_notified = 1;
-            runtime_sync_stop(1); /* All remaining guests must stop as well. */
+            runtime_stop_shared(1,1); /* Ordinary connection loss stops peers, but is not a locally detected desync report. */
             dd_overlay_session(DD_OVERLAY_LOST);
             dd_log("shared actions stopped after live session loss; restart both games for a fresh snapshot");
 
@@ -568,6 +570,22 @@ static void recruit_background(const dd_recruit *s,const dd_recruit_choice *c) {
     g_recruit_save[3]((void *)(image_base()+0x2a6cf70),0);
 }
 
+static void recruit_log_candidate(const char *label,const dd_recruit *s,uint32_t id) {
+    uint64_t p[5];
+    if(dd_recruit_fingerprint_parts(s,id,p))
+        dd_log("Stagecoach detail %s hero=%u identity=%016llx gear=%016llx combat=%016llx camping=%016llx quirks=%016llx",label,id,
+            (unsigned long long)p[0],(unsigned long long)p[1],(unsigned long long)p[2],(unsigned long long)p[3],(unsigned long long)p[4]);
+    else dd_log("Stagecoach detail %s hero=%u unreadable",label,id);
+}
+static void recruit_log_pool(const char *label) {
+    dd_recruit s;uint64_t begin=0,end=0;
+    if(!g_recruit_open_model(&s) || !s.read(s.ctx,s.store+0x68,&begin,8) || !s.read(s.ctx,s.store+0x70,&end,8) ||
+       end<begin || (end-begin)%0x15b0 || (end-begin)/0x15b0>DD_RECRUIT_MAX_CANDIDATES)return;
+    for(uint64_t at=begin;at<end;at+=0x15b0) {
+        uint32_t id=0;if(!s.read(s.ctx,at+0x137c,&id,4))return;
+        recruit_log_candidate(label,&s,id);
+    }
+}
 static int recruit_apply(const dd_action *a) {
     dd_recruit s;dd_recruit_choice before,after;unsigned roster_before=0,roster_after=0;
     int screen=g_recruit_panel!=0;
@@ -580,6 +598,7 @@ static int recruit_apply(const dd_action *a) {
     }
     if(!dd_recruit_fingerprint(&s,before.id,&fingerprint) || fingerprint!=a->u.recruit.fingerprint) {
         dd_log("Stagecoach candidate content mismatch hero=%u local=%016llx requested=%016llx screen=%d",before.id,(unsigned long long)fingerprint,(unsigned long long)a->u.recruit.fingerprint,screen);
+        recruit_log_candidate("mismatch",&s,before.id);
         pool_fail();return 0;
     }
     if(screen && !before.enabled) {
@@ -841,7 +860,7 @@ static void outgoing_send(void *unused, int to, const dd_msg *m) {
     (void)unused;
     if (!net_send(to, m)) dd_log("town outbound queue full; rejoin required");
 }
-static void runtime_stop_shared(uint32_t reason, int notify) {
+static void runtime_stop_shared_inner(uint32_t reason, int notify,int report) {
     bag_templates_clear();
     g_town.needs_resync = 1;
     dd_overlay_turn(DD_OVERLAY_TURN_NONE);
@@ -850,10 +869,12 @@ static void runtime_stop_shared(uint32_t reason, int notify) {
     if (notify) InterlockedCompareExchange(&g_transport_sync_stop, (LONG)(reason ? reason : 1), 0);
     if (!g_sync_stop_sent) {
         g_sync_stop_sent = 1;
+        if(report)dd_overlay_sync_stop(); /* Post before any fallback modal notice can delay the log poll. */
         shop_notice("The games are no longer in sync. Shared actions have stopped for all players. Close all games and start a new session; send the logs.");
     }
 }
-static void runtime_sync_stop(uint32_t reason) { runtime_stop_shared(reason, 1); }
+static void runtime_stop_shared(uint32_t reason,int notify) {runtime_stop_shared_inner(reason,notify,0);}
+static void runtime_sync_stop(uint32_t reason) {runtime_stop_shared_inner(reason,1,1);}
 /* Runs only on a connection worker. Stop is not a FIFO entry and is checked
  * before each ordinary send; an already in-flight send may finish first.
  * Return 0 after the attempt so broken/backpressured links close as well. */
@@ -956,9 +977,13 @@ static int runtime_apply_inner(void *unused, const dd_action *a) {
 }
 
 static int runtime_apply(void *unused,const dd_action *a) {
+    int32_t before=0,after=0;int have_before=runtime_gold_read(&before);
     g_game_apply_depth++;
     int result=runtime_apply_inner(unused,a);
-    g_game_apply_depth--;return result;
+    g_game_apply_depth--;
+    if(have_before && runtime_gold_read(&after))
+        dd_log("Wallet ordered kind=%u sequence=%u player=%d gold=%d->%d accepted=%d",a?a->kind:0,g_town.applied_seq+1,g_request_player,before,after,result);
+    return result;
 }
 
 static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint32_t hero_id) {
@@ -1040,9 +1065,12 @@ static int __fastcall hook_buy_upgrade(const void *request) {
         log_town_action("guest sent upgrade request to host", &a, request_id, 0);
         return 0;
     }
+    int32_t gold_before=0,gold_after=0;int have_gold=runtime_gold_read(&gold_before);
     g_game_apply_depth++;
     int accepted = g_original_buy_upgrade(request);
     g_game_apply_depth--;
+    if(have_gold && runtime_gold_read(&gold_after))
+        dd_log("Wallet local upgrade tree=%08x code=%c hero=%u gold=%d->%d accepted=%d",a.u.upgrade.tree,a.u.upgrade.code,a.u.upgrade.hero_id,gold_before,gold_after,accepted);
     if (accepted && g_cfg.role == DD_ROLE_HOST &&
         InterlockedCompareExchange(&g_session_ready, 0, 0) &&
         InterlockedCompareExchange(&g_campaign_active, 0, 0)) {

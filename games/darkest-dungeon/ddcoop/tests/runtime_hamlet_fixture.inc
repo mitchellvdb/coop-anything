@@ -1145,7 +1145,37 @@ static void hm_deferred_dismissals(void) {
     puts("Deferred dismissal: host-local/guest-request authority, async guest apply, FIFO barrier, "
          "duplicate/gap refusal, exact survivors, timeout and disconnect verified");
 }
+static void hm_trinkets_all_players(void) {
+    for(unsigned player=0;player<4;player++)for(unsigned location=0;location<=3;location++) {
+        hm_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);g_cfg.player=(int)player;
+        putint(hm_entries[0]+0x15b0,location);
+        dd_action a={0};a.kind=DD_ACT_TRINKET_MOVE;
+        a.u.move.src_hero=0;a.u.move.src_slot=0;a.u.move.src_type=3950276909u;a.u.move.src_id=101;
+        a.u.move.dst_hero=1;a.u.move.dst_slot=0;
+        if(location<3) {
+            CHECK(runtime_apply(NULL,&a) && hm_native==3 && !hm_estate[0][0] && hm_gear[0][0][0]);
+        } else CHECK(!runtime_apply(NULL,&a) && !hm_native && hm_estate[0][0]);
+    }
+    /* A guest's estate order may differ physically (owner's run: guest slot7, host slot6).
+     * Resolve the same item on the host too, then every receiver applies that logical transfer once. */
+    for(unsigned player=1;player<=3;player++) {
+        hm_reset(DD_ROLE_GUEST);g_cfg.player=(int)player;g_town.next_request=(player<<24)|1u;
+        dd_action a={0};a.kind=DD_ACT_TRINKET_MOVE;a.u.move.src_hero=0;a.u.move.src_slot=1;
+        a.u.move.src_type=3950276909u;a.u.move.src_id=101;a.u.move.dst_hero=1;a.u.move.dst_slot=0;
+        CHECK(dd_town_guest_local(&g_town,&a));dd_msg request=last_message;
+        hm_reset(DD_ROLE_HOST);CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();
+        CHECK(g_town.accepted==1 && hm_native==3 && !hm_estate[0][0] && hm_gear[0][0][0x88]==101);
+        dd_msg apply=last_message;
+        for(unsigned receiver=1;receiver<=3;receiver++) {
+            hm_reset(DD_ROLE_GUEST);g_cfg.player=(int)receiver;
+            CHECK(queue_push(&g_incoming,&apply));dd_runtime_poll();
+            CHECK(g_town.applied_seq==1 && !g_town.needs_resync && hm_native==3 && !hm_estate[0][0] && hm_gear[0][0][0x88]==101);
+        }
+    }
+    puts("Hamlet trinkets: all4 roles may equip living town/party/building heroes, independent of combat owner; dead hero refused");
+}
 static void hm_trinkets(void) {
+    hm_trinkets_all_players();
     uint8_t source_ui[0x100] = {0}, target_ui[0x100] = {0}, drag[0x610] = {0};
     hm_reset(DD_ROLE_GUEST);
     putptr(source_ui + 0x28, (uintptr_t)(world_campaign + 0xe88));
@@ -1260,10 +1290,24 @@ static void hm_secret_room_trinkets(void) {
         CHECK(!hamlet_raid_drag_source(&model,(uintptr_t)hm_raid_loot[2]+1,&inventory,&owner,&slot));
         CHECK(!hamlet_raid_drag_source(&model,(uintptr_t)hm_estate[0],&inventory,&owner,&slot)); /* Same ID is insufficient. */
     }
+    /* A presentation copy is resolved only through its exact native raid wrapper and unique content.
+     * Matching ID in an unrelated wrapper, invalid copies and duplicate identical items cannot select a source. */
+    {
+        dd_hamlet model;uint64_t inv=0;uint32_t owner=0,slot=0;uint8_t copy[0x5a8];
+        CHECK(g_hamlet_open_model(&model));memcpy(copy,hm_raid_loot[2],sizeof copy);
+        CHECK(hamlet_raid_drag_copy(&model,(uintptr_t)hm_raid+0x5140,(uintptr_t)copy,&inv,&owner,&slot) && owner==DD_TRINKET_LOOT && slot==2);
+        CHECK(!hamlet_raid_drag_copy(&model,(uintptr_t)hm_estate,(uintptr_t)copy,&inv,&owner,&slot));
+        uint8_t original[0x5a8];memcpy(original,hm_raid_loot[0],sizeof original);
+        memcpy(hm_raid_loot[0],hm_raid_loot[2],sizeof copy);
+        CHECK(!hamlet_raid_drag_copy(&model,(uintptr_t)hm_raid+0x5140,(uintptr_t)copy,&inv,&owner,&slot));
+        memcpy(hm_raid_loot[0],original,sizeof original);
+        copy[0]=0;CHECK(!hamlet_raid_drag_copy(&model,(uintptr_t)hm_raid+0x5140,(uintptr_t)copy,&inv,&owner,&slot));
+    }
     /* Actual selected Item is canonical, while the loot widget exposes its
      * presentation wrapper and a compacted display index. */
     putptr(source + 0x28, (uintptr_t)(hm_raid + 0x5140));
-    putptr(source + 0x30, (uintptr_t)hm_raid_loot[2]);
+    uint8_t presentation[0x5a8];memcpy(presentation,hm_raid_loot[2],sizeof presentation);
+    putptr(source + 0x30, (uintptr_t)presentation);
     putint(source + 0xb8, 0);
     putptr(target + 0x18, (uintptr_t)(hm_entries[0] + 8 + 0x1280));
     putint(target + 0xa8, 1);

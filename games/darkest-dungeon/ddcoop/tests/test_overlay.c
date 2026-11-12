@@ -81,6 +81,18 @@ static void save_region(const char *path, int x, int y, int w, int h) {
     free(px);
 }
 int main(int argc, char **argv) {
+    /* Unknown ownership is valid: party_names uses the output buffer, not the return value. */
+    {
+        const int players[4] = {-1, -1, -1, -1};
+        char label[64];
+        dd_overlay_party_players(players);
+        for (int i = 0; i < 4; i++) {
+            memset(label, 0x58, sizeof label);
+            label[sizeof label - 1] = 0;
+            (void)party_label(i, label, sizeof label);
+            CHECK(label[0] == 0);
+        }
+    }
     WNDCLASSW cls = {0};
     cls.style = CS_OWNDC;
     cls.lpfnWndProc = fixture_proc;
@@ -378,6 +390,13 @@ int main(int argc, char **argv) {
     O.last_read = 0;
     read_snapshot();
     CHECK(!O.fresh);
+    /* Runtime STOP uses the same validated local launcher channel, outside input/render callbacks. */
+    O.snapshot.launcher_window=(uintptr_t)window;O.snapshot.launcher_pid=GetCurrentProcessId();
+    O.fresh=1;O.last_read=GetTickCount64();
+    int previous_commands=commands;dd_overlay_sync_stop();
+    MSG stop_message;
+    while(PeekMessageW(&stop_message,NULL,0,0,PM_REMOVE))DispatchMessageW(&stop_message);
+    CHECK(commands==previous_commands+1 && command_kind==DD_OVERLAY_SYNC_STOP && (DWORD)command_value==GetCurrentProcessId());
     wglMakeCurrent(NULL, NULL);
     wglDeleteContext(context);
     ReleaseDC(window, dc);

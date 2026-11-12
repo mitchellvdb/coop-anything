@@ -90,7 +90,7 @@ static void hand_order_checks(void) {
     fm_reset(DD_ROLE_HOST);formation_watch(&wk_view);
     wk_view.battle=12;fm_swap(0,3);formation_watch(&wk_view);CHECK(!sent);
     wk_view.battle=0;formation_watch(&wk_view);CHECK(!sent); /* settling after the fight */
-    g_formation_quiet_until=0;formation_watch(&wk_view);CHECK(!sent);
+    formation_watch(&wk_view);CHECK(!sent);
     fm_swap(1,2);wk_view.state=6;formation_watch(&wk_view);CHECK(!sent);
     wk_view.state=2;formation_watch(&wk_view);CHECK(!sent);
     { uint32_t other=77;memcpy(bt_heroes[1]+0x137c,&other,4); }
@@ -108,7 +108,42 @@ static void hand_order_checks(void) {
     CHECK(fm_calls==1 && g_town.needs_resync && g_transport_sync_stop != 0);
     puts("Hand-made party order: host/guest drags noticed and shared once, guest waits and blocks walking, kept or natively rerun on every copy, crossed drags converge, refused order undone locally after animation, fights/loading/other members adopted, foreign wanted IDs move nothing, partial native result stops");
 }
+/* A manual drag immediately after combat must not become a silent local baseline.
+ * Native animation/blocked states defer the change until ready, retaining the last shared order. */
+static void formation_after_combat_checks(void) {
+    for (unsigned player=0;player<4;player++) {
+        for (unsigned delayed=0;delayed<3;delayed++) {
+            fm_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);
+            g_cfg.player=(int)player;
+            if(player)g_town.next_request=(player<<24)|1u;
+            formation_watch(&wk_view);
+            wk_view.battle=12;fm_swap(0,1);formation_watch(&wk_view);
+            CHECK(!sent); /* Engine rank changes in combat remain native. */
+            wk_view.battle=0;
+            if(delayed==1)wk_display[0x4119]=1;
+            if(delayed==2)wk_display[0x4118]=1;
+            fm_swap(2,3);formation_watch(&wk_view);
+            if(delayed) {
+                CHECK(!sent && g_formation_known[2]==13 && g_formation_known[3]==14);
+                wk_display[0x4118]=wk_display[0x4119]=0;
+                formation_watch(&wk_view);
+            }
+            CHECK(sent==1 && last_message.u.town.action.kind==DD_ACT_FORMATION_SET);
+            CHECK(last_message.u.town.action.u.formation.before[2]==13 && last_message.u.town.action.u.formation.after[2]==14);
+            CHECK(player ? (g_formation_request!=0 && formation_busy()) : (g_town.applied_seq==1));
+            formation_watch(&wk_view);CHECK(sent==1); /* No duplicate. */
+            if(player) {
+                dd_msg order=last_message;
+                order.type=DD_MSG_TOWN_APPLY;order.seq=1;
+                CHECK(queue_push(&g_incoming,&order));dd_runtime_poll();
+                CHECK(!g_formation_request && g_town.applied_seq==1 && !g_town.needs_resync);
+            }
+        }
+    }
+    puts("Post-combat formation: all4 initiators, immediate drag, animation/blocked deferral, persistent before/after, once-only order and guest acknowledgement verified");
+}
 static void formation_checks(void) {
+    formation_after_combat_checks();
     dd_msg order,request,stop;uint32_t ids[4];
     /* Host button/shortcut: same native entry, one mutation then ordered apply. */
     fm_reset(DD_ROLE_HOST);

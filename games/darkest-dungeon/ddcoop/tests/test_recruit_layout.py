@@ -67,6 +67,15 @@ exact(0x5d1e7b, '4c 8d 43 24')
 exact(0x5d1e92, '4c 8d 43 28')
 exact(0x5d1ea9, '4c 8d 43 30')
 exact(0x5d1ec6, '48 83 c3 38')
+
+# The two display flags have distinct serialized names; lock is a gameplay field.
+for lea, name in [(0x5d1e23, b'is_new'), (0x5d1e3a, b'is_locked'),
+                  (0x5d1e96, b'replaces_quirk_viewed')]:
+    code = read(lea, 7)
+    assert code[:3] == b'\x48\x8d\x15'
+    target = lea + 7 + struct.unpack_from('<i', code, 3)[0]
+    assert read(target, len(name) + 1) == name + b'\0'
+
 # The loader hashes the quirk name and compares definition+40; same38-byte row.
 exact(0x5d2893, '48 6b c8 38')
 exact(0x5d2897, '49 8b 04 0a 39 50 40')

@@ -1110,7 +1110,41 @@ static void results_and_bag_checks(void) {
     g_item_clear = NULL;
     g_trinket_drop[0] = NULL;
 }
+/* The target of a consumable is not its turn owner. NULL is a genuine native HeroUseItem path. */
+static void item_turn_owner_checks(void) {
+    void *bag=wk_raid_lists+DD_WALK_RAID_INVENTORY;
+    for(unsigned player=0;player<4;player++)for(unsigned target=0;target<2;target++) {
+        it_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);g_cfg.player=(int)player;
+        g_hero_owner_mask=(uint8_t)((player<<4)|((player+1)%4));
+        if(player)g_town.next_request=(player<<24)|1u;
+        bt_at(2,1,DD_BATTLE_CHOOSE_SKILL_STATE);
+        void *recipient=target?bt_heroes[0]:NULL;
+        uint64_t used=hook_item_use((void *)(uintptr_t)0x1234,recipient,bag,3,1);
+        CHECK(player ? (!used && !it_uses && last_message.type==DD_MSG_TOWN_REQUEST) : (used==1 && it_uses==1));
+        dd_msg message=last_message;
+        CHECK(message.u.town.action.u.item.hero==(target?0:255));
+        if(player) {
+            it_reset(DD_ROLE_HOST);g_hero_owner_mask=(uint8_t)((player<<4)|((player+1)%4));bt_at(2,1,DD_BATTLE_CHOOSE_SKILL_STATE);
+            CHECK(queue_push(&g_incoming,&message));dd_runtime_poll();
+            CHECK(it_uses==1 && !g_town.needs_resync && last_message.type==DD_MSG_TOWN_APPLY);
+            message=last_message;
+        }
+        for(unsigned receiver=1;receiver<=3;receiver++) {
+            it_reset(DD_ROLE_GUEST);g_cfg.player=(int)receiver;bt_at(2,1,DD_BATTLE_CHOOSE_SKILL_STATE);
+            CHECK(queue_push(&g_incoming,&message));dd_runtime_poll();
+            CHECK(it_uses==1 && it_hero==recipient && !g_town.needs_resync && g_town.applied_seq==1);
+        }
+        if(player) {
+            it_reset(DD_ROLE_HOST);g_hero_owner_mask=(uint8_t)(((player+1)%4)<<4);bt_at(2,1,DD_BATTLE_CHOOSE_SKILL_STATE);
+            message.type=DD_MSG_TOWN_REQUEST;message.seq=0;message.u.town.request_id=(player<<24)|1u;
+            CHECK(queue_push(&g_incoming,&message));dd_runtime_poll();
+            CHECK(!it_uses && last_message.type==DD_MSG_TOWN_REJECT);
+        }
+    }
+    puts("Combat consumables: all4 initiators/all3 receivers, native NULL or teammate target preserved, active-turn owner authorized, forged other-player turn refused; effects modeled");
+}
 static void item_transactions(void) {
+    item_turn_owner_checks();
     void *bag = wk_raid_lists + DD_WALK_RAID_INVENTORY, *loot = wk_raid_lists + DD_WALK_RAID_LOOT, *hero;
     uint64_t functor[2] = {0, (uintptr_t)wk_display + DD_WALK_LOOT_OVERLAY};
     CHECK(item_torch_caller(0x783d2b) && item_torch_caller(0x783dd6) && !item_torch_caller(0x430dc0) && !item_torch_caller(0x4328e7));
@@ -1152,7 +1186,7 @@ static void item_transactions(void) {
     CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && !sent);
     it_reset(DD_ROLE_HOST);
     bt_at(2, 1, DD_BATTLE_CHOOSE_TARGET_STATE);
-    g_hero_owner_mask = 1 << 2;
+    g_hero_owner_mask = 1 << 4; /* The active hero (rank2), not the item recipient. */
     CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && !sent);
     it_reset(DD_ROLE_HOST);
     bt_at(2, 1, DD_BATTLE_CHOOSE_TARGET_STATE);
