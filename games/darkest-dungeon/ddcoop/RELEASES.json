@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.5.0-test86",
+    "runtime_sha256": "873086879e17fa87ec67b0b326c33eb2cc19109f60eefb2fe7de2c0634265106",
+    "launcher_sha256": "1abc05de779c14092b209b09a12f0a2bf59e0c066a115bfe8e85cba3e64a445c",
+    "kit_sha256": "c60def938fff661671643d9008850c6c7c57f23b2a717af06a346e872f0d52d1",
+    "runtime_protocol": 37,
+    "launcher_protocol": 3,
+    "exact_runtime": "0.5.0-test86",
+    "source_variant": "ordinary",
+    "signed_update_serial": 86,
+    "live_test_pending": true,
+    "native_effects_modeled": true
+  },
+  {
     "version": "0.5.0-test82",
     "runtime_sha256": "fecf38a672c89b63f31e45202b09d7e0d523e8249626b32b391ceeb3c9ca326b",
     "launcher_sha256": "ff9c0b19e544bd024e7c1d5c24be3a6bf81d9c7456a65392b07614009041bf6a",
