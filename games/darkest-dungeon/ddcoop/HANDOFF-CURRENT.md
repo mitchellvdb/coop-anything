@@ -1,3 +1,60 @@
+# Current: test86 (Codex,12 November2026)
+
+Start from the final test86 source archive / GitHub project branch, not the stale
+local codex checkout. Claude be01477/test83..85 is imported and retained: names,
+connected-player display, manual formation/protocol37, normal-end report filtering,
+confirmation address generator and native provisions Back/Escape.
+
+- Runtime: unknown-owner output initialized; post-combat manual reorder preserved
+  until native readiness; missing Stagecoach startup probe retried with the same
+  epoch/anchor/content; display-only quirk new/viewed flags excluded from gameplay
+  fingerprints, locked/gameplay fields retained. Per-candidate category hashes,
+  skill/learned masks and per-order wallet traces added for unresolved live causes.
+- Hamlet guest trinket requests remap logical estate items on the host; living
+  building heroes may equip. Known raid wrappers accept a unique exact Item copy
+  for direct loot equipment. Combat consumables authorize the active hero's owner
+  and preserve NULL/teammate recipients; native Dog Treat effects need confirmation.
+- Inventory-full OK resolves a tracked front entry even after drawing returned;
+  exact empty callback/name/area/loot token retained, deferred native removal once.
+- Launcher: guest Take control uses existing authenticated claim; status3 graveyard
+  entries omitted before roster capacity; guest fallback reports use LocalAppData/
+  DDCoop/Reports, host combined ZIP remains Desktop. Genuine local native failure
+  posts a once-only current-PID event before the next file scan. Connection loss
+  creates no immediate event. Existing log fallback/transport remains.
+
+Artifact: C:\dev\ddcoop-handoff\0.5.0-test86\DDCoop-install.zip
+- Kit SHA256 c60def938fff661671643d9008850c6c7c57f23b2a717af06a346e872f0d52d1
+- Runtime 873086879e17fa87ec67b0b326c33eb2cc19109f60eefb2fe7de2c0634265106
+- Launcher 1abc05de779c14092b209b09a12f0a2bf59e0c066a115bfe8e85cba3e64a445c
+- Existing owner-key manifest serial86/CNG signature and all3 exact hashes verified.
+  Runtime wire37/exacthello86, launcher wire3/overlay snapshot2. No new duo kit;
+  duo61 does not contain these changes. English TEST-STEPS included.
+
+Validation: full Windows runtime/module/FIFO suite, actual isolated GL overlay,
+bridge MSVC ASan, full Windows launcher including real file adapters and isolated
+fake-Steam preparation/restore after real games closed, Windows adapter MSVC ASan,
+20 native proofs,141 generated pins byte-identical/137 addresses/93 hook targets.
+No new native hook. See BUILD.md/KIT.md/runtime/RECHECK-2026-11-12.md.
+No live Steam/game/native-DLC validation or installed game/save modification.
+Linux/MinGW/Capstone not run. Source only per-step GitHub commits; no .git ACL
+bypass and no edits to either shared Cdev worktree. Import author credit retained.
+
+Still open: return-to-Hamlet reports show matching roster/wallet then a candidate
+pool failure; old logs cannot identify the differing field. Cosmetic repair may
+help but is not confirmation of the entire cause. Skill-selection and150-gold
+cases need new traces. Latest fight failure lacks remote logs. Direct loot equip
+and Dog Treats need live engine QA. Shared loading press-any-key remains unbuilt;
+normal ready/continue boundary was investigated but no generic key injection added.
+Full DLC/live state verification remains open.
+
+Next owner test: matching86 on2-4 PCs; recruit after independent quirk viewing,
+guest Hamlet trinkets/skills and food; Take control/Dog Treats; immediate reorder
+after combat; full-bag OK/direct loot equip; complete a mission and return, then
+guest-led recruit/provision/embark again. Keep launchers open for one grouped
+host report. Missing closed launchers cannot send their last logs. Do not force
+past a STOP with independent local actions. Source archive is authoritative for
+Claude's next continuation; import it before changing the older local tree.
+
 # Current: test85 (Claude Code, 12 Nov 2026): test84 plus the provisions Back fix
 
 - Provisions Back (77b07f8): the other player's Back now really closes the shop (the Back button 6e84e0 instead of
