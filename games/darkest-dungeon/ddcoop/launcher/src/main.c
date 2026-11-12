@@ -50,6 +50,7 @@
 enum {
     ID_HOST = 100, ID_JOIN, ID_INVITE, ID_JOIN_CODE, ID_COPY_CODE, ID_STOP, ID_LOGS, ID_FRIENDS, ID_CODE, ID_TIMER,
     ID_HOTKEY, ID_HEROES, ID_SLOT, ID_SAVE, ID_UNDO, ID_PLAYERS, ID_ASSIGN_PLAYER, ID_ASSIGN_HERO, ID_RESYNC,
+    ID_NAME,
 };
 
 enum { CHK_GAME, CHK_VERSION, CHK_MOD, CHK_STEAM, CHK_SLOT, CHK_LOBBY, CHK_FRIEND, CHK_RUNTIME, CHK_COUNT };
@@ -57,6 +58,9 @@ enum { CHK_GAME, CHK_VERSION, CHK_MOD, CHK_STEAM, CHK_SLOT, CHK_LOBBY, CHK_FRIEN
 static struct {
     HWND wnd, status, checks, friends, code, host, join, invite, join_code, copy_code, stop, logs, hint, slot;
     HWND save_box, undo, players_box, assign_player, assign_button, resync;
+    HWND name_box, players_line; /* launcher/NAMES.md */
+    int name_filling;
+    char players_shown[400];     /* labels on screen (players line and assign list); "" = redraw */
     int resync_closing;
     uint64_t resync_close_at;
     uint32_t assign_hero;
@@ -426,6 +430,39 @@ static void players_remember(int n) {
     char path[LR_PATH_MAX], text[4] = {(char)('0' + n), '\r', '\n', 0};
     players_path(path, sizeof path);
     lr_write_file(path, (const uint8_t *)text, 3);
+}
+/* The player's own name (launcher/NAMES.md), UTF-8, remembered like the slot. */
+static void name_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-name.txt"); }
+static void name_remembered(char out[LR_PLAYER_NAME_MAX + 1]) {
+    char path[LR_PATH_MAX], raw[128] = "";
+    uint8_t *data = NULL;
+    size_t len = 0;
+    name_path(path, sizeof path);
+    if (lr_read_file(path, 256, &data, &len)) {
+        if (len >= 3 && data[0] == 0xef && data[1] == 0xbb && data[2] == 0xbf) memmove(data, data + 3, len -= 3);
+        while (len && (data[len - 1] == '\n' || data[len - 1] == '\r')) len--;
+        if (len >= sizeof raw) len = sizeof raw - 1;
+        memcpy(raw, data, len);
+        raw[len] = 0;
+        free(data);
+    }
+    lr_player_name_clean(raw, out);
+}
+static void name_remember(const char *name) {
+    char path[LR_PATH_MAX];
+    name_path(path, sizeof path);
+    lr_write_file(path, (const uint8_t *)name, strlen(name));
+}
+/* What the others are called on this screen: their name, else "host" / "player N". */
+static const char *player_label(int player) {
+    static char out[4][LR_PLAYER_NAME_MAX + 16];
+    static int next;
+    char *o = out[next++ & 3];
+    const char *name = lr_core_player_name(&G.core, player);
+    if (name[0]) snprintf(o, sizeof out[0], "%s", name);
+    else if (player == 0) snprintf(o, sizeof out[0], "host");
+    else snprintf(o, sizeof out[0], "player %d", player + 1);
+    return o;
 }
 static void saving_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-save.txt"); }
 static int saving_remembered(void) {
@@ -1280,6 +1317,39 @@ static void set_heroes_hint(const char *text) {
     SetWindowTextW(G.heroes_hint, W(text));
 }
 
+/* The players line ("2/4 players connected: ...") and the host's assign list, with everyone's name. */
+static void update_players(void) {
+    char text[400], key[400];
+    int total = 0, here = lr_core_players_connected(&G.core, &total);
+    size_t k = 0;
+    text[0] = 0;
+    if (here) {
+        k = (size_t)snprintf(text, sizeof text, "%d/%d players connected:", here, total);
+        for (int i = 0, first = 1; i < 4 && k < sizeof text; i++) {
+            if (!lr_core_player_present(&G.core, i)) continue;
+            k += (size_t)snprintf(text + k, sizeof text - k, "%s %s%s", first ? "" : ",", player_label(i),
+                                  i == lr_core_player(&G.core) ? " (you)" : "");
+            first = 0;
+        }
+    } else if (session_active()) snprintf(text, sizeof text, "Players: waiting for the host...");
+    snprintf(key, sizeof key, "%s|%s|%s|%s|%s", text, player_label(0), player_label(1), player_label(2), player_label(3));
+    if (!strcmp(key, G.players_shown)) return;
+    snprintf(G.players_shown, sizeof G.players_shown, "%s", key);
+    SetWindowTextW(G.players_line, W(text));
+    LRESULT chosen = SendMessageW(G.assign_player, CB_GETCURSEL, 0, 0);
+    SendMessageW(G.assign_player, CB_RESETCONTENT, 0, 0);
+    for (int i = 0; i < 4; i++) {
+        char item[LR_PLAYER_NAME_MAX + 24];
+        const char *name = lr_core_player_name(&G.core, i);
+        if (i == 0) snprintf(item, sizeof item, "%s (host)", name[0] ? name : "Player 1");
+        else if (name[0]) snprintf(item, sizeof item, "%s", name);
+        else snprintf(item, sizeof item, "Player %d", i + 1);
+        SendMessageW(G.assign_player, CB_ADDSTRING, 0, (LPARAM)W(item));
+    }
+    SendMessageW(G.assign_player, CB_SETCURSEL, chosen >= 0 && chosen <= 3 ? (WPARAM)chosen : 0, 0);
+    G.heroes_shown = 0xFFFFFFFFu; /* the Player column shows the names too */
+}
+
 /* Redraws the list when the table changed (new revision, other role, session ended). */
 #include "lr_live_party.inc"
 static void update_heroes(void) {
@@ -1312,8 +1382,7 @@ static void update_heroes(void) {
         for (char *c = cls; *c; c++)
             if (*c == '_') *c = ' ';
         snprintf(level, sizeof level, "%d", lr_hero_level(h->xp));
-        static const char *const players[] = {"host", "player 2", "player 3", "player 4"};
-        const char *by = o->owner[i] == me ? "you" : o->owner[i] < 4 ? players[o->owner[i]] : "friend";
+        const char *by = o->owner[i] == me ? "you" : o->owner[i] < 4 ? player_label(o->owner[i]) : "friend";
         LVITEMW it = {0};
         it.mask = LVIF_TEXT | LVIF_PARAM;
         it.iItem = position;
@@ -1491,7 +1560,6 @@ static void tick_body(void) {
         DWORD exit_code = 0;
         GetExitCodeProcess(G.game, &exit_code);
         logline("game exited with code %lu; guest recovery pending=%d", exit_code, guest);
-        if(!lr_restart_active(&G.restart))(void)diagnostics_request(LR_DIAG_FAILURE,0);
         CloseHandle(G.game);
         G.game = NULL;
         G.hotkey_ok=RegisterHotKey(G.wnd,ID_HOTKEY,MOD_NOREPEAT,VK_F9);
@@ -1547,6 +1615,7 @@ static void tick_body(void) {
         PHASE("tick: window text");
         update_checks();
         PHASE("tick: hero list");
+        update_players();
         update_heroes();
         overlay_publish();
     }
@@ -1582,6 +1651,12 @@ static void build_window(void) {
     G.players_box = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, 345, y, 60, 200, ID_PLAYERS, G.font);
     G.undo = control(L"BUTTON", L"Restore this slot's backup...", BS_PUSHBUTTON, 424, y - 2, 230, 30, ID_UNDO, G.font);
     y += 36;
+    control(L"STATIC", L"Your name:", SS_LEFT, 14, y + 5, 90, 20, 0, G.font);
+    G.name_box = control(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP | WS_BORDER, 104, y, 200, 26, ID_NAME, G.font);
+    SendMessageW(G.name_box, EM_LIMITTEXT, 24, 0);
+    SendMessageW(G.name_box, EM_SETCUEBANNER, TRUE, (LPARAM)L"shown to the other players");
+    G.players_line = control(L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS | SS_NOPREFIX, 316, y + 5, 338, 20, 0, G.font);
+    y += 34;
     control(L"STATIC", L"Steam friends (hosts shown first):", SS_LEFT, 14, y, 400, 20, 0, G.font);
     y += 22;
     G.friends = control(WC_LISTBOXW, L"", LBS_NOTIFY | WS_VSCROLL | LBS_NOINTEGRALHEIGHT, 14, y, 460, 170, ID_FRIENDS, G.font);
@@ -1592,7 +1667,7 @@ static void build_window(void) {
     G.code = control(L"EDIT", L"", ES_AUTOHSCROLL, 140, y, 200, 28, ID_CODE, G.font);
     G.join_code = control(L"BUTTON", L"Join code", BS_PUSHBUTTON, 350, y, 124, 28, ID_JOIN_CODE, G.font);
     G.copy_code = control(L"BUTTON", L"Copy my code", BS_PUSHBUTTON, 140, y + 40, 200, 28, ID_COPY_CODE, G.font);
-    lr_mascot_create(GetModuleHandleW(NULL),G.wnd,D(494),D(438),D(150),D(150));
+    lr_mascot_create(GetModuleHandleW(NULL),G.wnd,D(494),D(472),D(150),D(150));
     y += 80;
     G.hint = control(L"STATIC", L"", SS_LEFT, 14, y, 640, 70, 0, G.font);
 
@@ -1706,6 +1781,17 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 G.heroes_shown = 0xFFFFFFFFu;
                 update_heroes();
+            }
+            break;
+        case ID_NAME:
+            if (HIWORD(wp) == EN_CHANGE && !G.name_filling) {
+                wchar_t wide[64];
+                char utf8[256];
+                GetWindowTextW(G.name_box, wide, 64);
+                to_utf8(wide, utf8, sizeof utf8);
+                lr_core_set_name(&G.core, utf8);
+                name_remember(G.core.my_name);
+                G.players_shown[0] = 0;
             }
             break;
         case ID_PLAYERS:
@@ -2001,6 +2087,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
     G.saving = saving_remembered();
     SendMessageW(G.save_box, BM_SETCHECK, G.saving ? BST_CHECKED : BST_UNCHECKED, 0);
     G.players = players_remembered();
+    {
+        char name[LR_PLAYER_NAME_MAX + 1];
+        name_remembered(name);
+        lr_core_set_name(&G.core, name);
+        G.name_filling = 1;
+        SetWindowTextW(G.name_box, W(G.core.my_name));
+        G.name_filling = 0;
+        logline("startup: player name %s", G.core.my_name[0] ? "set" : "not set");
+    }
     SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"2");
     SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"3");
     SendMessageW(G.players_box, CB_ADDSTRING, 0, (LPARAM)L"4");

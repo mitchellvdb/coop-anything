@@ -1,0 +1,24 @@
+DDCoop test85 - test84 plus a fix for Back/Escape in the provisions screen
+
+Close game windows before installing. Host installs test85; friends on test77
+or newer can accept its signed update when joining. Everyone uses the same kit.
+No solo/duo kit for test85 (duo61 stays the solo kit).
+
+1. Provisions screen (the shop before leaving on a mission), with 3-4 players:
+   - A guest presses Back. On every other screen the shop slides away by
+     itself within a few seconds and everyone is back in town. Nobody has to
+     press Back again, and the queue does not get stuck.
+   - Repeat with the host pressing Back.
+   - Press Escape twice quickly on one PC. That player must not end up with a
+     black screen; everyone returns to town.
+   - While one player's Back is on its way, press Back on another PC too.
+   - Open the shop again afterwards, buy something, and leave on the mission:
+     gold and supplies must match on every screen.
+2. Everything from test84 still applies: names in the launcher and in the raid
+   blocks, "x/4 players connected", and a hero dragged to another rank outside
+   a fight moves on every screen.
+3. Trinkets: if an equipped trinket seems to disappear, note which hero, which
+   trinket, on whose screen and right after which stop, and send the report.
+
+Names are shown to the other players and in your own launcher only; they are
+not written to the logs. Do not post reports publicly.

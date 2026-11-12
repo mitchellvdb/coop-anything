@@ -1,5 +1,6 @@
 /* Own hidden Win32/GL context + fictitious launcher mapping only. Never opens Steam/game/saves. */
 #include "../runtime/dd_overlay.c"
+#include <stdlib.h>
 static int failures, commands;
 static WPARAM command_kind;
 static LPARAM command_value;
@@ -54,6 +55,30 @@ static void save_bitmap(const char *path) {
     fwrite(&info, sizeof info, 1, out);
     fwrite(O.pixels, PANEL_W * O.height * 4, 1, out);
     fclose(out);
+}
+/* The framebuffer region x,y,w,h (GL rows, bottom up) as a .bmp, to look at the party blocks. */
+static void save_region(const char *path, int x, int y, int w, int h) {
+    BITMAPFILEHEADER file = {0};
+    BITMAPINFOHEADER info = {0};
+    uint8_t *px = malloc((size_t)w * h * 4);
+    FILE *out;
+    if (!px) return;
+    glReadPixels(x, y, w, h, 0x80e1, GL_UNSIGNED_BYTE, px);
+    file.bfType = 0x4d42;
+    file.bfOffBits = sizeof file + sizeof info;
+    file.bfSize = file.bfOffBits + w * h * 4;
+    info.biSize = sizeof info;
+    info.biWidth = w;
+    info.biHeight = h;
+    info.biPlanes = 1;
+    info.biBitCount = 32;
+    if ((out = fopen(path, "wb"))) {
+        fwrite(&file, sizeof file, 1, out);
+        fwrite(&info, sizeof info, 1, out);
+        fwrite(px, (size_t)w * h * 4, 1, out);
+        fclose(out);
+    }
+    free(px);
 }
 int main(int argc, char **argv) {
     WNDCLASSW cls = {0};
@@ -182,8 +207,40 @@ int main(int argc, char **argv) {
             glGetBooleanv(GL_COLOR_WRITEMASK, mask);
             CHECK(!glIsEnabled(GL_SCISSOR_TEST) && mask[0] && !mask[1] && mask[2] && !mask[3]);
             CHECK(glGetError() == GL_NO_ERROR);
+            /* Names: black letters in the coloured part of each block, from the launcher, else "Player N". */
+            {
+                const int players[4] = {1, 0, -1, 2};
+                uint8_t row[400 * 4];
+                int dark_named = 0, dark_unknown = 0, text_y;
+                party_box(0, &x, &y, &w, &h);
+                text_y = y + h - 3 - (h - (h / 4 < 3 ? 3 : h / 4) - 5) / 2;
+                CHECK(w <= 400);
+                strcpy(s->players[1], "Gast \xc3\xa9\xc3\xa9n");
+                s->updated = GetTickCount64();
+                O.last_read = 0;
+                glClear(GL_COLOR_BUFFER_BIT);
+                dd_overlay_party_players(players);
+                dd_overlay_party(4, owner, stress);
+                dd_overlay_draw((void *)1);
+                CHECK(O.fresh && strstr(O.name_key, "|Gast \xc3\xa9\xc3\xa9n|Host||Player 3") != NULL);
+                glReadPixels(x, text_y, w, 1, GL_RGBA, GL_UNSIGNED_BYTE, row); /* block 0: player 2's name on green */
+                for (int i = 0; i < w; i++) dark_named += row[i * 4 + 1] < 60;
+                party_box(2, &x, &y, &w, &h);
+                glReadPixels(x, text_y, w, 1, GL_RGBA, GL_UNSIGNED_BYTE, row); /* block 2: unknown owner, no name */
+                for (int i = 0; i < w; i++) dark_unknown += row[i * 4 + 1] < 60;
+                CHECK(dark_named > 3 && dark_unknown == 0);
+                if (argc > 1) {
+                    char party_path[260];
+                    snprintf(party_path, sizeof party_path, "%s.party.bmp", argv[1]);
+                    save_region(party_path, 0, y - 10, 4 * (w + 6) + 24, h + 30);
+                }
+                glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+                CHECK(!glIsEnabled(GL_SCISSOR_TEST) && !glIsEnabled(GL_BLEND) && mask[0] && !mask[1] && mask[2] && !mask[3]);
+                CHECK(glGetError() == GL_NO_ERROR);
+                s->players[1][0] = 0;
+            }
             dd_overlay_party(0, NULL, NULL);
-            CHECK(!O.party_count);
+            CHECK(!O.party_count && !O.party_player[0]);
             dd_overlay_party(9, owner, stress);
             CHECK(!O.party_count);
         }

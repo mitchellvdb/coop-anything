@@ -1,3 +1,60 @@
+# Current: test85 (Claude Code, 12 Nov 2026): test84 plus the provisions Back fix
+
+- Provisions Back (77b07f8): the other player's Back now really closes the shop (the Back button 6e84e0 instead of
+  its after-hide callback 6e85e0, which never slid the panel away: queue stuck since 9 Nov), and the player's own
+  Escape while that Back waits still leaves for town (it was swallowed: black screen, owner's run 12 Nov 17:06:43).
+- Trinkets reported missing after a desync: not found in the logs. 16:48 stop was the Stagecoach pool; all guests'
+  hero/trinket check matched. Shared town trinket moves do not trigger a save (the native drop does not call the
+  writers directly either); open, needs a concrete case.
+- 0.5.0-test85: C:\dev\ddcoop-handoff\0.5.0-test85\DDCoop-install.zip
+  Kit SHA256 5648b0fb451970338202b59f47310bdd4556d104fab13b1cf59dc025114f15e4
+  Runtime 721427250e527245adcac86535bdd75770f869d6635aa554ebeb06bb20ebbd35
+  Launcher 89d535e283d649630a1ba23110b0d24a934c96e1d29a2ef2c61591cd45f3d8d7
+  ddcoop-kit.sig (serial 85) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, every suite 0 failures; test_provisions_layout.py and test_hook_layout.py pass
+  on the pinned EXE; Windows launcher suites pass except test_lr_prepare_win (not run: the game was open); Linux
+  ASan/UBSan suite passed. Not tested in a real session. No duo kit.
+- Next: owner tests TEST-STEPS (Back/double Escape in the shop with 3-4 players, test84 checks). Codex: continue
+  from hero-ownership.
+
+# Current: test84 (Claude Code, 12 Nov 2026): player names, players connected, shared party order
+
+- Player names (ce6d739 runtime, 1e128f3 launcher; launcher/NAMES.md): a name typed in the launcher is sent to the
+  others (wire types 32/33) and shown in the hero table, the Assign list, a "x/4 players connected" line and the raid
+  party blocks (overlay snapshot v2). Names never go into logs.
+- Hand-made party order (8109085, protocol 37, runtime/FORMATION.md): the owner's stops of 12 Nov 16:19 and 16:21
+  were a guest dragging heroes to other ranks outside a fight (one copy only). The runtime now notices a new order of
+  the same members and shares it as FORMATION_SET; every copy produces it through the default-order button's native
+  rerank with Raid::GetDefaultPartyOrder (614cb0) hooked during that call only.
+- 0.5.0-test84: C:\dev\ddcoop-handoff\0.5.0-test84\DDCoop-install.zip
+  Kit SHA256 12f664fbdf0b7e63c50427bdedf699c3af4cb11f94dd9efd22063f482dc799f6
+  Runtime f95b0d08b8122bfcaa5d3b915bfb43a77c68027de2fbff442e81ddc34b376591
+  Launcher 38a3b8b6749f83f1333db2d9347a0158082178cebaeb917e78b042107eeb5123
+  ddcoop-kit.sig (serial 84) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, every suite 0 failures; test_formation_layout.py and test_hook_layout.py (93
+  hook targets) pass on the pinned EXE; overlay test 0 failures; Windows launcher suites pass except
+  test_lr_prepare_win, which could not run (Darkest.exe was open); Linux ASan/UBSan suite passed. Not tested in a
+  real session. No duo kit for test84.
+- Next: owner tests TEST-STEPS (names, x/4 line, drag as host and guest). Codex: continue from hero-ownership
+  (runtime changes in ce6d739 and 8109085 would be lost by importing an older source zip).
+
+# Current: test83 (Claude Code, 12 Nov 2026): Codex's test81/test82 imported, three repairs
+
+- Imported Codex's test81 (06c3709) and test82 (5d5138f) from his outputs/*/source-full.zip; both built on our
+  test80. test81: battle choices wait for input, loot double clicks, shared inventory-full notice (protocol 36).
+  test82: automatic diagnostics to the host (launcher/DIAGNOSTICS.md).
+- Repairs (Claude Code): lr_wire.c builds with gcc -Werror again (2c41f07); confirm_* hooks are in
+  tools/gen_address_table.py (5eb603a); no report after an ordinary session end, a disconnect before a
+  "Sync stop" is not a desync (1931e8d, lr_diag_stop_marker).
+- 0.5.0-test83: C:\dev\ddcoop-handoff\0.5.0-test83\DDCoop-install.zip
+  Kit SHA256 6ad172edc15dab74925b24f1884a93e3c33c3dc05439fd9e52895167ae404a42
+  Runtime 2be000695e28d7c0721ff1c0bc4d39422cf968943d023409403c3bc3ed1436d8 (test82 source, label test83)
+  Launcher f418a983f6327bc88dfb9e90167a8b5c189d8fe8fdcd18b5b7be2181f8171b7c
+  ddcoop-kit.sig (serial 83) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests 0 failures; test_full_notice_layout.py and test_town_save_layout.py pass; all Windows
+  launcher suites passed (test_lr_prepare_win included, game closed); Linux ASan/UBSan suite passed. Not tested
+  in a real session. No duo kit for test83 (Codex's duo61 stays the solo kit).
+
 # Current: test82 / duo61 (Codex, 11 Nov 2026)
 
 Automatic private diagnostics to the host, as requested by the owner. Native

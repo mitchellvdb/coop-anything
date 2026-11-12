@@ -6,6 +6,10 @@
 #define PREVIEW_DPI 96
 #endif
 static int preview_ticks;
+static void bad_at(int *bad, int line) {
+    printf("self-check failed at line %d\n", line);
+    ++*bad;
+}
 static LRESULT CALLBACK preview_proc(HWND w, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_NOTIFY) {
         LRESULT result = wndproc(w, message, wp, lp);
@@ -83,37 +87,57 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE previous, PWSTR command, int show)
     }
     lr_owners_set_roster(&G.core.owners, heroes, 12);
     G.core.owners.owner[4] = LR_PLAYER_GUEST;
+    /* Fictitious names (launcher/NAMES.md): the host and player 2 here, player 3 has not come yet. */
+    G.core.cfg.max_guests = 3;
+    G.core.guests[0].peer = 5;
+    lr_core_set_name(&G.core, "Hosty");
+    strcpy(G.core.players.name[1], "Bob");
+    G.name_filling = 1;
+    SetWindowTextW(G.name_box, L"Hosty");
+    G.name_filling = 0;
     update_checks();
+    update_players();
     update_heroes();
     if (wcsstr(command, L"--self-check")) {
         int bad = 0;
         DWORD styles = (DWORD)GetWindowLongPtrW(G.checks, GWL_STYLE);
         if (!(styles & WS_VSCROLL) || !(styles & ES_READONLY) ||
             SendMessageW(G.checks, EM_GETLINECOUNT, 0, 0) <= 8)
-            bad++;
+            bad_at(&bad, __LINE__);
         SendMessageW(G.checks, EM_LINESCROLL, 0, 3);
         int first = (int)SendMessageW(G.checks, EM_GETFIRSTVISIBLELINE, 0, 0);
         strcpy(G.runtime_line, "Status gewijzigd");
         update_checks();
-        if (first <= 0 || SendMessageW(G.checks, EM_GETFIRSTVISIBLELINE, 0, 0) != first) bad++;
+        if (first <= 0 || SendMessageW(G.checks, EM_GETFIRSTVISIBLELINE, 0, 0) != first) bad_at(&bad, __LINE__);
         const int ids[] = {2, 5, 9, 12};
         for (int row = 0; row < 4; row++) {
             LVITEMW item = {0};
             item.mask = LVIF_PARAM;
             item.iItem = row;
             SendMessageW(G.heroes, LVM_GETITEMW, 0, (LPARAM)&item);
-            if (item.lParam != ids[row]) bad++;
+            if (item.lParam != ids[row]) bad_at(&bad, __LINE__);
         }
         /* The real ListView notification must claim Hero 5 after view sorting, not roster index 1. */
         ListView_SetCheckState(G.heroes, 1, TRUE);
-        if (G.core.owners.owner[4] != LR_PLAYER_HOST || G.core.owners.owner[1] != LR_PLAYER_HOST) bad++;
+        if (G.core.owners.owner[4] != LR_PLAYER_HOST || G.core.owners.owner[1] != LR_PLAYER_HOST) bad_at(&bad, __LINE__);
         /* The actual launcher publisher preserves sorted hero identity through local UI IPC. */
         G.game=GetCurrentProcess();overlay_publish();
         if(!g_overlay_view || g_overlay_view->magic!=DD_OVERLAY_MAGIC || (g_overlay_view->sequence&1) ||
-           g_overlay_view->hero_count!=12 || g_overlay_view->heroes[0].id!=2 || !g_overlay_view->heroes[0].party)bad++;
+           g_overlay_view->hero_count!=12 || g_overlay_view->heroes[0].id!=2 || !g_overlay_view->heroes[0].party)bad_at(&bad, __LINE__);
         overlay_command(DD_OVERLAY_RELEASE,5);
-        if(G.core.owners.owner[4]==LR_PLAYER_HOST)bad++;
+        if(G.core.owners.owner[4]==LR_PLAYER_HOST)bad_at(&bad, __LINE__);
+        if(strcmp(g_overlay_view->players[0],"Hosty") || strcmp(g_overlay_view->players[1],"Bob") || g_overlay_view->players[2][0])bad_at(&bad, __LINE__);
         overlay_close();G.game=NULL;
+        {
+            wchar_t line[200];
+            GetWindowTextW(G.players_line, line, 200);
+            if (wcscmp(line, L"2/4 players connected: Hosty (you), Bob")) bad_at(&bad, __LINE__);
+            wchar_t item[64] = L"";
+            SendMessageW(G.assign_player, CB_GETLBTEXT, 1, (LPARAM)item);
+            if (wcscmp(item, L"Bob") || SendMessageW(G.assign_player, CB_GETCOUNT, 0, 0) != 4) bad_at(&bad, __LINE__);
+            SendMessageW(G.assign_player, CB_GETLBTEXT, 2, (LPARAM)item);
+            if (wcscmp(item, L"Player 3")) bad_at(&bad, __LINE__);
+        }
         printf("Launcher UI fixture dpi=%d: wrapping, vertical scrollbar, preserved scroll, party rows and "
                "checkbox identity: %s\n",
                PREVIEW_DPI, bad ? "FAILED" : "OK");
@@ -123,6 +147,46 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE previous, PWSTR command, int show)
     SetTimer(G.wnd, ID_TIMER, 1000, NULL);
     ShowWindow(G.wnd, show);
     UpdateWindow(G.wnd);
+    {
+        /* --shot <file.bmp>: the window as it is drawn, then exit (for looking at the layout). */
+        const wchar_t *shot = wcsstr(command, L"--shot ");
+        if (shot) {
+            RECT r;
+            GetClientRect(G.wnd, &r);
+            HDC screen = GetDC(G.wnd), dc = CreateCompatibleDC(screen);
+            BITMAPINFO info = {0};
+            void *bits = NULL;
+            info.bmiHeader.biSize = sizeof info.bmiHeader;
+            info.bmiHeader.biWidth = r.right;
+            info.bmiHeader.biHeight = -r.bottom;
+            info.bmiHeader.biPlanes = 1;
+            info.bmiHeader.biBitCount = 32;
+            HBITMAP bmp = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, NULL, 0);
+            SelectObject(dc, bmp);
+            for (int i = 0; i < 20; i++) {
+                MSG pump;
+                while (PeekMessageW(&pump, NULL, 0, 0, PM_REMOVE)) DispatchMessageW(&pump);
+                Sleep(20);
+            }
+            PrintWindow(G.wnd, dc, PW_CLIENTONLY);
+            FILE *out = _wfopen(shot + 7, L"wb");
+            if (out && bits) {
+                BITMAPFILEHEADER file = {0};
+                file.bfType = 0x4d42;
+                file.bfOffBits = sizeof file + sizeof info.bmiHeader;
+                file.bfSize = file.bfOffBits + (DWORD)(r.right * r.bottom * 4);
+                fwrite(&file, sizeof file, 1, out);
+                fwrite(&info.bmiHeader, sizeof info.bmiHeader, 1, out);
+                fwrite(bits, (size_t)r.right * r.bottom * 4, 1, out);
+            }
+            if (out) fclose(out);
+            DeleteObject(bmp);
+            DeleteDC(dc);
+            ReleaseDC(G.wnd, screen);
+            DestroyWindow(G.wnd);
+            return 0;
+        }
+    }
     MSG message;
     while (GetMessageW(&message, NULL, 0, 0) > 0) {
         if (IsDialogMessageW(G.wnd, &message)) continue;

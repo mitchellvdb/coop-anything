@@ -54,7 +54,8 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_SKILL: return 1+4+4+4;
     case DD_ACT_TRINKET_MOVE: return 1+4*6+2*2;
     case DD_ACT_PARTY: return 1+4*8+1;
-    case DD_ACT_FORMATION_RESET: return 1+4*9;
+    case DD_ACT_FORMATION_RESET:
+    case DD_ACT_FORMATION_SET: return 1+4*9;
     case DD_ACT_SUPPLIES: return 1+1+2+4*4+32;
     case DD_ACT_DEPARTURE: return 1+4*10+1;
     case DD_ACT_TRAVEL: return 1+4*24+3;
@@ -77,10 +78,13 @@ static int party_ids_valid(const uint32_t ids[4]) {
 }
 int dd_action_valid(const dd_action *a) {
     switch (a->kind) {
-    case DD_ACT_FORMATION_RESET: {
+    case DD_ACT_FORMATION_RESET:
+    case DD_ACT_FORMATION_SET: {
         const uint32_t *before=a->u.formation.before,*after=a->u.formation.after;
         unsigned count=0;
         if (!party_ids_valid(before) || !party_ids_valid(after) || !memcmp(before,after,16)) return 0;
+        /* A hand-chosen order is the party vector itself: heroes first, empty ranks only at the end. */
+        if(a->kind==DD_ACT_FORMATION_SET)for(unsigned i=1;i<4;i++)if((!before[i-1] && before[i]) || (!after[i-1] && after[i]))return 0;
         for(unsigned i=0;i<4;i++) {
             unsigned j=0;
             if(before[i])count++;
@@ -168,6 +172,7 @@ static void w_action(wr *w, const dd_action *a) {
     w_u8(w, a->kind);
     switch (a->kind) {
     case DD_ACT_FORMATION_RESET:
+    case DD_ACT_FORMATION_SET:
         w_u32(w,a->u.formation.area);
         for(unsigned i=0;i<4;i++)w_u32(w,a->u.formation.before[i]);
         for(unsigned i=0;i<4;i++)w_u32(w,a->u.formation.after[i]);break;
@@ -233,6 +238,7 @@ static void r_action(rd *r, dd_action *a) {
     a->kind = r_u8(r);
     switch (a->kind) {
     case DD_ACT_FORMATION_RESET:
+    case DD_ACT_FORMATION_SET:
         a->u.formation.area=r_u32(r);
         for(unsigned i=0;i<4;i++)a->u.formation.before[i]=r_u32(r);
         for(unsigned i=0;i<4;i++)a->u.formation.after[i]=r_u32(r);break;

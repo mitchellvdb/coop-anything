@@ -199,6 +199,9 @@ static void walk_busy_poll(const walk_view *v) {
     if (!v || v->battle) g_walk_free_at = 0;
     else if (!g_walk_free_at) g_walk_free_at = now; /* Includes a raid first seen inside an open panel. */
     busy = v && !v->battle && now - g_walk_free_at > DD_WALK_BUSY_AFTER_MS;
+    /* A hand-made party order waiting for the host's answer (FORMATION_SET): the host must not walk into the next area
+     * with the old order meanwhile, which the travel check would stop on. */
+    if (v && !v->battle && formation_busy()) busy = 1;
     if (!busy && g_walk_busy_sent <= 0) return; /* Never busy, or said free already: nothing to say. */
     if (busy && g_walk_busy_sent == 1 && now - g_walk_busy_sent_at < 1000) return;
     dd_msg m;
@@ -923,14 +926,16 @@ static void hunger_poll(const walk_view *v);
 static void party_marks_show(const walk_view *v) {
     uint64_t heroes[4];
     uint32_t ids[4], hp[4], stress[4], trinkets[4];
-    int owner[4] = {0}, count = 0;
+    int owner[4] = {0}, player[4] = {-1, -1, -1, -1}, count = 0;
     float level[4] = {0};
     if (walk_shared() && walk_party_read(v->raid, heroes, ids, hp, stress, trinkets))
         for (int i = 0; i < 4 && heroes[i]; i++, count++) {
             int who = hero_owner(heroes[i]);
+            player[i] = who;
             owner[i] = who < 0 ? DD_OVERLAY_TURN_NONE : who == (g_cfg.role == DD_ROLE_GUEST ? g_cfg.player : 0) ? DD_OVERLAY_TURN_MINE : DD_OVERLAY_TURN_OTHER;
             memcpy(&level[i], &stress[i], 4);
         }
+    dd_overlay_party_players(player);
     dd_overlay_party(count, owner, level);
 }
 /* Runs every frame. Both copies log area, tile and Rules state, so the two logs can be laid side by side. */
@@ -942,6 +947,7 @@ static void walk_poll(void) {
     if(g_prop_resolved.valid) {uint32_t mode=0;if(!in_raid || v.area!=g_prop_resolved.area || (walk_overlay_state(&v,&mode)&&!mode))g_prop_resolved.valid=0;}
     if (!in_raid) {
         g_walk_free_at = 0;
+        g_formation_known_valid = 0;
         party_publish(NULL);
         /* No raid (any more): nothing to show, and the next raid starts afresh. */
         dd_overlay_turn(DD_OVERLAY_TURN_NONE);
@@ -953,6 +959,7 @@ static void walk_poll(void) {
     }
     g_town_check_raid = 1;pool_enter_raid();
     party_publish(&v);
+    formation_watch(&v);
     g_town_check_at = 0;
     memcpy(&bits, &v.pos, 4);
     int tile = (int)((v.pos + 360.0f) / 720.0f);
@@ -1029,6 +1036,7 @@ static int __fastcall hook_game_assert(const char *expression, const char *funct
 }
 static const hamlet_hook_spec g_walk_hooks[] = {
     {"formation_reset", (uintptr_t)hook_formation_reset, &g_formation_native, 11},
+    {"formation_default", (uintptr_t)hook_formation_default, &g_formation_default_orig, 11},
     {"raid_move_input", (uintptr_t)hook_raid_move, &g_raid_move, 10},
     {"party_move", (uintptr_t)hook_party_move, &g_party_move, 7},
     {"raid_use_prop", (uintptr_t)hook_raid_use, &g_raid_use, 11},

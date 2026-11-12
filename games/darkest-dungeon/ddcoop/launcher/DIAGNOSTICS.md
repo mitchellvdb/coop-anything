@@ -6,6 +6,11 @@ freezes its current player slots, captures its own logs and asks the connected
 guests for theirs over the existing reliable Steam control channel. Concurrent
 requests coalesce. No outside service, account, HTTP upload or public publication.
 
+Since test83 an ordinary end does not start a report: closing the game no longer
+does, and a "Sync stop" right after a "... disconnected" line (another player left
+or closed the game) is not a desync. A mismatch (reason 2/3), an order this copy
+could not apply ("needs a resync") or another stop still does (lr_diag_stop_marker).
+
 Only a fixed log allowlist is read; no campaign saves, ddcoop.ini, Steam tickets
 or signing keys. Known authentication/password lines are removed before transfer
 and again on the host. This is not full anonymization of names or paths: reports

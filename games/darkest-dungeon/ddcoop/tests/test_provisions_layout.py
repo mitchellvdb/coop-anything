@@ -54,6 +54,18 @@ def verify(path):
     assert read(0x6961f3, 4) == bytes.fromhex("44395040")        # definition.type == r10d
     assert read(0x6961f9, 7) == bytes.fromhex("44398884000000")  # definition.id == r9d (zero included)
     print("PASS native provision item identity: type+44/id+88 compared with definition type+40/id+84")
+    # Back button (test84 fix): 6e84e0 is std::function slot 2 of lambda_10 (vtable ec3db8); it reads only its
+    # capture +8 (TownDisplay), slides ProvisionSelect (+3770) away through 7f6680 with lambda_1 (vtable ec33b0)
+    # as callback, whose slot 2 is 6e85e0: refund (6e0250) and then the way back to town.
+    assert struct.unpack("<Q", read(0xec3db8 + 16, 8))[0] == 0x1406e84e0
+    assert struct.unpack("<Q", read(0xec33b0 + 16, 8))[0] == 0x1406e85e0
+    assert read(0x6e84e8, 14) == bytes.fromhex("488bd9488b4108488d8870370000")  # rbx=fn; rax=[fn+8]; rcx=rax+3770
+    assert read(0x6e8506, 3) == bytes.fromhex("488d15") and 0x6e850d + i32(0x6e8509) == 0xec33b0
+    assert read(0x6e8511, 4) == bytes.fromhex("498943b8")                       # callback capture = TownDisplay
+    assert read(0x6e8524, 1) == b"\xe8" and 0x6e8529 + i32(0x6e8525) == 0x7f6680
+    assert read(0x6e85ed, 1) == b"\xe8" and 0x6e85f2 + i32(0x6e85ee) == 0x6e0250
+    assert read(0x6e85f2, 4) == bytes.fromhex("488b7b08")                       # rdi=[fn+8]: TownDisplay
+    print("PASS native provisions Back: button 6e84e0 slides the panel away, then 6e85e0 refunds and leaves")
 
 
 if __name__ == "__main__":

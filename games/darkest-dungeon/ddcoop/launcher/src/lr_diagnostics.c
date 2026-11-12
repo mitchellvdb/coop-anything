@@ -341,3 +341,23 @@ void lr_diag_left(lr_diagnostics *d, uint64_t peer) {
         changed(d, 1);
     }
 }
+/* Review of test82 (12 Nov): every session end made a report, because a player who leaves makes the other
+ * runtimes log "Sync stop: reason=1" right after "... disconnected" (and "shared actions stopped after live
+ * session loss"). Reason 1 also marks a real failure (an order that could not be applied), so look at the line
+ * before the first stop: a disconnect there is an ordinary end; anything else, or reason 2/3, is a real stop. */
+int lr_diag_stop_marker(const char *text) {
+    if (!text) return 0;
+    if (strstr(text, "this copy needs a resync") || strstr(text, "Sync stop: reason=2") ||
+        strstr(text, "Sync stop: reason=3"))
+        return 1;
+    const char *stop = strstr(text, "Sync stop: reason=");
+    if (!stop) return 0;
+    const char *start = stop; /* start of the stop's line */
+    while (start > text && start[-1] != '\n') --start;
+    if (start == text) return 1; /* no line before it in this chunk */
+    const char *line = start - 1; /* the newline that ends the previous line */
+    while (line > text && line[-1] != '\n') --line;
+    for (const char *p = line; p + 12 <= start - 1; ++p)
+        if (!strncmp(p, "disconnected", 12)) return 0;
+    return 1;
+}

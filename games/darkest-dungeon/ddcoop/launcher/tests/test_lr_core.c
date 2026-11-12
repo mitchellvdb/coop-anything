@@ -325,6 +325,14 @@ static int never(void *p) { (void)p; return 0; }
 
 static node *g_host, *g_guest;
 
+/* Both launchers know both names (launcher/NAMES.md). */
+static int names_known(void *p) {
+    (void)p;
+    return !strcmp(lr_core_player_name(&g_host->core, 1), g_guest->core.my_name) &&
+           !strcmp(lr_core_player_name(&g_guest->core, 0), g_host->core.my_name) &&
+           g_guest->core.players_rev == g_host->core.players_rev;
+}
+
 /* The guest has the host's current table. */
 static int owners_match(void *p) {
     (void)p;
@@ -896,6 +904,25 @@ int main(void) {
     CHECK(ini && strstr(ini, host.core.password));
     free(ini);
     CHECK(lr_core_take_launch(&guest.core) && !lr_core_take_launch(&guest.core));
+
+    /* 4a. player names: cleaned, sent both ways, and the count of players in the session */
+    {
+        int total = 0;
+        lr_core_set_name(&host.core, "  Hosty ");
+        lr_core_set_name(&guest.core, "Gast\tEen");
+        CHECK(!strcmp(host.core.my_name, "Hosty") && !strcmp(guest.core.my_name, "Gast Een"));
+        CHECK(run_until(&host, &guest, names_known, NULL, 3000));
+        CHECK(!strcmp(lr_core_player_name(&host.core, 1), "Gast Een") && !strcmp(lr_core_player_name(&guest.core, 0), "Hosty"));
+        CHECK(lr_core_players_connected(&host.core, &total) == 2 && total == 4);
+        CHECK(lr_core_players_connected(&guest.core, &total) == 2 && total == 4);
+        CHECK(!lr_core_player_present(&guest.core, 2) && !lr_core_player_name(&guest.core, 2)[0]);
+        lr_core_set_name(&guest.core, "Tweede");
+        CHECK(run_until(&host, &guest, names_known, NULL, 3000) && !strcmp(lr_core_player_name(&host.core, 1), "Tweede"));
+        lr_core_set_name(&host.core, "");
+        CHECK(run_until(&host, &guest, names_known, NULL, 3000) && !lr_core_player_name(&guest.core, 0)[0]);
+        lr_core_set_name(&host.core, "Hosty");
+        CHECK(run_until(&host, &guest, names_known, NULL, 3000));
+    }
 
     /* 4b. hero ownership: the host's table (from its campaign) reaches the guest; all heroes start as the host's */
     CHECK(host.core.owners.count == 3 && host.core.owners.revision >= 1);

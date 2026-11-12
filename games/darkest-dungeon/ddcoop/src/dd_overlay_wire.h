@@ -3,14 +3,14 @@
 #define DD_OVERLAY_WIRE_H
 #include <stdint.h>
 #define DD_OVERLAY_MAGIC 0x314f4344u
-#define DD_OVERLAY_VERSION 1
+#define DD_OVERLAY_VERSION 2 /* 2: player names (launcher/NAMES.md) */
 #define DD_OVERLAY_HEROES 64
 #define DD_OVERLAY_CHECKS 8
 #define DD_OVERLAY_MESSAGE L"DDCoopOverlayCommand-v1"
 enum { DD_OVERLAY_LAUNCHER = 1, DD_OVERLAY_LOGS, DD_OVERLAY_COPY_CODE, DD_OVERLAY_CLAIM, DD_OVERLAY_RELEASE };
 typedef struct {
     uint32_t id, party, mine;
-    char name[64], cls[48], owner[16];
+    char name[64], cls[48], owner[32];
 } dd_overlay_hero;
 typedef struct {
     volatile int32_t sequence;
@@ -20,5 +20,6 @@ typedef struct {
     int32_t check_ok[DD_OVERLAY_CHECKS];
     char checks[DD_OVERLAY_CHECKS][200];
     dd_overlay_hero heroes[DD_OVERLAY_HEROES];
+    char players[4][32]; /* player 0 (host)..3: the name they chose, "" = none (show "Host" / "Player N") */
 } dd_overlay_snapshot;
 #endif

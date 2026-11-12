@@ -56,6 +56,7 @@ static void __fastcall hook_activity_pickup(void *,void *,void *,void *);
 static void __fastcall hook_activity_source_finish(void *,void *);
 static void __fastcall hook_activity_source_remove(void *,void *);
 static int formation_apply(const dd_action *a);
+static int formation_set_apply(const dd_action *a);
 static int hamlet_apply(const dd_action *a);
 static void hamlet_reset(void);
 static void hamlet_refresh_schedule(uint32_t id);
@@ -906,6 +907,7 @@ static int runtime_apply_inner(void *unused, const dd_action *a) {
     (void)unused;
     if (!a || !dd_action_valid(a)) return 0;
     if(a->kind==DD_ACT_FORMATION_RESET)return formation_apply(a);
+    if(a->kind==DD_ACT_FORMATION_SET)return formation_set_apply(a);
     if(a->kind==DD_ACT_OWNERS)return hero_owners_apply(a);
     if(a->kind==DD_ACT_PREPARE)return prepare_apply(a);
     if(a->kind==DD_ACT_EMBARK)return embark_apply(a);
@@ -1600,7 +1602,7 @@ static void runtime_poll_once(void) {
             hamlet_request_done(m.u.reject.request_id,1);
             hunger_request_done(m.u.reject.request_id);
             quest_return_request_done(m.u.reject.request_id);
-            formation_request_done(m.u.reject.request_id);
+            formation_request_rejected(m.u.reject.request_id);
             embark_request_done(m.u.reject.request_id);
             loot_request_done(m.u.reject.request_id);
             provisions_request_done(m.u.reject.request_id,1);

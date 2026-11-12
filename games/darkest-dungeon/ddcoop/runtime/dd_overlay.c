@@ -48,6 +48,15 @@ static struct {
     int turn;                             /* DD_OVERLAY_TURN_*, from the runtime. */
     int party_count, party_owner[4];      /* dd_overlay_party */
     float party_stress[4];
+    int party_player[4];                  /* dd_overlay_party_players: player + 1, 0 = unknown */
+    /* The names in the party blocks: a GDI bitmap redrawn when a label or the block size changes. */
+    HDC name_dc;
+    HBITMAP name_bitmap;
+    uint8_t *name_pixels;
+    HFONT name_font;
+    int name_w, name_h, name_font_px, name_dirty;
+    GLuint name_texture;
+    char name_key[256];
 } O;
 
 /* Function pointers deliberately use the Windows OpenGL calling convention. */
@@ -155,7 +164,8 @@ static int gl_initialize(void) {
     O.tex = p_GetUniformLocation(O.program, "image");
     p_GenVertexArrays(1, &O.vao);
     glGenTextures(1, &O.texture);
-    return O.vao && O.texture;
+    glGenTextures(1, &O.name_texture);
+    return O.vao && O.texture && O.name_texture;
 }
 static void read_snapshot(void) {
     uint64_t now = GetTickCount64();
@@ -187,6 +197,8 @@ static void read_snapshot(void) {
         next.role[sizeof next.role - 1] = 0;
         next.status[sizeof next.status - 1] = 0;
         next.runtime[sizeof next.runtime - 1] = 0;
+        for (unsigned i = 0; i < 4; i++)
+            next.players[i][sizeof next.players[i] - 1] = 0;
         for (unsigned i = 0; i < DD_OVERLAY_CHECKS; i++)
             next.checks[i][sizeof next.checks[i] - 1] = 0;
         for (unsigned i = 0; i < next.hero_count; i++) {
@@ -244,8 +256,13 @@ static void notice_remove(int index) {
 }
 void dd_overlay_session(int state) { O.session = state; }
 void dd_overlay_turn(int turn) { O.turn = turn; }
+void dd_overlay_party_players(const int player[4]) {
+    for (int i = 0; i < 4; i++)
+        O.party_player[i] = player && player[i] >= 0 && player[i] <= 3 ? player[i] + 1 : 0;
+}
 void dd_overlay_party(int count, const int owner[4], const float stress[4]) {
     if (count < 0 || count > 4 || !owner || !stress) count = 0;
+    if (!count) memset(O.party_player, 0, sizeof O.party_player);
     O.party_count = count;
     for (int i = 0; i < count; i++) {
         O.party_owner[i] = owner[i];
@@ -275,8 +292,8 @@ static void turn_strip(void) {
 /* Where block i (0 = the front rank) goes, in GL pixels (origin bottom left). */
 static void party_box(int i, int *x, int *y, int *w, int *h) {
     int strip = O.draw_h >= 900 ? 12 : 8;
-    *w = O.draw_w / 24 < 40 ? 40 : O.draw_w / 24;
-    *h = *w / 3;
+    *w = O.draw_w / 16 < 60 ? 60 : O.draw_w / 16;
+    *h = *w * 2 / 5;
     *x = 12 + (O.party_count - 1 - i) * (*w + 6);
     *y = O.draw_h - strip - 6 - *h;
 }
@@ -299,7 +316,7 @@ static void party_marks(void) {
     for (int i = 0; i < O.party_count; i++) {
         int x, y, w, h, bar;
         party_box(i, &x, &y, &w, &h);
-        bar = h / 3 < 3 ? 3 : h / 3;
+        bar = h / 4 < 3 ? 3 : h / 4;
         if (O.party_owner[i] == DD_OVERLAY_TURN_MINE) party_clear(x, y, w, h, 0.30f, 0.80f, 0.45f);
         else if (O.party_owner[i] == DD_OVERLAY_TURN_OTHER) party_clear(x, y, w, h, 0.92f, 0.55f, 0.20f);
         else party_clear(x, y, w, h, 0.45f, 0.45f, 0.45f);
@@ -553,51 +570,31 @@ footer:
         O.pixels[i * 4 + 3] = 245;
 }
 
-void dd_overlay_draw(void *window) {
-    if ((!O.visible && !O.turn && !O.party_count) || !window) return;
-    read_snapshot();
-    if (!g_overlay_window_size) {
-        HMODULE sdl = GetModuleHandleW(L"SDL2_orig.dll");
-        if (sdl) {
-            FARPROC a = GetProcAddress(sdl, "SDL_GetWindowSize"),
-                    b = GetProcAddress(sdl, "SDL_GL_GetDrawableSize");
-            memcpy(&g_overlay_window_size, &a, sizeof a);
-            memcpy(&g_overlay_drawable_size, &b, sizeof b);
-        }
-    }
-    int w = 0, h = 0;
-    if (!g_overlay_window_size || !g_overlay_drawable_size) return;
-    g_overlay_window_size(window, &w, &h);
-    g_overlay_drawable_size(window, &O.draw_w, &O.draw_h);
-    if (w < 400 || h < 280 || O.draw_w <= 0 || O.draw_h <= 0) return;
-    if (O.turn && wglGetCurrentContext()) turn_strip();
-    if (O.party_count && wglGetCurrentContext()) party_marks();
-    if (!O.visible) return;
-    O.width = w;
-    O.scale = w >= 1800 ? 1.25f : 1.0f;
-    O.height = (int)((h - 24) / O.scale);
-    if (O.height > PANEL_H) O.height = PANEL_H;
-    if (O.height < 280) return;
-    if (!bitmap_initialize()) return;
-    scroll_clamp();
-    raster();
+/* Our GL resources for the current context; a new context (the game recreated its window) starts afresh. */
+static int gl_ready(void) {
     HGLRC context = wglGetCurrentContext();
-    if (!context) return;
+    if (!context) return 0;
     if (context != O.context) {
         O.context = context;
-        O.program = O.vao = O.texture = 0;
+        O.program = O.vao = O.texture = O.name_texture = 0;
+        O.name_key[0] = 0;
         O.gl_failed = 0;
     }
-    if (O.gl_failed) return;
+    if (O.gl_failed) return 0;
     /* Initialization only creates our resources and restores the bindings below along with drawing. */
     int first_draw = !O.program;
     if (first_draw && !gl_initialize()) {
         O.gl_failed = 1;
         OutputDebugStringW(L"DDCoop F9: OpenGL panel could not initialize");
         dd_log("F9 panel OpenGL initialization failed; use launcher taskbar for logs");
-        return;
+        return 0;
     }
     if (first_draw) dd_log("F9 panel OpenGL ready (drawable %dx%d)", O.draw_w, O.draw_h);
+    return 1;
+}
+/* Draws texture id (uploading pixels first unless NULL; BGRA, tw x th, top row first) into the rectangle at
+ * x,y (top left, GL clip space) with size bw,bh (bh negative: downwards), and puts every bit of state back. */
+static void draw_texture(GLuint id, const void *pixels, int tw, int th, float x, float y, float bw, float bh) {
     GLint program = 0, vao = 0, active = 0, texture = 0, sampler = 0, framebuffer = 0, unpack = 0,
           alignment = 0, rowlen = 0, skiprows = 0, skippixels = 0;
     GLint viewport[4], blend_src = 0, blend_dst = 0, alpha_src = 0, alpha_dst = 0, equation = 0,
@@ -644,17 +641,16 @@ void dd_overlay_draw(void *window) {
     glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
     glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
     if (p_BindSampler) p_BindSampler(0, 0);
-    glBindTexture(GL_TEXTURE_2D, O.texture);
+    glBindTexture(GL_TEXTURE_2D, id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, 0x812f);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, 0x812f);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, PANEL_W, O.height, 0, 0x80e1, GL_UNSIGNED_BYTE, O.pixels);
+    if (pixels) glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, 0x80e1, GL_UNSIGNED_BYTE, pixels);
     p_UseProgram(O.program);
     p_Uniform1i(O.tex, 0);
     p_BindVertexArray(O.vao);
-    p_Uniform4f(O.bounds, -1.0f + 24.0f / w, 1.0f - 24.0f / h, 2.0f * PANEL_W * O.scale / w,
-                -2.0f * O.height * O.scale / h);
+    p_Uniform4f(O.bounds, x, y, bw, bh);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     p_BindVertexArray((GLuint)vao);
     p_UseProgram((GLuint)program);
@@ -678,3 +674,121 @@ void dd_overlay_draw(void *window) {
         else
             glDisable(caps[i]);
 }
+/* The owner's name in each party block, black on its colour, above the stress bar. The bitmap is rebuilt only
+ * when a label or the block size changes; between those the texture is drawn as it is. */
+static const char *party_label(int i, char *out, size_t cap) {
+    int player = O.party_player[i] - 1;
+    if (player < 0) return "";
+    if (O.fresh && O.snapshot.players[player][0]) snprintf(out, cap, "%s", O.snapshot.players[player]);
+    else if (player == 0) snprintf(out, cap, "Host");
+    else snprintf(out, cap, "Player %d", player + 1);
+    return out;
+}
+static int name_bitmap(int width, int height, int font_px) {
+    if (!O.name_dc && !(O.name_dc = CreateCompatibleDC(NULL))) return 0;
+    if (width != O.name_w || height != O.name_h || !O.name_bitmap) {
+        BITMAPINFO info = {0};
+        if (O.name_bitmap) DeleteObject(O.name_bitmap);
+        O.name_bitmap = NULL;
+        O.name_pixels = NULL;
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = width;
+        info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        O.name_bitmap = CreateDIBSection(O.name_dc, &info, DIB_RGB_COLORS, (void **)&O.name_pixels, NULL, 0);
+        if (!O.name_bitmap || !O.name_pixels) {
+            O.name_w = O.name_h = 0;
+            return 0;
+        }
+        SelectObject(O.name_dc, O.name_bitmap);
+        O.name_w = width;
+        O.name_h = height;
+    }
+    if (font_px != O.name_font_px || !O.name_font) {
+        if (O.name_font) DeleteObject(O.name_font);
+        /* Grey antialiasing, not ClearType: the coverage becomes the alpha below. */
+        O.name_font = CreateFontW(-font_px, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0,
+                                  L"Segoe UI");
+        O.name_font_px = O.name_font ? font_px : 0;
+        if (!O.name_font) return 0;
+    }
+    return 1;
+}
+static void party_names(void) {
+    char key[sizeof O.name_key], labels[4][64];
+    int x, y, w, h, any = 0; /* the strip starts at x = 12 like the leftmost block (party_box) */
+    size_t k;
+    party_box(0, &x, &y, &w, &h);
+    int bar = h / 4 < 3 ? 3 : h / 4, top = 3, bottom = h - bar - 2, width = O.party_count * (w + 6) - 6;
+    int font_px = (bottom - top) * 4 / 5;
+    if (font_px < 9 || width <= 0) return;
+    k = (size_t)snprintf(key, sizeof key, "%d %d %d", O.party_count, w, h);
+    for (int i = 0; i < O.party_count && k < sizeof key; i++) {
+        party_label(i, labels[i], sizeof labels[i]);
+        any |= labels[i][0] != 0;
+        k += (size_t)snprintf(key + k, sizeof key - k, "|%s", labels[i]);
+    }
+    if (!any || !gl_ready()) return;
+    if (strcmp(key, O.name_key)) {
+        if (!name_bitmap(width, h, font_px)) return;
+        memset(O.name_pixels, 0, (size_t)width * (size_t)h * 4);
+        SetBkMode(O.name_dc, TRANSPARENT);
+        SetTextColor(O.name_dc, RGB(255, 255, 255));
+        SelectObject(O.name_dc, O.name_font);
+        for (int i = 0; i < O.party_count; i++) {
+            wchar_t wide[64] = {0};
+            int left = (O.party_count - 1 - i) * (w + 6);
+            RECT r = {left + 4, top, left + w - 4, bottom};
+            MultiByteToWideChar(CP_UTF8, 0, labels[i], -1, wide, 63);
+            DrawTextW(O.name_dc, wide, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        }
+        GdiFlush();
+        for (int i = 0; i < width * h; i++) {
+            uint8_t *px = O.name_pixels + (size_t)i * 4, a = px[0] > px[1] ? px[0] : px[1];
+            if (px[2] > a) a = px[2];
+            px[0] = px[1] = px[2] = 0; /* black text; its coverage is the alpha */
+            px[3] = a;
+        }
+        snprintf(O.name_key, sizeof O.name_key, "%s", key);
+        O.name_dirty = 1;
+    }
+    draw_texture(O.name_texture, O.name_dirty ? O.name_pixels : NULL, width, h, -1.0f + 24.0f / O.draw_w,
+                 -1.0f + 2.0f * (y + h) / O.draw_h, 2.0f * width / O.draw_w, -2.0f * h / O.draw_h);
+    O.name_dirty = 0;
+}
+void dd_overlay_draw(void *window) {
+    if ((!O.visible && !O.turn && !O.party_count) || !window) return;
+    read_snapshot();
+    if (!g_overlay_window_size) {
+        HMODULE sdl = GetModuleHandleW(L"SDL2_orig.dll");
+        if (sdl) {
+            FARPROC a = GetProcAddress(sdl, "SDL_GetWindowSize"),
+                    b = GetProcAddress(sdl, "SDL_GL_GetDrawableSize");
+            memcpy(&g_overlay_window_size, &a, sizeof a);
+            memcpy(&g_overlay_drawable_size, &b, sizeof b);
+        }
+    }
+    int w = 0, h = 0;
+    if (!g_overlay_window_size || !g_overlay_drawable_size) return;
+    g_overlay_window_size(window, &w, &h);
+    g_overlay_drawable_size(window, &O.draw_w, &O.draw_h);
+    if (w < 400 || h < 280 || O.draw_w <= 0 || O.draw_h <= 0) return;
+    if (O.turn && wglGetCurrentContext()) turn_strip();
+    if (O.party_count && wglGetCurrentContext()) party_marks();
+    if (O.party_count && wglGetCurrentContext()) party_names();
+    if (!O.visible) return;
+    O.width = w;
+    O.scale = w >= 1800 ? 1.25f : 1.0f;
+    O.height = (int)((h - 24) / O.scale);
+    if (O.height > PANEL_H) O.height = PANEL_H;
+    if (O.height < 280) return;
+    if (!bitmap_initialize()) return;
+    scroll_clamp();
+    raster();
+    if (!gl_ready()) return;
+    draw_texture(O.texture, O.pixels, PANEL_W, O.height, -1.0f + 24.0f / w, 1.0f - 24.0f / h,
+                 2.0f * PANEL_W * O.scale / w, -2.0f * O.height * O.scale / h);
+}
+

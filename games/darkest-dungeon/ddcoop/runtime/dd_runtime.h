@@ -2,7 +2,7 @@
 #ifndef DD_RUNTIME_H
 #define DD_RUNTIME_H
 
-#define DD_RUNTIME_VERSION "0.5.0-test82"
+#define DD_RUNTIME_VERSION "0.5.0-test85"
 
 #include <stdint.h>
 

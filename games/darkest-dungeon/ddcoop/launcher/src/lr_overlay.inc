@@ -47,7 +47,7 @@ static void overlay_publish(void) {
         snprintf(next.checks[i], sizeof next.checks[i], "%s", G.check_text[i]);
     }
     int me = lr_core_player(&G.core);
-    static const char *const players[] = {"host", "player 2", "player 3", "player 4"};
+    for (int i = 0; i < 4; i++) snprintf(next.players[i], sizeof next.players[i], "%s", lr_core_player_name(&G.core, i));
     /* Party first, just like the launcher table. IDs remain the authority when a sorted row is clicked. */
     int order[LR_MAX_HEROES];
     uint8_t flags[LR_MAX_HEROES];
@@ -64,7 +64,7 @@ static void overlay_publish(void) {
         snprintf(row->cls, sizeof row->cls, "%s", h->cls);
         snprintf(row->owner, sizeof row->owner, "%s",
                  row->mine                                  ? "you"
-                 : G.core.owners.owner[i] < 4 ? players[G.core.owners.owner[i]]
+                 : G.core.owners.owner[i] < 4 ? player_label(G.core.owners.owner[i])
                                                             : "friend");
     }
     InterlockedIncrement((volatile LONG *)&g_overlay_view->sequence);

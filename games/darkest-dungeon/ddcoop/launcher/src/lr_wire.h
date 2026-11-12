@@ -53,6 +53,8 @@ typedef enum {
     LR_DIAG_ACK = 30,     /* report id, 0 success / 1 failed */
     LR_DIAG_NOTICE = 31,  /* guest asks host for a report: reason, kit */
     LR_KIT_END = 25,     /* host -> that friend: all kit files sent */
+    LR_NAME = 32,        /* guest -> host: this player's chosen name (text, 0..LR_PLAYER_NAME_MAX bytes) */
+    LR_PLAYERS = 33,     /* host -> guest: who is in the session and their names (revision in id, lr_players body) */
 } lr_type;
 
 typedef enum {
@@ -102,5 +104,24 @@ int lr_file_name_ok(const char *name);
 uint32_t lr_crc32(uint32_t crc, const uint8_t *p, size_t len); /* start with 0 */
 
 const char *lr_bye_text(uint32_t reason); /* Dutch, for the window */
+
+/* Player names (launcher/NAMES.md): what a player typed in the launcher, shown to the others instead of
+ * "player 2". UTF-8, at most LR_PLAYER_NAME_MAX bytes, no control characters, no leading/trailing space;
+ * empty = no name (the others see "player N"). Never written to logs. */
+#define LR_PLAYER_NAME_MAX 31
+int lr_player_name_ok(const char *name);
+/* Makes a valid name from any text: control characters become spaces, invalid UTF-8 is dropped, cut at a
+ * character boundary, spaces trimmed. out has LR_PLAYER_NAME_MAX + 1 bytes. */
+void lr_player_name_clean(const char *in, char *out);
+
+/* The LR_PLAYERS body: the host's chosen player count and, per player (0 = host), present and name. */
+typedef struct {
+    int total;                                   /* 2..4 */
+    uint8_t present[4];
+    char name[4][LR_PLAYER_NAME_MAX + 1];
+} lr_players;
+#define LR_PLAYERS_MAX_BODY (1 + 4 * (2 + LR_PLAYER_NAME_MAX))
+size_t lr_players_encode(const lr_players *p, uint8_t *out, size_t cap); /* 0 = invalid */
+int lr_players_decode(const uint8_t *buf, size_t len, lr_players *out);  /* 1 = ok, 0 = refused (out untouched) */
 
 #endif

@@ -116,6 +116,42 @@ int main(void) {
     memset(&m, 0, sizeof m); m.type = LR_SESSION; m.a = 3; strcpy(m.text, "abcdefghijkmnpqrstuvwxyzABCDEFGH");
     n = lr_encode(&m, buf); buf[LR_HEADER] = 10; CHECK(!lr_decode(buf, n, LR_CH_CONTROL, &d)); /* slot 10 */
 
+    /* player names (launcher/NAMES.md) */
+    CHECK(lr_player_name_ok("") && lr_player_name_ok("Robin") && lr_player_name_ok("J\xc3\xb6rg van D"));
+    CHECK(!lr_player_name_ok(" Robin") && !lr_player_name_ok("Robin ") && !lr_player_name_ok("a\tb"));
+    CHECK(!lr_player_name_ok("a\x7f") && !lr_player_name_ok("a\xc2\x85") && !lr_player_name_ok("\xc3"));
+    CHECK(!lr_player_name_ok("\xc0\xaf") && !lr_player_name_ok("\xed\xa0\x80")); /* overlong, surrogate */
+    CHECK(lr_player_name_ok("1234567890123456789012345678901") && !lr_player_name_ok("12345678901234567890123456789012"));
+    {
+        char clean[LR_PLAYER_NAME_MAX + 1];
+        lr_player_name_clean("  Ro\tbin \xff ", clean); CHECK(!strcmp(clean, "Ro bin"));
+        lr_player_name_clean(NULL, clean); CHECK(!strcmp(clean, ""));
+        /* 15 two-byte characters = 30 bytes, the 16th does not fit: cut on a character boundary */
+        lr_player_name_clean("\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9", clean);
+        CHECK(strlen(clean) == 30 && lr_player_name_ok(clean));
+    }
+    memset(&m, 0, sizeof m); m.type = LR_NAME; strcpy(m.text, "Robin"); round_trip(&m);
+    memset(&m, 0, sizeof m); m.type = LR_NAME; round_trip(&m); /* no name */
+    memset(&m, 0, sizeof m); m.type = LR_NAME; strcpy(m.text, " x"); CHECK(lr_encode(&m, buf) == 0);
+    {
+        lr_players pl, back;
+        uint8_t body[LR_PLAYERS_MAX_BODY];
+        memset(&pl, 0, sizeof pl);
+        pl.total = 3; pl.present[0] = pl.present[2] = 1;
+        strcpy(pl.name[0], "Host"); strcpy(pl.name[2], "Bob");
+        size_t bn = lr_players_encode(&pl, body, sizeof body);
+        CHECK(bn == 1 + 4 * 2 + 4 + 3);
+        CHECK(lr_players_decode(body, bn, &back) && !memcmp(&pl, &back, sizeof pl));
+        memset(&m, 0, sizeof m); m.type = LR_PLAYERS; m.id = 5; m.data = body; m.len = bn; round_trip(&m);
+        m.id = 0; CHECK(lr_encode(&m, buf) == 0);
+        CHECK(!lr_players_decode(body, bn - 1, &back));
+        body[0] = 5; CHECK(!lr_players_decode(body, bn, &back)); body[0] = 3; /* total 5 */
+        body[9] = 2; CHECK(!lr_players_decode(body, bn, &back)); body[9] = 1; /* player 3 present = 2 */
+        CHECK(lr_players_decode(body, bn, &back));
+        pl.present[3] = 1; CHECK(lr_players_encode(&pl, body, sizeof body) == 0); /* player 4 in a 3-player session */
+        pl.present[3] = 0; strcpy(pl.name[1], "x\n"); CHECK(lr_players_encode(&pl, body, sizeof body) == 0);
+    }
+
     CHECK(lr_crc32(0, (const uint8_t *)"123456789", 9) == 0xCBF43926u);
 
     /* fuzz: anything accepted must re-encode to exactly the same bytes */
@@ -136,7 +172,7 @@ int main(void) {
         } else {
             len = (size_t)(rand() % 64);
             for (size_t k = 0; k < len; k++) f[k] = (uint8_t)rand();
-            if (len >= 4) { f[0] = 'D'; f[1] = 'L'; f[2] = LR_VERSION; f[3] = (uint8_t)(rand() % 22); }
+            if (len >= 4) { f[0] = 'D'; f[1] = 'L'; f[2] = LR_VERSION; f[3] = (uint8_t)(rand() % 34); }
         }
         for (int ch = 0; ch < 2; ch++) {
             if (!lr_decode(f, len, ch, &d)) continue;

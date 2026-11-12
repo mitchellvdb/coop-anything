@@ -16,7 +16,7 @@
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
 #define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
-#define DD_PROTO_VERSION 36 /* shared inventory-full acknowledgement, tied to its loot order */
+#define DD_PROTO_VERSION 37 /* shared manual dungeon party order (FORMATION_SET) */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -61,6 +61,7 @@ typedef enum {
     DD_ACT_EMBARK = 22, /* request normal departure; only the host supplies seeds via DEPARTURE */
     DD_ACT_FORMATION_RESET = 23, /* dungeon default order, same stable IDs before/after */
     DD_ACT_ACTIVITY = 24, /* shared reserve/clear/accept, exact per-slot revision */
+    DD_ACT_FORMATION_SET = 25, /* dungeon party order a player chose by hand: the same members, after is the whole new order */
     DD_ACT_COUNT_
 } dd_action_kind;
 

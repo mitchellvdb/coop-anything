@@ -42,4 +42,7 @@ int lr_diag_request(lr_diagnostics *, unsigned reason, uint64_t now);
 int lr_diag_message(lr_diagnostics *, uint64_t peer, const lr_msg *, uint64_t now);
 void lr_diag_tick(lr_diagnostics *, uint64_t now);
 void lr_diag_left(lr_diagnostics *, uint64_t peer);
+/* New runtime log text (NUL-terminated): 1 when it shows a real stop on this copy (a mismatch or an order that
+ * could not be applied), 0 for nothing or for an ordinary end where another player left or closed the game. */
+int lr_diag_stop_marker(const char *text);
 #endif

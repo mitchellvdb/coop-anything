@@ -7,7 +7,7 @@ static dd_provisions_snapshot sw;
 static uint8_t sw_campaign[8], sw_panel[8], sw_stock[8], sw_bag[32], sw_items[16 * 0x5a8];
 static int sw_compact, sw_shards, sw_decline, sw_partial, sw_open_fail;
 static int32_t sw_paid;
-static unsigned sw_buys, sw_returns, sw_swaps, sw_copies, sw_destroys, sw_cancels, sw_backs, sw_enters, sw_fills, sw_stock_fills;
+static unsigned sw_buys, sw_returns, sw_swaps, sw_copies, sw_destroys, sw_cancels, sw_backs, sw_enters, sw_fills, sw_stock_fills, sw_clicks;
 static int sw_no_quest;
 static uint8_t sw_quest_object[8];
 static void sw_counts(void) {
@@ -127,6 +127,12 @@ static void __fastcall sw_back(void *capture) {
     sw_backs++;
     hook_supply_cancel();
 }
+/* Like native 6e84e0, the Back button: the panel slides away, then its callback runs through the hook on 6e85e0. */
+static void __fastcall sw_back_click(void *capture) {
+    sw_clicks++;
+    sw_show(0);
+    hook_supply_back(capture);
+}
 static void __fastcall sw_enter(void *panel) {
     (void)panel;
     sw_enters++;
@@ -172,7 +178,7 @@ static void sw_reset(int role) {
     sw_compact = sw_shards = sw_decline = sw_partial = sw_open_fail = sw_no_quest = 0;
     sw_fills = sw_stock_fills = 0;
     sw_paid = 0;
-    sw_buys = sw_returns = sw_swaps = sw_copies = sw_destroys = sw_cancels = sw_backs = sw_enters = 0;
+    sw_buys = sw_returns = sw_swaps = sw_copies = sw_destroys = sw_cancels = sw_backs = sw_enters = sw_clicks = 0;
     uint64_t begin = (uintptr_t)sw_items;
     memcpy(sw_bag + 8, &begin, 8);
     for (uint32_t i = 0; i < 16; i++) memcpy(sw_items + i * 0x5a8, &i, 4);
@@ -187,6 +193,7 @@ static void sw_reset(int role) {
     g_supply_return = sw_return;
     g_supply_cancel = sw_cancel;
     g_supply_back = sw_back;
+    g_supply_back_click = sw_back_click;
     g_supply_fill[0] = sw_fill_free;
     g_supply_fill[1] = sw_fill_stock;
     g_supply_quest = sw_quest;
@@ -743,16 +750,43 @@ static void supplies_transactions(void) {
     order = sw_order(DD_SUPPLY_CANCEL, 0, 75);
     sw_push_apply(2, 0, &order);
     dd_runtime_poll();
-    CHECK(sw_backs == 1 && !sw_cancels && !alerts && g_incoming.count == 1 && !sent);
+    /* The Back button's click: the panel slides away and its callback leaves for town; the refund waits for the order. */
+    CHECK(sw_clicks == 1 && sw_backs == 1 && !sw_cancels && !alerts && g_incoming.count == 1 && !sent && !sw.panel_visible);
+    dd_runtime_poll();
+    CHECK(sw_clicks == 1 && sw_cancels == 1 && !sent && !g_incoming.count && *sw_gold() == 1000 && !g_town.needs_resync && !alerts);
+    /* A panel that does not slide away in time is clicked again, as a player would. */
+    sw_reset(DD_ROLE_GUEST);
+    order = sw_order(DD_SUPPLY_BUY, 0, 75);
+    sw_push_apply(1, 0, &order);
+    dd_runtime_poll();
+    order = sw_order(DD_SUPPLY_CANCEL, 0, 75);
+    sw_push_apply(2, 0, &order);
+    g_supply_back_click = sw_back;
+    dd_runtime_poll();
+    CHECK(sw_backs == 1 && !sw_cancels && g_incoming.count == 1);
     dd_runtime_poll();
     CHECK(sw_backs == 1 && !sw_cancels);
-    /* Still not gone after a while: press again, as a player would. */
     g_supply_close_at = 0;
+    g_supply_back_click = sw_back_click;
     dd_runtime_poll();
-    CHECK(sw_backs == 2 && !sw_cancels);
+    CHECK(sw_clicks == 1 && !sw.panel_visible);
+    dd_runtime_poll();
+    CHECK(sw_cancels == 1 && !g_incoming.count && *sw_gold() == 1000 && !g_town.needs_resync && !alerts);
+    /* The player's own Escape while the other player's Back waits: the game still leaves for town (no black screen),
+     * and the refund is that order's only. */
+    sw_reset(DD_ROLE_GUEST);
+    order = sw_order(DD_SUPPLY_BUY, 0, 75);
+    sw_push_apply(1, 0, &order);
+    dd_runtime_poll();
+    order = sw_order(DD_SUPPLY_CANCEL, 0, 75);
+    sw_push_apply(2, 0, &order);
+    g_supply_close_at = GetTickCount64() + 60000; /* no forced click in this case */
+    dd_runtime_poll();
     sw_show(0);
+    hook_supply_back(NULL);
+    CHECK(sw_backs == 1 && !sw_cancels);
     dd_runtime_poll();
-    CHECK(sw_cancels == 1 && !sent && !g_incoming.count && *sw_gold() == 1000 && !g_town.needs_resync && !alerts);
+    CHECK(sw_cancels == 1 && !g_incoming.count && *sw_gold() == 1000 && !g_town.needs_resync && !alerts);
     /* A panel only flickering off with the views still up is waited for, not pressed. */
     sw_reset(DD_ROLE_GUEST);
     order = sw_order(DD_SUPPLY_CANCEL, 0, 0);

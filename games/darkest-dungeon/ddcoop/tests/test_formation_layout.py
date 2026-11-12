@@ -35,5 +35,14 @@ assert read(0x14076f1f2,7).hex() == '488b4608488938' # raid+8 party vector, firs
 for va,mask in [(0x14076f192,1),(0x14076f242,2),(0x14076f2f7,4),(0x14076f3ad,8)]:
     assert read(va,5) == b'\xba'+struct.pack('<I',mask)
 assert read(0x140614cc3,6).hex() == '4c8bf2488be9' # RDX output array, RCX raid
+# Hand-made order (FORMATION_SET): 614cb0 is hooked with an exact relocatable 11-byte prologue, and 76f060 takes its
+# array as it is: true stops, else rank i gets array[i] (rsp+38..50) and only a moved hero is written to vector slot i.
+assert read(0x140614cb0,11).hex() == '4c8bdc49895b1049896b18' # mov r11,rsp; mov [r11+10],rbx; mov [r11+18],rbp
+assert read(0x14076f0a5,5).hex() == '488d542438' and read(0x14076f0b2,8).hex() == '84c00f85ad030000'
+for va,slot in [(0x14076f12d,0x38),(0x14076f1f9,0x40),(0x14076f2aa,0x48),(0x14076f35f,0x50)]:
+    assert read(va,5) == bytes.fromhex('488b7c24') + bytes([slot])
+for va,disp in [(0x14076f1f2,''),(0x14076f2a2,'08'),(0x14076f357,'10'),(0x14076f40d,'18')]:
+    assert read(va,4).hex() == '488b4608' # raid+8: party vector begin
+    assert read(va+4,3 if not disp else 4).hex() == ('488938' if not disp else '48897' + '8' + disp)
 assert read(0x140614d49,7).hex() == '4439827c130000' # saved hero matched by persistent ID
 print('PASS formation ABI: normal button RTTI and keyboard converge; exact relocatable11-byte prologue; native raid/default array, rank masks, vector writes and animation flag proven; no game execution')

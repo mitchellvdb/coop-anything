@@ -15,6 +15,9 @@ void dd_overlay_turn(int turn);
  * the colour of whose hero it is (owner: DD_OVERLAY_TURN_MINE, _OTHER, or 0 unknown), with its stress (0..200) along
  * the bottom. count 0 hides it. */
 void dd_overlay_party(int count, const int owner[4], const float stress[4]);
+/* Whose hero each block is (player 0 = host .. 3, -1 unknown), set before dd_overlay_party: the block shows that
+ * player's name from the launcher (launcher/NAMES.md), else "Host" / "Player N". */
+void dd_overlay_party_players(const int player[4]);
 /* A waiting message that no longer applies. */
 void dd_overlay_notice_clear(const char *utf8);
 #endif

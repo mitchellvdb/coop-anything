@@ -365,8 +365,7 @@ static void diagnostics_tick(uint64_t now) {
         if (tail) {
             memcpy(tail, data + offset, n - offset);
             tail[n - offset] = 0;
-            if (!G.diag_seen_stop && (strstr(tail, "Sync stop: reason=") ||
-                                      strstr(tail, "shared actions stopped after live session loss"))) {
+            if (!G.diag_seen_stop && lr_diag_stop_marker(tail)) {
                 G.diag_seen_stop = 1;
                 (void)diagnostics_request(LR_DIAG_DESYNC, 0);
             }

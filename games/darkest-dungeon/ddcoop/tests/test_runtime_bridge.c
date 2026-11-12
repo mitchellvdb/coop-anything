@@ -31,6 +31,10 @@ static int overlay_turn_state;
 void dd_overlay_turn(int turn) { overlay_turn_state = turn; }
 static int overlay_party_count, overlay_party_owner[4];
 static float overlay_party_stress[4];
+static int overlay_party_player[4];
+void dd_overlay_party_players(const int player[4]) {
+    for (int i = 0; i < 4; i++) overlay_party_player[i] = player ? player[i] : -1;
+}
 void dd_overlay_party(int count, const int owner[4], const float stress[4]) {
     overlay_party_count = count;
     for (int i = 0; i < count && i < 4; i++) {

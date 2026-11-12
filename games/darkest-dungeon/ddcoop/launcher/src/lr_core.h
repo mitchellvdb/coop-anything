@@ -78,6 +78,7 @@ typedef struct {
     int send_phase;
     uint32_t sent_file, sent_offset, sent_bytes;
     uint32_t owners_sent;
+    uint32_t players_sent;    /* revision of the player list this friend has */
     uint64_t last_rx, last_tx;
 } lr_guest;
 
@@ -132,6 +133,12 @@ typedef struct {
     /* Guest: the host's kit as it arrives; ready = signed, newer and every file checked. */
     lr_kit_bundle kit_rx;
     int kit_rx_state;         /* 0 none, 1 receiving, 2 ready */
+    /* Player names (launcher/NAMES.md). my_name survives sessions; players is the host's list (host: the
+     * authority, revision players_rev; guest: the host's last list, players_rev 0 = none yet). */
+    char my_name[LR_PLAYER_NAME_MAX + 1];
+    lr_players players;
+    uint32_t players_rev;
+    int name_dirty;           /* guest: my_name still has to reach the host */
 } lr_core;
 
 void lr_core_init(lr_core *c, const lr_config *cfg);
@@ -164,6 +171,17 @@ void lr_core_host_spent(lr_core *c);
 
 /* Player index in the ownership table: LR_PLAYER_HOST (0), or this guest's number 1..3. */
 int lr_core_player(const lr_core *c);
+
+/* This player's name (any text; cleaned with lr_player_name_clean). Kept across sessions; in a session the
+ * host sends it to everyone, a guest to the host. */
+void lr_core_set_name(lr_core *c, const char *utf8);
+/* Name of player 0..3 in this session, "" if unknown or not given (show "player N" then). */
+const char *lr_core_player_name(const lr_core *c, int player);
+/* Players in the session now, including this one, and the host's chosen total (2..4) in *total.
+ * 0 when there is no session or a guest has no list from the host yet. */
+int lr_core_players_connected(const lr_core *c, int *total);
+/* Is player 0..3 in the session now? */
+int lr_core_player_present(const lr_core *c, int player);
 
 /* Guest: a signed, newer kit the host sent (all files checked), or NULL. Valid until the next join or free. */
 const lr_kit_bundle *lr_core_update(const lr_core *c);

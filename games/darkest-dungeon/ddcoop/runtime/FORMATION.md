@@ -48,3 +48,34 @@ game behavior. Static ABI proof uses only the exact owned executable. A real two
 playtest remains required. No game or save is launched/changed by these tests.
 
 Written by Codex,9 Nov2026. Prior test56 fixes, live party display and DLC groundwork retained.
+
+# Protocol37: hand-made party order (FORMATION_SET)
+
+Owner's run of 12 Nov 2026: at 16:19 and 16:21 a guest dragged two heroes to other
+ranks outside a fight. That drag is native and changed only that copy; the next
+shared hero selection by rank was refused elsewhere and the session stopped.
+
+The drag's own input path is still not mapped. Instead `formation_watch` compares
+the live party vector (persistent IDs) with the last shared order every frame in a
+raid. Outside a fight, loading or a session, any order of the same members that no
+shared action produced is a player's drag. It becomes DD_ACT_FORMATION_SET: area,
+before (last shared order) and after (the whole new order; heroes first, empty ranks
+at the end). The host orders its own drag at once; a guest asks, counts as busy for
+walking until the answer, and sends one request per new order.
+
+Every copy produces `after` through the native rerank of the default button
+(76f060). Raid::GetDefaultPartyOrder (614cb0) is hooked with an exact 11-byte
+prologue; only during `formation_native_order` it returns the wanted heroes, found
+by ID in the live vector, instead of the default. 76f060 then moves each hero whose
+rank differs, sets rank masks, writes the vector and animates, as for the button.
+A copy that already stands so changes nothing. Crossed drags are applied in host
+order, so all copies end on the last one. A refused guest order is undone on that
+guest once its animation is over. A partial native result stops everyone. Fights,
+loading and changed membership are adopted, never shared. tests/
+test_formation_layout.py proves the prologue, the array use and the vector writes.
+
+Not yet live-tested. A drag of a guest and a host walk into the next area within the
+network latency could still meet the travel guard; the guest's busy flag makes the
+host wait otherwise.
+
+Written by Claude Code, 12 Nov 2026 (runtime work allowed by the owner).

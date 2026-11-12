@@ -1,5 +1,24 @@
 DDCoop - development test kit {VERSION}
 
+New in test85
+Back in the provisions screen (the shop before a mission) now closes that shop on
+every player's screen by itself. Until test84 the other screens stayed open and
+everyone had to press Back by hand, and pressing Escape twice could leave a
+black screen.
+
+Earlier: test84
+Type your name in the launcher: the others see it instead of "player 2", in the
+hero table, the Assign list and in the blocks at the top left of a raid. The
+launcher shows how many players are connected ("2/4 players connected"). A hero
+dragged to another rank outside a fight now moves on every player's screen
+(until test83 it moved on one screen only and the session stopped soon after).
+
+Earlier: test83
+Codex's test82 with three repairs: an ordinary end of a session (closing the
+game, or a friend leaving) no longer makes a report on the host's desktop; only
+a real desync, a resync, a failure or Copy logs does. The Linux build and the
+address table generator work again. Gameplay is the same as test82.
+
 New in test82
 Desync reports are collected automatically on the host desktop as one ZIP,
 with a folder per player. Copy logs on any connected launcher also starts this.

@@ -14,7 +14,10 @@ static supply_return_fn g_supply_return;
 static supply_void_fn g_supply_cancel;
 static supply_price_fn g_supply_price[4];
 typedef void(__fastcall *supply_back_fn)(void *);
-static supply_back_fn g_supply_back;
+/* g_supply_back: 6e85e0, what runs after the panel has slid away (refund, then leave for town). g_supply_back_click:
+ * 6e84e0, the Back button itself, which slides the panel away with 6e85e0 as its callback. Both take a std::function
+ * whose capture (+8) is the TownDisplay. */
+static supply_back_fn g_supply_back, g_supply_back_click;
 typedef struct {uint64_t campaign,panel,stock,bag;} supply_model;
 static uint32_t g_supply_request;
 static unsigned g_supply_request_op;
@@ -369,6 +372,14 @@ static int supply_cancel_pending(void) {
 /* The Back button's own callback (6e85e0). With a purchase or return still on its way, Back follows by itself once that is done. */
 static void __fastcall hook_supply_back(void *capture) {
     dd_msg m;
+    if(!g_game_apply_depth && supply_active() && supply_head_cancel()) {
+        /* The other player's Back is next in the queue: leave for town as the game does; the refund inside is held back
+         * by hook_supply_cancel and done by that order. Swallowing this callback left the town without its panel or its
+         * way back: a black screen (owner's run 12 Nov 17:06:43, after Escape twice). */
+        dd_log("Supplies Back: leaving for town, the other player's Back refunds");
+        if(g_supply_back)g_supply_back(capture);
+        return;
+    }
     if(!g_game_apply_depth && supply_active() && supply_cancel_pending()) {
         dd_log("Supplies Back ignored: the refund is on its way");
         return;
@@ -386,14 +397,17 @@ static void supply_wait_over(void) {
     if(g_supply_wait)shop_notice_clear(g_supply_stuck);
     g_supply_wait=0;g_supply_wait_flags=0;g_supply_wait_since=0;
 }
-/* Back on this copy, because the other player's Back closed the shop. The hook on the refund sees the order at the head of the queue and lets the panel hide first. */
+/* Back on this copy, because the other player's Back closed the shop: the Back button's own click (6e84e0), so the panel
+ * slides away and then its callback leaves for town (hook_supply_back); the refund waits for the order at the queue head.
+ * Until test84 this called the callback 6e85e0 directly: the panel never slid away and the order waited for ever, every
+ * player pressing Back by hand to get out (owner's runs 9 Nov 21:16, 11 Nov 20:45, 12 Nov 17:06 and 17:07). */
 static void supply_close_panel(const supply_model *m) {
     uint64_t now=GetTickCount64();
     uint64_t functor[2]={0,m->panel-0x3770};
-    if(g_supply_cancel_local || now<g_supply_close_at || !g_supply_back)return;
+    if(g_supply_cancel_local || now<g_supply_close_at || !g_supply_back_click)return;
     g_supply_close_at=now+DD_SUPPLY_CLOSE_MS;
     dd_log("Supplies: the other player's Back closes this panel");
-    g_supply_back(functor);
+    g_supply_back_click(functor);
 }
 static int provisions_gate(const dd_msg *message) {
     if(!supply_message(message))return 0;
@@ -476,5 +490,7 @@ static int supplies_bind_native(void) {
         if(!safe_read(at,code,sizeof code) || memcmp(code,pins[i].code,sizeof code))return 0;
         g_supply_price[i]=(supply_price_fn)at;
     }
-    g_supply_return=(supply_return_fn)hamlet_address("provisions_return");return g_supply_return!=NULL;
+    g_supply_return=(supply_return_fn)hamlet_address("provisions_return");
+    g_supply_back_click=(supply_back_fn)hamlet_address("provision_back_click");
+    return g_supply_return!=NULL && g_supply_back_click!=NULL;
 }

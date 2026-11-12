@@ -274,8 +274,25 @@ int main(void) {
     CHECK(!nodes[1].d.active && !nodes[1].d.notice_pending && nodes[1].finished == 1);
     for (unsigned i = 0; i < 4; ++i)
         lr_diag_free(&nodes[i].d);
+    /* Runtime log lines from the owner's 11 Nov session: a player leaving is not a desync; a failed order is. */
+    CHECK(!lr_diag_stop_marker(NULL) && !lr_diag_stop_marker("") && !lr_diag_stop_marker("Walk: role=host tile=2\n"));
+    CHECK(!lr_diag_stop_marker("19:49:37.632 guest disconnected (player 1)\n19:49:37.632 guest disconnected (player 2)\n"
+                               "19:49:37.632 Sync stop: reason=1 role=host peer=0\n19:49:37.632 local notice: The games "
+                               "are no longer in sync.\n19:49:37.632 Sync stop: reason=1 role=host peer=0\n"
+                               "19:49:37.632 shared actions stopped after live session loss; restart both games\n"));
+    CHECK(!lr_diag_stop_marker("20:04:12.860 host disconnected\n20:04:12.868 Sync stop: reason=1 role=guest peer=0\n"
+                               "20:04:12.868 shared actions stopped after live session loss\n"));
+    CHECK(lr_diag_stop_marker("19:49:37.198 Item: loot window not ready here for op=2\n19:49:37.198 Sync stop: reason=1 "
+                              "role=guest peer=0\n19:49:37.199 guest failed to apply host town action\n19:49:37.199 town "
+                              "apply sequence or local game check failed; this copy needs a resync\n19:49:37.216 host "
+                              "disconnected\n"));
+    CHECK(lr_diag_stop_marker("Item: loot window not ready here for op=2\nSync stop: reason=1 role=guest peer=0\n"));
+    CHECK(lr_diag_stop_marker("19:18:04.209 Town: differs from the host after the raid\n19:18:04.209 Sync stop: "
+                              "reason=3 role=guest peer=0\n"));
+    CHECK(lr_diag_stop_marker("guest disconnected (player 1)\nSync stop: reason=2 role=host peer=0\n"));
+    CHECK(lr_diag_stop_marker("Sync stop: reason=1 role=guest peer=0\n")); /* nothing before it in this chunk */
     printf("Automatic diagnostics: all4 initiators/3 receivers, simultaneous/backpressure, CRC/offset/size/auth/stale, "
-           "collection/disk errors, disconnect/timeout: %s (%d failures)\n",
+           "collection/disk errors, disconnect/timeout, real stop vs a player leaving: %s (%d failures)\n",
            failures ? "FAILED" : "PASS", failures);
     return failures != 0;
 }

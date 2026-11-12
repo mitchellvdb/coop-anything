@@ -93,7 +93,8 @@ FUNCTIONS = [
     ("fe_new_slot", 0x14041b330, "What an empty save slot's new_game button runs (functor 423c80), with the screen and the slot"),
     ("fe_load_slot", 0x14041c390, "What a save slot's load button runs (functor 425090, slots 0..8), with the screen and the slot. Not 41be60, the Circus's"),
     ("provision_open", 0x1406e7a70, "Normal provisions button callback; local functor holds TownDisplay at +8; no Circus path"),
-    ("provision_back", 0x1406e85e0, "Back button callback of the provisions panel; calls provision_cancel, then leaves"),
+    ("provision_back", 0x1406e85e0, "After-hide callback of the provisions Back button: calls provision_cancel, then leaves for town"),
+    ("provision_back_click", 0x1406e84e0, "Provisions Back button click (TownDisplay lambda_10): hides the panel with provision_back as its callback"),
     ("town_depart", 0x1406e7c70, "Normal departure: sets the app's next state to 0x14, which starts the raid. Not the Circus path 6e3390/6debf0/6dfb40"),
     ("raid_move_input", 0x14075b530, "RaidDisplay reads the walking keys and moves the party (display, out direction)"),
     ("raid_use_prop", 0x1407747c0, "RaidDisplay player uses a prop (display, prop, a, b)"),
@@ -153,6 +154,9 @@ FUNCTIONS = [
     ("hunger_eat", 0x140713bf0, "Hunger eat callback (std::_Func: overlay +8, food float +10)"),
     ("hunger_refuse", 0x140712800, "Hunger refusal callback (capture: overlay +0, food float +8)"),
     ("quest_return", 0x14074fdd0, "Completed-quest seal stateless callback, state9; hooked through its specific vtable slot"),
+    ("confirm_enqueue", 0x1407c6fc0, "Confirmation manager Add (manager, name, params); loot inventory-full notice is captured here (test81)"),
+    ("confirm_show_entry", 0x1407c7640, "Confirmation manager ShowEntry (manager, entry): the safe native removal boundary"),
+    ("confirm_ack", 0x1407c9530, "Confirmation OK callback (capture: manager at +8, entry callback at +48)"),
 ]
 
 
