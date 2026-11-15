@@ -1,8 +1,28 @@
-DDCoop test90 - Hamlet return, town event recruits, Sanitarium (2-4 players)
+DDCoop test91 - direct loot equipment and Unequip All (2-4 players)
 
-Close game windows before installing. The host installs test90; friends on
-test77 or newer can accept its signed update when joining. Everyone uses test90
-(the connection protocol changed). No new solo/duo kit is included.
+Close every game before installing. Everyone uses91; a supported older launcher
+can accept the signed update from the host. No new solo/duo kit is included.
+
+T1. Open loot that contains a trinket. Drag it straight from that loot window
+    into an empty trinket slot on a hero, as host and then as each guest.
+    It must leave the loot once and appear on the same hero on every screen.
+    Repeat after taking a different loot item first, and with two identical
+    trinkets if available. Class and duplicate-equipped-item rules still apply.
+    Do not first put the item in the bag for this check.
+T2. In the Hamlet equip several heroes, including a hero another player owns.
+    Any player presses Unequip All, then cancels: nothing changes anywhere.
+    Repeat and confirm Yes: all eligible heroes lose their trinkets and those
+    items appear in the estate inventory on every screen, without gold loss.
+    Test each guest while the host stays idle with its inventory window closed.
+    Try two players confirming at almost the same time: no lost/extra item.
+    Automatic sorting is still blocked; that is separate from Unequip All.
+
+If a move is refused or sharing stops, keep every launcher open and send the
+combined report from the host. Actual/expected trinket slots now have more detail.
+The new behavior passed modeled native regressions; this is its first live test.
+
+Retained checks from test90 follow. Existing curio-while-walking and shared
+inventory-full notice problems are still open. Press-any-key is not shared yet.
 
 New in test90, test these first:
 H. Finish a raid and return to the Hamlet. The new week must start without a

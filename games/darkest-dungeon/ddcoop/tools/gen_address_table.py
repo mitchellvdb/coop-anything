@@ -54,6 +54,7 @@ FUNCTIONS = [
     ("trinket_drop_inventory",0x1407eebb0,"InventorySlot secondary destination drop"),
     ("trinket_area_hero",0x1407efc60,"Normal hero trinket-area drop"),
     ("trinket_area_inventory",0x1407efe00,"Normal inventory trinket-area drop"),
+    ("trinket_unequip_all_model",0x14058ce70,"Normal Roster::UnequipAll(campaign, estate), exact confirmed normal caller6ae19f"),
     ("trinket_sort_button",0x1406ad650,"RealmInventory sort button callback; co-op guard until bulk transaction exists"),
     ("trinket_unequip_all_dialog",0x1406a9480,"RealmInventory unequip-all dialog; co-op guard, use individual moves"),
     ("hero_dismiss", 0x1406b46b0, "Dismiss (this, heroId): fires HeroDismissedEvent"),

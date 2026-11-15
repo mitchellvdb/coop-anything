@@ -1,6 +1,14 @@
 DDCoop - development test kit {VERSION}
 
-New in test90
+New in test91
+Direct loot drags now recognize the current loot window's separate Item copies.
+Unequip All is available to every player after the game's normal confirmation;
+the whole native operation is shared, with item counts checked on every copy.
+Automatic inventory sorting remains unavailable. Test the two trinket cases in
+TESTSTAPPEN-test91.txt first. All players need91 (runtime protocol39).
+Everything from Claude's87..90 is retained; live confirmation is still needed.
+
+Earlier: test90
 Returning to the Hamlet no longer stops the session on the Stagecoach check: the
 game leaves one quirk value of new recruits uninitialised, so it differed
 between screens; it is no longer compared. A hero a town event offers ("Hear
