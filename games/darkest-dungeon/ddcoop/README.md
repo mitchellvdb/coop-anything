@@ -1,18 +1,20 @@
 # DDCoop - Darkest Dungeon co-op
 
-Current development kit: **test91**, runtime40/exacthello91 and launcher wire3.
-All Claude Code87..90 changes are retained. This ordinary kit adds rooted loot
-equipment, all-player Unequip All, whole different-stack bag/loot swaps, confirmed
-Shift-discard, Sanitarium draft identification, Farmstead Continue and a stable
-returned-hero comparison. No new duo build; older duo61 lacks these changes.
+Current development source: **test92**, runtime41/exacthello92, launcher wire3.
+Status: signed candidate; preparation/restore test pending. See [validation](KIT.md) for the exact pending/final checks.
+Retains91 and Claude Code87..90. Hamlet ownership blocks now show player number,
+chosen name and current building/screen; dungeon hero/rank/stress blocks remain.
+Guests have Send logs to host/F9 Send logs with genuine receipt feedback and no
+guest Explorer/Desktop fallback. Automatic private desync collection is retained.
+Canonical and copied bag widgets use the ordered whole-stack loot exchange;
+stale known widgets refuse before local effects.
 
-Full Windows runtime/FIFO, bridge ASan, isolated actual GL, full launcher including
-fake-Steam backup/restore with real games closed, and28 native proofs pass.
-Real native gameplay/UI effects still need the owner's T1-T7 playtest. Split
-stack exchange, Sanitarium same-slot visual reservations, shared loading prompts
-and complete all-DLC gameplay remain separate work. See [current handoff](HANDOFF-CURRENT.md),
-[validation](KIT.md), [build commands](BUILD.md), and the English kit test sheet.
-
-Private combined reports collect from connected players on the host PC. No
-outside log service/account is used. See [diagnostics](launcher/DIAGNOSTICS.md).
-No installed game/save/system mutation or Linux/MinGW/Capstone success is claimed.
+Windows runtime/FIFO, ASan, isolated actual GL, launcher UI96/144 DPI, diagnostics/
+core/transport models and29 pinned native proofs pass. PENDING final fake-Steam preparation/backup/restore: a real Darkest Dungeon process is still open.
+Do not install/run this candidate yet; close games and run the full launcher suite first.
+Live screen/gameplay tests remain required; full DLC compatibility and additional
+formation/bag/curio/loot desync reports remain open. No new duo build.
+See [current handoff](HANDOFF-CURRENT.md), [build](BUILD.md),
+[presence](runtime/PRESENCE.md), [diagnostics](launcher/DIAGNOSTICS.md),
+and launcher/kit/TESTSTAPPEN-test92.txt. Source only on the authorized project
+branch; no installed game/save/system mutation or public log upload by this work.

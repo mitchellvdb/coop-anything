@@ -1,38 +1,39 @@
-# Test91 validation —15 November2026
+# Test92 — signed candidate; preparation/restore test pending
 
-PASS independent review of Claude c7ad502/test90: original runtime suite,
-23 read-only proof scripts,148 signatures reproduced and29/29 artifact entries.
-All Claude87..90 source retained. Both shared Cdev worktrees remain untouched.
+Runtime41/exacthello92; launcher wire3/names snapshot2. All91 and Claude87..90 retained.
 
-PASS final full Windows runtime/module/FIFO suite and bridge MSVC ASan.
-PASS isolated actual GL overlay rendering/state restoration and input fixture.
-PASS full Windows launcher suite, including fake-Steam preparation/backup/restore
-after the owner closed every real game. Only disposable workspace files used.
-PASS28 pinned read-only native proofs;151 named signatures/147 addresses/98 hooks.
-PASS owner-key manifest serial91, launcher CNG signature/parser and all3 exact
-binary hashes. ZIP CRC, unique paths, exact4 payloads and English T1-T7 verified.
+PASS full Windows runtime/module/FIFO; new copied torch/onyx regression fails
+against91 and passes with the fix; bridge MSVC ASan.
+PASS isolated actual GL Hamlet/dungeon mode switching, two text rows,4 players,
+small viewport/long UTF8 names,80 switches/GDI bounds and full graphics restoration.
+PASS real launcher controls at96/144 DPI, fitting log button and IPC feedback.
+PASS launcher suite EXCEPT final game-closed preparation test: diagnostics actual
+button/F9 routing/coalescing, authenticated host ACK/failure status,4-launcher
+transport/backpressure, redaction/allowlist/ZIP, core/ownership/restore models.
+PASS29 read-only native proofs;151 named pins/147 addresses/98 hooks unchanged.
+PASS owner-key CNG manifest serial92/all3 binary hashes; exact4 payloads/ZIP CRC.
+PENDING final fake-Steam preparation/backup/restore: a real Darkest Dungeon process is still open.
+Do not install/run this candidate yet; close games and run the full launcher suite first.
 
-Runtime40/exacthello91; launcher wire3. No new duo/solo build.
-Runtime SHA256 4204c85b29e64febdf86a357b4e7e5ad668422ebaf6541ef5cdaebaf551f655c
-Launcher SHA256 35a238eaecf404a6b8491340bd81af4ef719eff1daa625fedc304b29f565df47
-Installer SHA256 6a9e40574f2f18f6b5b418a6f0211182e89ca21f54f9ea60839eee6b3272dd93
+Runtime SHA256 65b4fa1a58e873ca6ac8027c00b1ea723f56cd5e5f9ba9eb780ed9d26e52869b
+Launcher SHA256 66b4f0e3f5e6735226ea7140fa9c821489ae71f84638eea39a3320cd9cd08dbb
+Installer SHA256 6113a6936a8f77357a94f746e245121b6ffd29d90fa27d7916d25de9b25c26bb
 
-Focused changes: rooted loot sources/destinations and direct hero equipment;
-confirmed all-player Unequip All; whole different-stack bag/loot exchange with
-full bag; ordered confirmed Shift-discard; Sanitarium draft hero identification;
-Farmstead wave-room Continue; roster-order-independent returned-hero comparison
-with numeric per-hero diagnostics. All4 initiators/3 receivers are modeled.
+Changes: Hamlet blocks show connected players/number/name/current native screen,
+independent of local building, with5s freshness and no gameplay authority.
+Dungeon blocks retain hero/rank/stress. Display-only finite PRESENCE14 controls
+never enter action FIFO/ACK/native writes. Passive normal panel reads only.
+Guest Send logs to host/F9 Send logs uses existing private transfer; no guest
+Explorer/Desktop fallback, receipt only after genuine host ACK. Auto desync
+collection retained. Canonical/copy bag widgets now root exact native slots for
+whole-stack bag/loot swaps; stale known widgets refuse before local effects.
 
-Native effects are modeled, not live gameplay QA. Owner next test: T1-T7 in the
-English test sheet. Whole-stack exchange does not add split-stack exchange or
-replace the native same-item merge path. Sanitarium conflicting different draft
-heroes in one slot can be refused; full visual preview reservations remain
-separate from the six stress-building reservations. Real hero/wallet differences
-still stop. The old Hamlet return report does not prove town event/blueprint
-causality. Press-any-key, curio-while-walking, inventory-full notice confirmation,
-native shard shops/endless waves and full all-DLC live compatibility remain open.
-
-No installed game, real save, system setting or existing report changed. No
-Linux/MinGW/Capstone or live native engine execution claimed. Git contains source
-only, without binaries, artwork, saves, private reports or signing keys.
+Live tests T1-T5 in launcher/kit/TESTSTAPPEN-test92.txt. Native effects are modeled,
+not live game QA. The newest private reports also contain a formation mismatch
+and a missing-template bag repair; this routing fix does not explain every stop.
+Split-stack exchange, same-slot Sanitarium visual reservations, retained curio/
+inventory-full cases, shared loading continuation and full all-DLC/shard/endless
+compatibility remain open. No new duo, Linux/MinGW/Capstone success or real save/
+installed game/system mutation claimed. Source only on authorized project branch;
+no binaries, artwork, real reports, credentials or signing keys in Git.
 Written by Codex; prior Claude Code contributions retained.

@@ -1,4 +1,4 @@
-# Normal campaign wave-room Continue â€” test91
+# Normal campaign wave-room Continue — test91
 
 The first Farmstead room-to-fight transition bypasses the existing normal door
 hook770080. The private owner report has a guest already choosing its first

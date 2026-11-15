@@ -1,4 +1,4 @@
-# DDCoop build and validation — test91 (ordinary kit)
+# DDCoop build and validation — test92 (ordinary kit)
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -13,7 +13,7 @@ f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
 Never relax pins for an unknown update. 151 named signatures cover 147 distinct
 native addresses:146 function entries plus one exact weekly caller witness
 (some deliberate alias names);98 live/early hook targets are distinct.
-Runtime protocol 40; exact runtime hello version91 also required. Launcher wire 3.
+Runtime protocol 41; exact runtime hello version92 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -28,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test91"
+    set "DDC_VERSION=0.5.0-test92"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -68,6 +68,7 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_wave_layout.py "%DD_GAME_EXE%"
     python -I tests/test_discard_layout.py "%DD_GAME_EXE%"
     python -I tests/test_raid_swap_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_presence_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -204,5 +205,5 @@ scripts (27 adapters plus hook ABI),151 pins/147 addresses/98 hook targets
 are required; generator output is byte-identical. Full Windows runtime/FIFO,
 actual isolated GL overlay and bridge MSVC ASan pass. The launcher must pass its
 complete suite, including fake-Steam preparation/restore after real games close.
-See runtime/TRINKETS-test91.md, WAVE-test91.md, DISCARD-test91.md,
-RAID-SWAP-test91.md and TREATMENT-DRAFT-test91.md for boundaries and live cases.
+See runtime/TRINKETS-test92.md, WAVE-test92.md, DISCARD-test92.md,
+RAID-SWAP-test92.md and TREATMENT-DRAFT-test92.md for boundaries and live cases.
