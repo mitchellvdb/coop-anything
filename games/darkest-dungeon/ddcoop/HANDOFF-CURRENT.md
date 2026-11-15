@@ -1,3 +1,55 @@
+# Current: test91 candidate — final preparation check pending (Codex,15 Nov2026)
+
+Reviewed and retained Claude c7ad502/test90, including all87..90 changes. Independent
+baseline runtime and23 proof scripts pass;148 pins regenerate;29/29 release hashes
+and installer CRC match. Neither shared Cdev worktree was edited.
+
+Owner's two requests are implemented and committed to the existing GitHub project
+branch: direct loot trinket equipping and Unequip All for every player.
+- Rooted ready OverlayLoot InventoryBar/widget/Item-copy resolution -> canonical
+  loot slot. Equal counts and occurrence distinguish duplicate items. Foreign,
+  closed/malformed/stale copies refuse; no arbitrary global ID search. The rooted
+  fixture failed against90, then passed. Separate non-trinket endpoint refusal now
+  logs exact expected/actual endpoints; do not claim every inventory cause solved.
+- Normal Unequip All confirmation opens locally; its exact confirmed model call
+ 58ce70 from6ae19f becomes DD_ACT_UNEQUIP_ALL28, wire39/exacthello91. Four initiators,
+ three receivers, logical pre/post digests, native model once, conservation,
+ duplicate counts, building/dead heroes, closed peer panels, crossed/replayed/stale
+ requests and partial effects covered. Native roster save/notify, guest-nosave,
+ optional rooted RealmInventory+4058 dirty+538. Sorting remains guarded.
+
+The candidate is built and signed with the existing owner key (serial91), verified
+with launcher CNG and exact3 binary hashes. Installer CRC and exact payloads pass.
+Runtime daa5bdab900cd217175dbe946101807d7e6811cbd5bef26f8e1b12de0efb7044
+Launcher f7bfa8dc8b54520e0454a787cfe9fd29499df207b3c38e8ea9bb887f6d55464c
+Candidate installer bdef0e92a59f23d3afd330d9e9a01a5b13e18dd396dca368b01859d85637dfd4
+No new duo kit. No completed91 handoff/release metadata claim yet.
+
+PASS91 full Windows runtime/module/FIFO, isolated actual GL, bridge MSVC ASan,
+25 read-only proof scripts (24 adapters plus hook ABI),149 pins/145 addresses/96
+hooks. PASS Windows launcher tests apart from the actual preparation invocation,
+including core/relay/update/roster/snapshot and normal/solo diagnostics adapters.
+Native effects are modeled; real loot/Unequip All still need the owner's playtest.
+
+PENDING: the final fake-Steam preparation/restore test. A real game remains open;
+BUILD.md requires all real Darkest processes closed. Owner has been asked once.
+Never close it for them or bypass the guard. All fixtures use workspace files.
+After closure, run the compiled preparation test against final91 DDCoop/fake Steam,
+then finalize KIT/RELEASES/HANDOFF, source archive and verified new artifact folder
+C:/dev/ddcoop-handoff/0.5.0-test91. Current local continuation notes are outside
+publishable source. No actual game/save/installed mod/system change was made.
+
+New owner feedback while final test waits: Farmstead first-room-to-fight transition
+does not pull other copies along; latest return report has matching currencies
+and hero count17 but a different hero digest. Hear Ye/blueprint are suggestions,
+not proven causes. Investigate current private Desktop logs; do not alter a live game.
+
+Open90 curio-while-walking and shared inventory-full notice cases remain. Shared
+press-any-key and full live DLC verification remain open. No Linux/MinGW/Capstone
+or live native/game validation claimed. See runtime/TRINKETS-test91.md and the
+English91 T1/T2 test steps. All source changes are checkpointed; final release
+must not claim that the pending preparation check passed.
+
 # Current: test90 (Claude Code, 15 Nov 2026): test89 plus Hamlet-return fix, town event recruit, Sanitarium
 
 - Owner's test89 run 15 Nov (reports 631b3ef4..f7). Both Hamlet-return stops (01:19:47, 01:54:55) were the
