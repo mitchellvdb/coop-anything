@@ -1,4 +1,4 @@
-# Normal campaign wave-room Continue — test91
+# Normal campaign wave-room Continue â€” test91
 
 The first Farmstead room-to-fight transition bypasses the existing normal door
 hook770080. The private owner report has a guest already choosing its first
@@ -39,5 +39,5 @@ or that the town event/blueprint award caused it. No state is overwritten.
 
 Native shard shops/refunds, later wave-specific behavior and all-DLC gameplay
 still require separate integration and live tests. This change does not claim
-complete Color of Madness support. Runtime39/exacthello91; launcher wire3.
+complete Color of Madness support. Runtime40/exacthello91; launcher wire3.
 Written by Codex,15 November2026; prior Claude Code work retained.

@@ -32,7 +32,7 @@ sorting remains blocked. Unequip All may open its ordinary local confirmation.
 After Yes, the normal model call Roster::UnequipAll58ce70 is intercepted before
 mutation. Exact normal caller6ae19f, campaign and estate identity are checked.
 
-DD_ACT_UNEQUIP_ALL (28, protocol39) carries logical before/after digests and moved
+DD_ACT_UNEQUIP_ALL (28, protocol40) carries logical before/after digests and moved
 count. Every player may request it; the existing host sequencer orders it.
 Digests sort stable roster IDs and the estate item multiset, preserving duplicate
 counts and skipping only status3 graveyard entries as the native helper does.
@@ -54,7 +54,7 @@ crossed input, stale state, partial effect and raid/unready/caller refusal.
 Native proof checks the confirmation/model ABI, transfer/clear/actor refresh
 and current normal TownDisplay constructor offsets. This is not live engine QA.
 
-Compatibility: exacthello91/runtime39 on every peer; launcher wire3 unchanged.
+Compatibility: exacthello91/runtime40 on every peer; launcher wire3 unchanged.
 No new duo kit. Existing90 open curio/walking and inventory-full cases remain.
 Shared press-any-key and full live DLC verification remain open.
 Written by Codex,15 November2026; prior Claude Code contributions retained.

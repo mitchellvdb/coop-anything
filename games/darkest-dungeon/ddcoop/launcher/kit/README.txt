@@ -4,8 +4,13 @@ New in test91
 Direct loot drags now recognize the current loot window's separate Item copies.
 Unequip All is available to every player after the game's normal confirmation;
 the whole native operation is shared, with item counts checked on every copy.
-Automatic inventory sorting remains unavailable. Test the two trinket cases in
-TESTSTAPPEN-test91.txt first. All players need91 (runtime protocol39).
+Whole different stacks can exchange between a full bag and loot, including gold,
+supplies and trinkets. Shift-click discard is ordered before native removal.
+Sanitarium choices recognize draft heroes before accepting the paid treatment.
+Farmstead's wave-room Continue follows the first player's choice on every copy.
+The Hamlet-return hero check ignores roster list order and logs real differences.
+Full DLC compatibility is still under test. Automatic sorting remains unavailable.
+Follow T1-T7 in TESTSTAPPEN-test91.txt. All players need91 (runtime protocol40).
 Everything from Claude's87..90 is retained; live confirmation is still needed.
 
 Earlier: test90

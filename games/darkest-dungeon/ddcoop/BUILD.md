@@ -10,10 +10,10 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 149 named signatures cover 145 distinct
-native addresses:144 function entries plus one exact weekly caller witness
-(some deliberate alias names);96 live/early hook targets are distinct.
-Runtime protocol 39; exact runtime hello version91 also required. Launcher wire 3.
+Never relax pins for an unknown update. 151 named signatures cover 147 distinct
+native addresses:146 function entries plus one exact weekly caller witness
+(some deliberate alias names);98 live/early hook targets are distinct.
+Runtime protocol 40; exact runtime hello version91 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -65,6 +65,9 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_event_recruit_layout.py "%DD_GAME_EXE%"
     python -I tests/test_loot_widget_layout.py "%DD_GAME_EXE%"
     python -I tests/test_trinket_bulk_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_wave_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_discard_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_raid_swap_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -193,10 +196,13 @@ events and known-folder report destinations. The full preparation/restore test
 must pass after all real games close. Do not infer live engine success from these
 fixtures. See runtime/RECHECK-2026-11-12.md for explicitly unresolved causes.
 
-Test91 retains all Claude87..90 changes. Runtime39/exacthello91 adds confirmed
-Unequip All and rooted native loot-widget source resolution.25 read-only proof
-scripts (24 adapters plus hook ABI),149 named pins/145 addresses/96 hook targets
+Test91 retains all Claude87..90 changes. Runtime40/exacthello91 adds confirmed
+Unequip All, rooted loot sources/destinations, whole different-stack bag/loot
+exchange, confirmed Shift-discard, Sanitarium draft identity and normal wave
+Continue; returned hero tuples are sorted by persistent ID.28 read-only proof
+scripts (27 adapters plus hook ABI),151 pins/147 addresses/98 hook targets
 are required; generator output is byte-identical. Full Windows runtime/FIFO,
 actual isolated GL overlay and bridge MSVC ASan pass. The launcher must pass its
 complete suite, including fake-Steam preparation/restore after real games close.
-See runtime/TRINKETS-test91.md for native/model boundaries and open live cases.
+See runtime/TRINKETS-test91.md, WAVE-test91.md, DISCARD-test91.md,
+RAID-SWAP-test91.md and TREATMENT-DRAFT-test91.md for boundaries and live cases.

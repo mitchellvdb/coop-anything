@@ -30,7 +30,6 @@ the Shift entry, Yes functor tail-jump,9-byte existing hook, capture reads,
 native decrement/clear/recount. These are modeled effects, not live gameplay.
 The callback's real source rooting and UI refresh require the owner's next test.
 
-Separate new feedback: exchanging a bag item with an item still in the loot
-window remains under investigation. Do not claim this Shift-discard change fixes
-that swap, or that the current trinket-specific loot resolver handles all items.
+Exchanging a bag item with loot is handled separately by RAID-SWAP-test91.md.
+Do not attribute that exchange to this confirmed Shift-discard path.
 Written by Codex,15 November2026; prior Claude Code work retained.
