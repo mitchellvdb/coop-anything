@@ -42,5 +42,13 @@ T5. Recheck earlier91 T1-T7: direct loot trinket equipment, Unequip All by any
     exchange and Sanitarium choices. These older fixes are retained. Additional
     formation/curio/bag-repair desyncs and complete DLC compatibility remain open.
 
+T6. As a guest choose removal of a LOCKED negative quirk in the Sanitarium and
+    confirm the treatment while the other players keep that building closed.
+    Every copy must pay the same native price. Repeat after another player has
+    viewed a different hero/slot in that building. Keep the chosen treatment
+    unchanged; open provisions afterwards and buy one item from a guest.
+    Compare the gold before and after treatment on every copy, not only when
+    the next shop opens. Send logs to host while every launcher remains open.
+
 This kit was tested with models/isolated rendering and read-only ABI proofs.
 Real native screen recognition and gameplay still need this playtest.
