@@ -16,7 +16,7 @@
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
 #define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
-#define DD_PROTO_VERSION 39 /* ordered whole-roster trinket unequip */
+#define DD_PROTO_VERSION 40 /* whole-stack raid bag/loot exchange with both endpoint quantities */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -65,6 +65,7 @@ typedef enum {
     DD_ACT_TREATMENT = 26, /* Sanitarium: a quirk/disease clicked in a slot's list; state is the result (0 none, 1, 2) */
     DD_ACT_EVENT_RECRUIT = 27, /* the hero a town event offers (campaign+1808 list), dragged to the roster; u.recruit */
     DD_ACT_UNEQUIP_ALL = 28, /* confirmed normal Hamlet action; u.unequip */
+    DD_ACT_RAID_SWAP = 29, /* whole different stacks between raid bag and loot; u.raid_swap */
     DD_ACT_COUNT_
 } dd_action_kind;
 
@@ -87,6 +88,7 @@ typedef struct {
         struct {uint32_t hero_id;char before[64],after[64];} rename;
         struct {uint32_t hero_id;uint8_t index,camping,before,after;uint32_t selected_mask;} skill;
         struct {uint32_t src_hero,dst_hero;uint16_t src_slot,dst_slot;uint32_t src_type,src_id,dst_type,dst_id;} move;
+        struct {uint32_t area,loot_seq;uint8_t inv[2];uint16_t slot[2];uint32_t count[2],type[2],id[2];} raid_swap;
         struct {uint32_t before[4],after[4];uint8_t show;} party; /* show: 0, or 1+rank when only that slot gets drawn */
         struct {uint8_t op;uint16_t slot;uint32_t type,id,gold,shards;uint8_t before[32];} supplies;
         struct {uint32_t seed,rules,quest,quest_index,heroes[4],supplies,revision;uint8_t owners;} departure; /* owners: bit i, heroes[i] belongs to the guest */

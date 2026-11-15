@@ -15,6 +15,19 @@
  * written with the same result, which is what the week and the save read. tests/test_treatment_layout.py proves this. */
 typedef void(__fastcall *treatment_select_fn)(void *);
 static treatment_select_fn g_treatment_select;
+typedef void(__fastcall *treatment_preview_fn)(void *,int32_t,uint32_t);
+static treatment_preview_fn g_treatment_preview;
+static int treatment_live_hero(uint32_t);
+static uint32_t g_treatment_request;
+static void treatment_request_done(uint32_t request,int rejected) {
+    if(!request || request!=g_treatment_request)return;
+    g_treatment_request=0;
+    if(rejected)shop_notice("This treatment could not be selected for everyone. Reopen the Sanitarium and try again.");
+}
+/* Native538830 builds a draft hero's per-slot lists without committing the
+ * paid activity slot. +238 remembers only the last hero across all slots. */
+static struct {uint64_t activity;uint32_t hero;} g_treatment_drafts[2][3];
+static void treatment_preview_reset(void) {memset(g_treatment_drafts,0,sizeof g_treatment_drafts);g_treatment_request=0;}
 #define DD_TREATMENT_SLOT 0x1e0u
 #define DD_TREATMENT_GROUP 0xa0u
 #define DD_TREATMENT_ENTRY 0x88u
@@ -35,11 +48,35 @@ static int treatment_entry(uint64_t record, unsigned index, uint64_t *entry) {
     *entry = begin + (uint64_t)index * DD_TREATMENT_ENTRY;
     return 1;
 }
-static int treatment_slot_hero(uint64_t activity, unsigned slot, uint32_t *hero) {
+static int treatment_committed_hero(uint64_t activity, unsigned slot, uint32_t *hero) {
     uint64_t begin = 0, end = 0;
     *hero = 0;
     return safe_read((uintptr_t)activity + 0x78, &begin, 8) && safe_read((uintptr_t)activity + 0x80, &end, 8) && end >= begin &&
-           (end - begin) % 24 == 0 && (end - begin) / 24 > slot && safe_read((uintptr_t)(begin + (uint64_t)slot * 24), hero, 4) && *hero;
+           slot<3 && (end - begin) % 24 == 0 && (end - begin) / 24<=3 && (end - begin) / 24 > slot && safe_read((uintptr_t)(begin + (uint64_t)slot * 24), hero, 4);
+}
+static unsigned treatment_draft_index(uint64_t activity) {
+    int kind=g_activity_kind((void *)(uintptr_t)activity);
+    return kind==DD_ACTIVITY_QUIRK_TREATMENT?0:kind==DD_ACTIVITY_DISEASE_TREATMENT?1:2;
+}
+static int treatment_slot_hero(uint64_t activity,unsigned slot,uint32_t *hero) {
+    if(!treatment_committed_hero(activity,slot,hero))return 0;
+    if(*hero)return 1;
+    unsigned kind=treatment_draft_index(activity);
+    if(kind>=2 || g_treatment_drafts[kind][slot].activity!=activity)return 0;
+    *hero=g_treatment_drafts[kind][slot].hero;return *hero!=0;
+}
+static void __fastcall hook_treatment_preview(void *activity,int32_t slot,uint32_t hero) {
+    uint32_t committed=0;unsigned kind=treatment_draft_index((uintptr_t)activity);
+    int observe=g_cfg.role!=DD_ROLE_OFF && InterlockedCompareExchange(&g_campaign_active,0,0) &&
+        kind<2 && (uintptr_t)activity_in_town(g_town_object(),(int)kind+DD_ACTIVITY_QUIRK_TREATMENT)==(uintptr_t)activity && slot>=0 && slot<3 &&
+        treatment_committed_hero((uintptr_t)activity,(unsigned)slot,&committed);
+    if(g_treatment_preview)g_treatment_preview(activity,slot,hero);
+    /* Native input==committed exits without rebuilding. In particular UI
+     * initialization NULL/empty must not erase an ordered pending treatment. */
+    if(observe && hero!=committed) {
+        g_treatment_drafts[kind][slot].activity=(uintptr_t)activity;
+        g_treatment_drafts[kind][slot].hero=hero;
+    }
 }
 /* 538580: the next state the entry allows after `state` (1 needs +81, 2 needs +82, after 2 comes 0). */
 static uint32_t treatment_next(const uint8_t flags[2], uint32_t state) {
@@ -77,11 +114,20 @@ static int treatment_apply(const dd_action *a) {
     uint64_t activity = (uintptr_t)activity_in_town(g_town_object(), a->u.treatment.activity), record = 0, entry = 0;
     uint32_t hero = 0, state = 0;
     char name[64] = {0}, chosen[0x80] = {0};
-    if (!g_treatment_select || !activity || !treatment_slot_hero(activity, a->u.treatment.slot, &hero) ||
-        hero != a->u.treatment.hero_id || !treatment_record(activity, a->u.treatment.slot, a->u.treatment.group, &record)) {
+    if (!g_treatment_select || !activity || !treatment_committed_hero(activity, a->u.treatment.slot, &hero) ||
+        (hero && hero != a->u.treatment.hero_id) || !treatment_record(activity, a->u.treatment.slot, a->u.treatment.group, &record)) {
         dd_log("Sanitarium: treatment refused: activity %u slot %u has another hero or no record here (hero %u, wanted %u)",
                a->u.treatment.activity, a->u.treatment.slot, hero, a->u.treatment.hero_id);
         return 0;
+    }
+    unsigned draft=treatment_draft_index(activity);
+    if(!hero) {
+        uint32_t here=0;
+        int known=treatment_slot_hero(activity,a->u.treatment.slot,&here);
+        if(draft>=2 || (known && here!=a->u.treatment.hero_id) ||
+           !treatment_live_hero(a->u.treatment.hero_id)) {
+            dd_log("Sanitarium: another draft hero or missing/ineligible roster hero; refused before effects");return 0;
+        }
     }
     int have_entry = treatment_entry(record, a->u.treatment.entry, &entry) && treatment_result(record, entry, name, &state) &&
                      !strcmp(name, a->u.treatment.quirk);
@@ -112,6 +158,10 @@ static int treatment_apply(const dd_action *a) {
     }
     dd_log("Sanitarium: treatment activity=%u slot=%u group=%u %s -> state %u (role=%s)", a->u.treatment.activity,
            a->u.treatment.slot, a->u.treatment.group, a->u.treatment.quirk, a->u.treatment.state, dd_role_name(g_cfg.role));
+    if(!hero && draft<2) {
+        g_treatment_drafts[draft][a->u.treatment.slot].activity=activity;
+        g_treatment_drafts[draft][a->u.treatment.slot].hero=a->u.treatment.hero_id;
+    }
     return 1;
 }
 static void __fastcall hook_treatment_select(void *functor) {
@@ -124,7 +174,7 @@ static void __fastcall hook_treatment_select(void *functor) {
         g_treatment_select(functor);
         return;
     }
-    if (runtime_shared_blocked() || runtime_waiting_for_peer()) return;
+    if (runtime_shared_blocked() || runtime_waiting_for_peer() || g_treatment_request) return;
     int kind = -1;
     if (!safe_read((uintptr_t)functor + 8, &activity, 8) || !safe_read((uintptr_t)functor + 0x10, &group, 4) ||
         !safe_read((uintptr_t)functor + 0x14, &slot, 4) || !safe_read((uintptr_t)functor + 0x18, &index, 4) ||
@@ -149,6 +199,7 @@ static void __fastcall hook_treatment_select(void *functor) {
     }
     dd_log("Sanitarium: treatment clicked here: activity=%d slot=%d group=%d %s -> state %u (role=%s)", kind, slot, group,
            a.u.treatment.quirk, state, dd_role_name(g_cfg.role));
-    if (g_cfg.role == DD_ROLE_GUEST) (void)dd_town_guest_local(&g_town, &a);
-    else (void)dd_town_host_local(&g_town, &a);
+    if (g_cfg.role == DD_ROLE_GUEST) g_treatment_request=dd_town_guest_local(&g_town, &a);
+    else if(!dd_town_host_local(&g_town, &a) && !g_town.needs_resync)
+        shop_notice("This treatment could not be selected for everyone. Reopen the Sanitarium and try again.");
 }

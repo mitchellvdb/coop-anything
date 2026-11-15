@@ -52,6 +52,7 @@ static dd_action act(uint8_t kind) {
     case DD_ACT_FORMATION_RESET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_FORMATION_SET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_UNEQUIP_ALL: a.u.unequip.before=1;a.u.unequip.after=2;a.u.unequip.count=3;break;
+    case DD_ACT_RAID_SWAP: a.u.raid_swap.area=100;a.u.raid_swap.inv[1]=1;a.u.raid_swap.count[0]=2;a.u.raid_swap.type[0]=3;a.u.raid_swap.id[0]=4;break;
     case DD_ACT_TREATMENT: a.u.treatment.activity=DD_ACTIVITY_QUIRK_TREATMENT;a.u.treatment.slot=1;a.u.treatment.group=1;a.u.treatment.state=1;a.u.treatment.entry=2;a.u.treatment.hero_id=7;strcpy(a.u.treatment.quirk,"kleptomaniac");break;
     case DD_ACT_PARTY: a.u.party.before[0]=1;a.u.party.after[1]=1;break;
     case DD_ACT_SUPPLIES: a.u.supplies.op=DD_SUPPLY_BUY;a.u.supplies.type=0x72f14069;
@@ -545,6 +546,29 @@ static void wave_wire_checks(void) {
 }
 int main(void) {
     wave_wire_checks();
+    {
+        dd_msg m={0},decoded;uint8_t wire[512];size_t used=0;
+        m.type=DD_MSG_TOWN_APPLY;m.seq=1;m.u.town.action=act(DD_ACT_RAID_SWAP);
+        dd_action *a=&m.u.town.action;a->u.raid_swap.loot_seq=17;
+        a->u.raid_swap.count[0]=525;a->u.raid_swap.type[0]=0xeed472;a->u.raid_swap.id[0]=0;
+        a->u.raid_swap.count[1]=1;a->u.raid_swap.type[1]=3950276909u;a->u.raid_swap.id[1]=101;
+        size_t n=dd_encode(&m,wire,sizeof wire);
+        CHECK(n && dd_decode(wire,n,&decoded,&used)==DD_DECODE_OK && used==n,"filled gold/trinket loot swap roundtrip");
+        CHECK(!memcmp(a,&decoded.u.town.action,sizeof *a),"both stack quantities and loot order identity preserved");
+        for(unsigned field=0;field<7;field++) {
+            dd_msg bad=m;
+            switch(field) {
+            case 0:bad.u.town.action.u.raid_swap.inv[1]=0;break;
+            case 1:bad.u.town.action.u.raid_swap.slot[0]=64;break;
+            case 2:bad.u.town.action.u.raid_swap.count[0]=0;break;
+            case 3:bad.u.town.action.u.raid_swap.count[0]=UINT32_MAX;break;
+            case 4:bad.u.town.action.u.raid_swap.type[0]=0;break;
+            case 5:bad.u.town.action.u.raid_swap.count[1]=0;break;
+            case 6:bad.u.town.action.u.raid_swap.type[1]=a->u.raid_swap.type[0];bad.u.town.action.u.raid_swap.id[1]=0;break;
+            }
+            CHECK(!dd_encode(&bad,wire,sizeof wire),"malformed or merge-not-swap endpoints refused");
+        }
+    }
     {
         dd_msg m={0},decoded;uint8_t wire[512];size_t used=0;
         m.type=DD_MSG_TOWN_APPLY;m.seq=1;

@@ -110,6 +110,7 @@ static dd_action random_action(void) {
     case DD_ACT_FORMATION_RESET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_FORMATION_SET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_UNEQUIP_ALL: a.u.unequip.before=1;a.u.unequip.after=2;a.u.unequip.count=3;break;
+    case DD_ACT_RAID_SWAP: a.u.raid_swap.area=100;a.u.raid_swap.inv[1]=1;a.u.raid_swap.count[0]=2;a.u.raid_swap.type[0]=3;a.u.raid_swap.id[0]=4;break;
     case DD_ACT_TREATMENT: a.u.treatment.activity=DD_ACTIVITY_QUIRK_TREATMENT;a.u.treatment.slot=1;a.u.treatment.group=1;a.u.treatment.state=1;a.u.treatment.entry=2;a.u.treatment.hero_id=7;strcpy(a.u.treatment.quirk,"kleptomaniac");break;
     case DD_ACT_PARTY: a.u.party.before[0]=1;a.u.party.after[1]=1;break;
     case DD_ACT_SUPPLIES: a.u.supplies.op=DD_SUPPLY_BUY;a.u.supplies.type=1;a.u.supplies.gold=75;

@@ -95,6 +95,7 @@ static void activity_forget(void *widget) {
 }
 static void activity_new_epoch(uint32_t epoch) {
     if(epoch<=g_activity_epoch)return;
+    treatment_preview_reset();
     g_activity_epoch=epoch;g_activity_seeded=0;memset(&g_activity_drag,0,sizeof g_activity_drag);
     memset(&g_activity_res,0,sizeof g_activity_res);
     if(activity_seed())activity_refresh();

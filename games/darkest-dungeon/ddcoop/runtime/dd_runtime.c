@@ -1642,6 +1642,8 @@ static void runtime_poll_once(void) {
             hunger_request_done(m.u.town.request_id);
             wave_request_done(m.u.town.request_id);
             discard_request_done(m.u.town.request_id);
+            raid_swap_request_done(m.u.town.request_id);
+            treatment_request_done(m.u.town.request_id,0);
             quest_return_request_done(m.u.town.request_id);
             provisions_request_done(m.u.town.request_id,0);
             if (m.u.town.action.kind == DD_ACT_WAGON_BUY && m.u.town.request_id == g_shop_request) g_shop_request = 0;
@@ -1653,6 +1655,8 @@ static void runtime_poll_once(void) {
             hunger_request_done(m.u.reject.request_id);
             wave_request_done(m.u.reject.request_id);
             discard_request_done(m.u.reject.request_id);
+            raid_swap_request_done(m.u.reject.request_id);
+            treatment_request_done(m.u.reject.request_id,1);
             quest_return_request_done(m.u.reject.request_id);
             formation_request_rejected(m.u.reject.request_id);
             embark_request_done(m.u.reject.request_id);

@@ -92,6 +92,14 @@ call(0x14054f8ba, 0x140538690)
 assert read(0x14054f8c0, 9).hex() == '66c7803c0200000101'
 call(0x14054f93d, 0x140538690)
 assert read(0x14054f943, 7).hex() == 'c6803e02000001'
+# The draft list builder receives (activity,slot,HeroID), independently of the
+# still-empty paid slot. +238 stores only the last previewed hero globally.
+assert q64(0x140e9b468+0x38)==0x140538830
+assert read(0x140538830,12).hex()=='4053555741564883ec288bea'
+assert read(0x14053883c,6).hex()=='418bd8488bf9' # r8d HeroID, rcx activity
+assert read(0x140538847,6).hex()=='899938020000'
+assert read(0x1405388a8,8).hex()=='3bd80f84b0000000' # equal committed -> no rebuild
+assert read(0x140538948,5).hex()=='e9e3110000' # normal hero's lists539b30
 print('PASS treatment ABI: 6a3910 functor +8/+10/+14/+18, record activity+190 + slot*1e0 + group*a0 (+18 name, +98 state), '
       'entries 0x88 (+81/+82 flags, +84 state), new name copied / same name stepped via 538580, state 0 clears; '
-      'both Sanitarium activities are QuirkTreatment with +23e on the disease one; no game execution')
+      'both Sanitarium activities are QuirkTreatment with +23e on the disease one; per-slot preview538830/last hero238 and12-byte hook; no game execution')

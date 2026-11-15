@@ -66,6 +66,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_EMBARK:
     case DD_ACT_PREPARE: return 1+4*2;
     case DD_ACT_UNEQUIP_ALL: return 1+8+8+2;
+    case DD_ACT_RAID_SWAP: return 1+4+4+2*(1+2+4+4+4);
     case DD_ACT_TREATMENT: return 1+4+2+4+64;
     default: return 0;
     }
@@ -100,6 +101,12 @@ int dd_action_valid(const dd_action *a) {
         return count>0;
     }
     case DD_ACT_UNEQUIP_ALL: return a->u.unequip.before && a->u.unequip.after && a->u.unequip.count && a->u.unequip.count<=128;
+    case DD_ACT_RAID_SWAP:
+        return a->u.raid_swap.inv[0]<=1 && a->u.raid_swap.inv[1]<=1 && a->u.raid_swap.inv[0]!=a->u.raid_swap.inv[1] &&
+            a->u.raid_swap.slot[0]<64 && a->u.raid_swap.slot[1]<64 &&
+            a->u.raid_swap.count[0] && a->u.raid_swap.count[0]<=INT32_MAX && a->u.raid_swap.type[0] &&
+            a->u.raid_swap.count[1]<=INT32_MAX && (a->u.raid_swap.count[1]?a->u.raid_swap.type[1]!=0:!a->u.raid_swap.type[1] && !a->u.raid_swap.id[1]) &&
+            (!a->u.raid_swap.count[1] || a->u.raid_swap.type[0]!=a->u.raid_swap.type[1] || a->u.raid_swap.id[0]!=a->u.raid_swap.id[1]);
     case DD_ACT_TREATMENT: {
         const char *q=a->u.treatment.quirk;size_t n=0;
         if((a->u.treatment.activity!=DD_ACTIVITY_QUIRK_TREATMENT && a->u.treatment.activity!=DD_ACTIVITY_DISEASE_TREATMENT) ||
@@ -187,6 +194,9 @@ int dd_action_valid(const dd_action *a) {
 static void w_action(wr *w, const dd_action *a) {
     w_u8(w, a->kind);
     switch (a->kind) {
+    case DD_ACT_RAID_SWAP:
+        w_u32(w,a->u.raid_swap.area);w_u32(w,a->u.raid_swap.loot_seq);
+        for(unsigned i=0;i<2;i++){w_u8(w,a->u.raid_swap.inv[i]);w_u16(w,a->u.raid_swap.slot[i]);w_u32(w,a->u.raid_swap.count[i]);w_u32(w,a->u.raid_swap.type[i]);w_u32(w,a->u.raid_swap.id[i]);}break;
     case DD_ACT_FORMATION_RESET:
     case DD_ACT_FORMATION_SET:
         w_u32(w,a->u.formation.area);
@@ -258,6 +268,9 @@ static void r_action(rd *r, dd_action *a) {
     memset(a, 0, sizeof *a);
     a->kind = r_u8(r);
     switch (a->kind) {
+    case DD_ACT_RAID_SWAP:
+        a->u.raid_swap.area=r_u32(r);a->u.raid_swap.loot_seq=r_u32(r);
+        for(unsigned i=0;i<2;i++){a->u.raid_swap.inv[i]=r_u8(r);a->u.raid_swap.slot[i]=r_u16(r);a->u.raid_swap.count[i]=r_u32(r);a->u.raid_swap.type[i]=r_u32(r);a->u.raid_swap.id[i]=r_u32(r);}break;
     case DD_ACT_FORMATION_RESET:
     case DD_ACT_FORMATION_SET:
         a->u.formation.area=r_u32(r);

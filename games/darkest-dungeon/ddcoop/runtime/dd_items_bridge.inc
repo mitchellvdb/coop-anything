@@ -193,10 +193,10 @@ static int loot_ready(const walk_view *v) {
  * +10..18 widgets. The selected Item therefore need not belong to the raid's canonical Loot inventory.
  * Resolve only a member of this currently open, ready loot bar. Keep duplicate copies distinct by
  * occurrence within that same inventory; never search arbitrary windows or move a presentation object. */
-static int hamlet_loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t selected,
+static int loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t selected,
                                     uint64_t *inventory,uint32_t *owner,uint32_t *slot) {
     walk_view v={0};uint64_t bar=0,shown=0,begin=0,end=0,wb=0,we=0,wrapper=0;
-    uint32_t type=0,id=0,q=0,normal=0;unsigned widgets=0,occurrence=0,shown_matches=0;
+    uint32_t type=0,id=0,q=0;unsigned widgets=0,occurrence=0,shown_matches=0;
     if(!widget || !selected || !g_walk_view(&v) || !loot_ready(&v) ||
        !safe_read(v.display+DD_WALK_LOOT_OVERLAY+8,&bar,8) || !bar ||
        !safe_read(bar+8,&shown,8) || !shown || !safe_read(bar+0x10,&wb,8) || !safe_read(bar+0x18,&we,8) ||
@@ -205,9 +205,8 @@ static int hamlet_loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t
        (end-begin)%0x5a8u || (end-begin)/0x5a8u>64 ||
        selected<begin || (selected-begin)%0x5a8u || selected>=end ||
        !safe_read(widget+0x28,&wrapper,8) || wrapper!=shown ||
-       !hamlet_read(s,selected,&q,4) || q!=1 || !hamlet_read(s,selected+0x44,&type,4) ||
-       !hamlet_read(s,selected+0x88,&id,4) || !id ||
-       !hamlet_read(s,s->image+0x2a6f868,&normal,4) || type!=normal)return 0;
+       !hamlet_read(s,selected,&q,4) || !q || q>INT32_MAX || !hamlet_read(s,selected+0x44,&type,4) || !type ||
+       !hamlet_read(s,selected+0x88,&id,4))return 0;
     for(uint64_t at=wb;at<we;at+=8){uint64_t p=0;if(!safe_read(at,&p,8))return 0;if(p==widget)widgets++;}
     if(widgets!=1)return 0;
     for(uint64_t at=begin;at<end;at+=0x5a8u) {
@@ -215,18 +214,29 @@ static int hamlet_loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t
         if(!hamlet_read(s,at,&n,4))return 0;
         if(!n)continue;
         if(!hamlet_read(s,at+0x44,&t,4) || !hamlet_read(s,at+0x88,&key,4))return 0;
-        if(n==1 && t==type && key==id){shown_matches++;if(at<selected)occurrence++;}
+        if(n==q && t==type && key==id){shown_matches++;if(at<selected)occurrence++;}
     }
     uint64_t inv=0;unsigned count=0,matches=0,chosen=0;
     if(!dd_hamlet_inventory(s,DD_TRINKET_LOOT,&inv,&count) || inv!=v.raid+DD_WALK_RAID_LOOT)return 0;
+    uint64_t canonical_begin=0;
+    if(!hamlet_read(s,inv+8,&canonical_begin,8))return 0;
     for(unsigned at=0;at<count;at++) {
-        uint32_t n=0,t=0,key=0;if(!dd_hamlet_item(s,inv,at,&t,&key,&n))return 0;
-        if(n==1 && t==type && key==id){if(matches==occurrence)chosen=at;matches++;}
+        uint32_t n=0,t=0,key=0;uint64_t p=canonical_begin+(uint64_t)at*0x5a8u;
+        if(!hamlet_read(s,p,&n,4) || n>INT32_MAX)return 0;
+        if(n && (!hamlet_read(s,p+0x44,&t,4) || !t || !hamlet_read(s,p+0x88,&key,4)))return 0;
+        if(n==q && t==type && key==id){if(matches==occurrence)chosen=at;matches++;}
     }
     if(!matches || matches!=shown_matches || occurrence>=matches)return 0;
     *inventory=inv;*owner=DD_TRINKET_LOOT;*slot=chosen;
-    dd_log("Trinket: rooted loot widget source slot=%u occurrence=%u",chosen,occurrence);
+    dd_log("Loot: rooted widget source slot=%u occurrence=%u type=%08x item=%08x count=%u",chosen,occurrence,type,id,q);
     return 1;
+}
+static int hamlet_loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t selected,
+                                    uint64_t *inventory,uint32_t *owner,uint32_t *slot) {
+    uint32_t type=0,normal=0,q=0;
+    return hamlet_read(s,selected,&q,4) && q==1 && hamlet_read(s,selected+0x44,&type,4) &&
+        hamlet_read(s,s->image+0x2a6f868,&normal,4) && normal && type==normal &&
+        loot_widget_source(s,widget,selected,inventory,owner,slot);
 }
 
 static int hamlet_bulk_in_raid(void) {walk_view v;return g_walk_view(&v);}
@@ -649,7 +659,7 @@ static int bag_repair_busy(void) { return g_bag_repairing; }
  * drop/finish/cancel callbacks. Their single installed hook dispatches both
  * jobs; a second hook at the same address silently replaced trinket safety. */
 static void bag_drag_done(void) {
-    if (!g_game_apply_depth && !g_trinket_drag.valid && walk_shared()) g_bag_moved = 1;
+    if (!g_game_apply_depth && !g_trinket_drag.valid && !raid_swap_owns_drag() && walk_shared()) g_bag_moved = 1;
 }
 #define DD_BAG_HOOK(name, native)                                                     \
     static uint64_t __fastcall name(void *a, void *b, void *c, void *d) {             \
@@ -914,6 +924,7 @@ static void bag_send_slot_from(const walk_view *v, uint8_t inv, unsigned slot, c
 }
 static void bag_send_slot(const walk_view *v, uint8_t inv, unsigned slot, const bag_slot *s) { bag_send_slot_from(v, inv, slot, s, 0, 0, 0); }
 #include "dd_discard_bridge.inc"
+#include "dd_raid_swap_bridge.inc"
 static int bag_same(const bag_slot *a, const bag_slot *b) { return a->count > 0 && b->count > 0 && a->type == b->type && a->id == b->id; }
 /* Runs every frame. A change without a drag is the game's or an order's, and happens on the other copy by itself. */
 /* The guest found another bag at a door: every slot of the host's, filled ones first so that what moves is still there to find. */
@@ -1232,14 +1243,16 @@ static int item_gate(const dd_msg *m) {
     if (m->type != DD_MSG_TOWN_REQUEST && m->type != DD_MSG_TOWN_APPLY) return 0;
     /* A trinket taken out of the chest: the other copy's chest may not have given its loot yet. */
     int trinket = m->u.town.action.kind == DD_ACT_TRINKET_MOVE && (m->u.town.action.u.move.src_hero == DD_TRINKET_LOOT || m->u.town.action.u.move.dst_hero == DD_TRINKET_LOOT);
-    if ((m->u.town.action.kind != DD_ACT_ITEM && !trinket) || !dd_action_valid(&m->u.town.action)) return 0;
+    int raid_swap = m->u.town.action.kind == DD_ACT_RAID_SWAP;
+    if ((m->u.town.action.kind != DD_ACT_ITEM && !trinket && !raid_swap) || !dd_action_valid(&m->u.town.action)) return 0;
     if (g_cfg.role == DD_ROLE_GUEST ? (m->type != DD_MSG_TOWN_APPLY || g_town.applied_seq == UINT32_MAX || m->seq != g_town.applied_seq + 1) : m->type != DD_MSG_TOWN_REQUEST)
         return 0;
     const dd_action *a = &m->u.town.action;
     int have = g_walk_view(&v);
-    if (trinket) {
+    if (trinket || raid_swap) {
         limit = 30000;
-        go = have && (loot_ready(&v) || loot_settled(&v));
+        go = have && ((raid_swap && a->u.raid_swap.loot_seq!=g_full_loot_seq) ||
+             (loot_ready(&v) && (!raid_swap || !loot_pending(&v))) || loot_settled(&v));
     } else if (a->u.item.op == DD_ITEM_OP_RULES && a->u.item.flag) {
         limit = 10000;
         go = have && item_use_phase(&v) && v.area == a->u.item.area;

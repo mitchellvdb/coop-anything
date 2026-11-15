@@ -1,4 +1,10 @@
 /* Included on the game thread after the basic runtime helpers. No peer pointers enter this file. */
+static int raid_swap_apply(const dd_action *);
+static void raid_swap_pickup(void *,void *);
+static int raid_swap_finish(void *,void *);
+static int raid_swap_drop(unsigned,void *,void *);
+static void raid_swap_reset(void);
+static int raid_swap_owns_drag(void);
 typedef uint8_t(__fastcall *hamlet_toggle_fn)(void *, uint32_t);
 typedef void(__fastcall *hamlet_name_fn)(void *, void *);
 typedef void(__fastcall *hamlet_dismiss_fn)(void *, uint32_t);
@@ -73,6 +79,10 @@ static int hamlet_open(dd_hamlet *s) {
            dd_hamlet_open(s, shop_read, NULL, image_base(), campaign);
 }
 static int (*g_hamlet_open_model)(dd_hamlet *) = hamlet_open;
+static int treatment_live_hero(uint32_t id) {
+    dd_hamlet s;dd_hamlet_hero hero;
+    return g_hamlet_open_model(&s) && dd_hamlet_find(&s,id,&hero)==1 && hero.location<2;
+}
 static int hamlet_read(const dd_hamlet *s, uint64_t p, void *out, size_t n) {
     return p && p <= UINT64_MAX - n && s->read(s->ctx, p, out, n);
 }
@@ -700,6 +710,7 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
 }
 #include "dd_trinket_bulk_bridge.inc"
 static int hamlet_apply(const dd_action *a) {
+    if(a->kind==DD_ACT_RAID_SWAP)return raid_swap_apply(a);
     dd_hamlet s;
     if (!g_hamlet_open_model(&s)) return hamlet_fail("normal campaign unavailable", 0);
     switch (a->kind) {
@@ -722,6 +733,7 @@ static int hamlet_apply(const dd_action *a) {
     }
 }
 static void hamlet_reset(void) {
+    treatment_preview_reset();
     g_party_pending_mask = 0;
     if (g_dismiss.active) {
         g_town.needs_resync = 1;
@@ -735,6 +747,7 @@ static void hamlet_reset(void) {
     g_party_intent_valid = 0;
     g_party_failure = 0;
     memset(&g_trinket_drag, 0, sizeof g_trinket_drag);
+    raid_swap_reset();
 }
 
 static int hamlet_skill_ui(uintptr_t caller) {
@@ -1053,6 +1066,7 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
     prop_item_pickup(kind,ui,data);
     supply_drag_pickup(ui);
     memset(&g_trinket_drag, 0, sizeof g_trinket_drag);
+    raid_swap_pickup(ui,data);
     if (!g_game_apply_depth && hamlet_local_active()) {
         dd_hamlet s;
         uint64_t inventory = 0;
@@ -1108,6 +1122,7 @@ static void __fastcall hook_trinket_pickup_inventory(void *a, void *b, void *c, 
     hamlet_trinket_pickup(1, a, b, c, d);
 }
 static void hamlet_trinket_finish(unsigned kind, void *ui, void *data) {
+    if(raid_swap_finish(ui,data))return;
     if (prop_item_source_done(ui,data)) return;
     if (supply_drag_finish(ui)) return;
     if (g_trinket_drag.valid && g_trinket_drag.ui == (uintptr_t)ui && hamlet_local_active()) {
@@ -1137,6 +1152,8 @@ static void __fastcall hook_trinket_cancel_hero(void *a, void *b) { hamlet_trink
 static void __fastcall hook_trinket_finish_inventory(void *a, void *b) { hamlet_trinket_finish(2, a, b); bag_drag_done(); }
 static void __fastcall hook_trinket_cancel_inventory(void *a, void *b) { hamlet_trinket_finish(3, a, b); bag_drag_done(); }
 static int hamlet_trinket_drop(unsigned kind, void *ui, void *position, void *data) {
+    int swapped=raid_swap_drop(kind,ui,data);
+    if(swapped>=0)return swapped;
     if (!g_trinket_drag.valid || g_game_apply_depth || !hamlet_local_active())
         return g_trinket_drop[kind] ? g_trinket_drop[kind](ui, position, data) : 0;
     if (g_trinket_drag.valid != 1) return 0;
@@ -1145,14 +1162,22 @@ static int hamlet_trinket_drop(unsigned kind, void *ui, void *position, void *da
     uint64_t inventory = 0;
     uint32_t owner = 0, slot = 0, type = 0, id = 0, q = 0;
     unsigned count = 0;
-    if (!g_hamlet_open_model(&s) || !safe_read((uintptr_t)ui + 0x18, &inventory, 8) ||
-        !dd_hamlet_inventory_owner(&s, inventory, &owner) ||
-        !dd_hamlet_inventory(&s, owner, &inventory, &count)) {
+    int model=g_hamlet_open_model(&s),rooted=0;
+    int endpoint=model && safe_read((uintptr_t)ui + 0x18,&inventory,8) &&
+        dd_hamlet_inventory_owner(&s,inventory,&owner) && dd_hamlet_inventory(&s,owner,&inventory,&count);
+    if(!endpoint && model && kind<2 && (uintptr_t)ui>=0x10) {
+        uint64_t selected=0;
+        if(safe_read((uintptr_t)ui+0x20,&selected,8) &&
+           hamlet_loot_widget_source(&s,(uintptr_t)ui-0x10,selected,&inventory,&owner,&slot)) {
+            endpoint=1;rooted=1;
+        }
+    }
+    if (!endpoint) {
         dd_log("Trinket: drop refused kind=%u stage=destination-inventory source=%u:%u item=%08x", kind, g_trinket_drag.owner, g_trinket_drag.slot, g_trinket_drag.id);
         return 0;
     }
     if (kind < 2) {
-        if (!safe_read((uintptr_t)ui + 0xa8, &slot, 4)) return 0;
+        if (!rooted && !safe_read((uintptr_t)ui + 0xa8, &slot, 4)) return 0;
     } else {
         for (slot = 0; slot < count; slot++) {
             if (!dd_hamlet_item(&s, inventory, slot, &type, &id, &q)) return 0;
@@ -1215,6 +1240,7 @@ typedef struct {
     size_t length;
 } hamlet_hook_spec;
 static const hamlet_hook_spec g_hamlet_hooks[] = {
+    {"treatment_preview",(uintptr_t)hook_treatment_preview,&g_treatment_preview,12},
     {"event_display_enter",(uintptr_t)hook_event_display_enter,&g_event_display_enter,5},
     {"treatment_select",(uintptr_t)hook_treatment_select,&g_treatment_select,10},
     {"activity_slot_set_hero",(uintptr_t)hook_activity_set,&g_activity_set,10},

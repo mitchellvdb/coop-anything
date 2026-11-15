@@ -585,6 +585,7 @@ static void hook_machine_code(void) {
 #include "runtime_walk_fixture.inc"
 #include "runtime_wave_fixture.inc"
 #include "runtime_discard_fixture.inc"
+#include "runtime_raid_swap_fixture.inc"
 #include "runtime_party_fixture.inc"
 #include "runtime_battle_fixture.inc"
 #include "runtime_desync_fixture.inc"
@@ -875,6 +876,39 @@ static void treatment_checks(void) {
     g_treatment_select = NULL;g_activity_kind = activity_kind;g_town_object = town_object;
     puts("Sanitarium treatment: host click native and ordered with its result; guests apply natively or write the record when no list exists; guest click asks first; second click clears; a differing list takes the sender's result; other hero refused");
 }
+static void __fastcall tr_preview_native(void *activity,int32_t slot,uint32_t id) {
+    CHECK(activity==tr_act && slot>=0 && slot<3);
+    if(id)putint(tr_act+0x238,id);
+}
+static void treatment_draft_checks(void) {
+    uint8_t functor[0x20]={0};putptr(functor+8,(uintptr_t)tr_act);putint(functor+0x10,1);putint(functor+0x14,1);
+    treatment_preview_fn saved=g_treatment_preview;g_treatment_preview=tr_preview_native;
+    for(unsigned mode=0;mode<2;mode++)for(unsigned player=0;player<4;player++) {
+        hm_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);tr_model(1);tr_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);
+        tr_act[0x10]=(uint8_t)(mode+DD_ACTIVITY_QUIRK_TREATMENT);g_cfg.player=player;putint(tr_slots[1],0);
+        hook_treatment_preview(tr_act,1,1);
+        hook_treatment_preview(tr_act,0,2); /* last global hero differs: slot1 still belongs to1 */
+        hook_treatment_preview(tr_act,1,0); /* empty UI initialization does not rebuild native data */
+        hook_treatment_select(functor);
+        CHECK(sent==1 && last_message.u.town.action.u.treatment.hero_id==1);
+        dd_action order=last_message.u.town.action;
+        if(player)CHECK(!tr_calls);
+        else CHECK(tr_calls==1);
+        for(unsigned peer=1;peer<4;peer++) {
+            hm_reset(DD_ROLE_GUEST);tr_model(0);tr_reset(DD_ROLE_GUEST);g_cfg.player=peer;
+            tr_act[0x10]=(uint8_t)(mode+DD_ACTIVITY_QUIRK_TREATMENT);putint(tr_slots[1],0);
+            wk_push(1,&order);dd_runtime_poll();
+            CHECK(g_town.applied_seq==1 && !g_town.needs_resync && !tr_calls);
+            uint32_t chosen=0;memcpy(&chosen,tr_records+0x1e0+0xa0+0x98,4);CHECK(chosen==1);
+        }
+        hm_reset(DD_ROLE_HOST);tr_model(1);tr_reset(DD_ROLE_HOST);
+        tr_act[0x10]=(uint8_t)(mode+DD_ACTIVITY_QUIRK_TREATMENT);putint(tr_slots[1],0);hook_treatment_preview(tr_act,1,2);
+        dd_msg m={0};m.type=DD_MSG_TOWN_REQUEST;m.u.town.request_id=0x01000001;m.u.town.action=order;
+        CHECK(queue_push(&g_incoming,&m));dd_runtime_poll();CHECK(g_town.rejected==1 && !tr_calls && !g_town.needs_resync);
+    }
+    g_treatment_preview=saved;g_treatment_select=NULL;g_activity_kind=activity_kind;g_town_object=town_object;treatment_preview_reset();
+    puts("Sanitarium drafts: both modes/all4 initiators/3 closed-list peers, per-slot native preview identity before paid assignment, other-slot/global overwrite and empty initialization, conflicting preview refusal verified");
+}
 
 #include "runtime_transport_stop_fixture.inc"
 #include "runtime_recruit_pool_fixture.inc"
@@ -958,9 +992,11 @@ int main(void) {
     hunger_transactions();
     wave_transactions();
     discard_transactions();
+    raid_swap_transactions();
     quest_return_transactions();
     activity_transactions();
     treatment_checks();
+    treatment_draft_checks();
     activity_bridge_checks();
     activity_weekly_checks();
     weekly_bridge_checks();
