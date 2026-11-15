@@ -69,3 +69,24 @@ remain explicit: closing them before collection prevents remote retrieval.
 Windows adapter fixtures cover host/guest folder selection, current/foreign PID,
 once-only event requests, normal-end behavior and the existing report transport.
 Written by Codex, 12 November 2026.
+
+## Test92 explicit guest Send logs button
+
+The existing guest log button is now clearly named Send logs to host (in
+a widened launcher slot beside the smaller Stop session button); F9 uses Send logs. The host uses Collect logs.
+A guest click invokes the existing LR_DIAG_MANUAL flow with open_folder0. It
+never falls through to legacy Desktop collection or opens Explorer. If there
+is no connected/member host, a visible failure explains that sending is not
+possible; nothing is called received. Keep launchers open for reliable delivery.
+Automatic desync collection remains enabled without a click. All reports still
+use the fixed allowlist/redaction and private existing connection, no new online
+service. This may include player names/paths; it is not public anonymization.
+
+Sending logs and Host received logs are distinct. Only the existing validated
+host receipt (guest phase6) produces received feedback. Failure/timeout reports
+not confirmed; simultaneous clicks coalesce. Feedback appears in the launcher's
+status and existing F9 runtime text for15s, never overwrites a core error and
+clears for the next session. Launcher wire3/snapshot2 are unchanged. Adapter
+fixtures exercise the actual button handler, pending request, transfer, foreign
+ACK refusal and real host ACK, without Steam/game or real Desktop writes.
+Written by Codex; minimal launcher-owned changes authorized by the owner.

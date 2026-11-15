@@ -6,6 +6,7 @@
 #else
 #define DDC_VERSION "0.5.0-test82"
 #endif
+#define lr_steam_is_member diagnostics_fake_member
 #define lr_steam_lobby diagnostics_fake_lobby
 #define lr_steam_close_session diagnostics_fake_close
 #define lr_steam_leave_lobby diagnostics_fake_leave
@@ -19,6 +20,7 @@ static unsigned failures, closed, left, send_count;
             ++failures;                                                                                                \
         }                                                                                                              \
     } while (0)
+int diagnostics_fake_member(uint64_t peer) {return peer==42;}
 uint64_t diagnostics_fake_lobby(void) { return 1; }
 void diagnostics_fake_close(uint64_t peer) {
     (void)peer;
@@ -90,6 +92,34 @@ static void report_location_test(const char *root) {
     }
     g_diagnostics_folder=original;
 }
+static void manual_guest_test(const char *root) {
+    setup_(root,"guest-manual");lr_diag_free(&G.diagnostics);
+    G.core.role=LR_ROLE_GUEST;G.core.player=1;G.core.peer=42;G.core.state=LR_ST_GUEST_PLAYING;
+    lr_diag_config cfg={NULL,fake_send_,diagnostics_collect,diagnostics_save,diagnostics_changed};
+    lr_diag_init(&G.diagnostics,&cfg,LR_ROLE_GUEST,42,G.core.cfg.kit,98);
+    CHECK(!wcscmp(diagnostics_caption(),L"Send logs to host"));
+    G.diag_open=1;do_logs();
+    CHECK(!G.diag_open && G.diagnostics.notice_pending && strstr(G.diag_feedback,"Sending logs"));
+    CHECK(!wcscmp(diagnostics_caption(),L"Sending logs..."));
+    G.game=GetCurrentProcess();overlay_command(DD_OVERLAY_LOGS,0);G.game=NULL;
+    CHECK(!G.diag_open && G.diagnostics.notice_pending); /* F9 coalesces with launcher click */
+    uint64_t now=now_ms();lr_diag_tick(&G.diagnostics,now);CHECK(send_count>0);
+    lr_msg m={0};m.type=LR_DIAG_REQUEST;m.id=99;m.a=LR_DIAG_MANUAL;m.b=G.core.cfg.kit;
+    CHECK(lr_diag_message(&G.diagnostics,42,&m,now+1));
+    CHECK(G.diagnostics.active && !G.diag_open);
+    for(unsigned i=0;i<40 && G.diagnostics.phase!=4;i++)lr_diag_tick(&G.diagnostics,now+1000+200*i);
+    CHECK(G.diagnostics.phase==4 && G.diagnostics.active);
+    CHECK(!strstr(G.diag_feedback,"received by the host")); /* not sent/queued == received */
+    m.type=LR_DIAG_ACK;m.a=0;
+    CHECK(!lr_diag_message(&G.diagnostics,43,&m,now+10000)); /* foreign receipt refused */
+    CHECK(lr_diag_message(&G.diagnostics,42,&m,now+10000));
+    CHECK(!G.diagnostics.active && G.diagnostics.phase==6 && !G.diag_open);
+    CHECK(strstr(G.diag_feedback,"received by the host") && !wcscmp(diagnostics_caption(),L"Host received logs"));
+    G.diagnostics.phase=5;diagnostics_changed(NULL,1);
+    CHECK(strstr(G.diag_feedback,"not confirmed") && !wcscmp(diagnostics_caption(),L"Send failed: retry"));
+    diagnostics_reset();CHECK(!G.diag_feedback[0] && !G.diag_feedback_until);
+    puts("Guest Send logs: actual manual handler/F9 route, coalesced transport, no folder-open, genuine/foreign host ACK and failure feedback: passed");
+}
 int main(int argc, char **argv) {
     if (argc != 2)
         return 2;
@@ -98,6 +128,7 @@ int main(int argc, char **argv) {
     if (!got || got >= sizeof root)
         return 2;
     CHECK(lr_make_dirs(root));
+    manual_guest_test(root);
     report_location_test(root);
     setup_(root,"runtime-event-report");
     G.game=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,GetCurrentProcessId());CHECK(G.game!=NULL);

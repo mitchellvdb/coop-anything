@@ -95,6 +95,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE previous, PWSTR command, int show)
     G.name_filling = 1;
     SetWindowTextW(G.name_box, L"Hosty");
     G.name_filling = 0;
+    /* Current membership is published by the tracked runtime, not roster status. */
+    wchar_t party_name[96];swprintf(party_name,96,L"Local\\DDCoopParty-%lu",GetCurrentProcessId());
+    HANDLE party_mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,sizeof(dd_party_snapshot),party_name);
+    dd_party_snapshot *party_shared=MapViewOfFile(party_mapping,FILE_MAP_WRITE,0,0,sizeof(dd_party_snapshot));
+    if(!party_shared)return 1;
+    dd_party_snapshot party_data={0};party_data.magic=DD_PARTY_MAGIC;party_data.version=DD_PARTY_VERSION;
+    party_data.size=sizeof party_data;party_data.pid=GetCurrentProcessId();party_data.mode=DD_PARTY_TOWN;
+    party_data.updated=now_ms();party_data.count=4;
+    {const uint32_t ids[4]={2,5,9,12};memcpy(party_data.ids,ids,sizeof ids);}
+    dd_party_write(party_shared,&party_data);G.game=GetCurrentProcess();
     update_checks();
     update_players();
     update_heroes();
@@ -138,9 +148,24 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE previous, PWSTR command, int show)
             SendMessageW(G.assign_player, CB_GETLBTEXT, 2, (LPARAM)item);
             if (wcscmp(item, L"Player 3")) bad_at(&bad, __LINE__);
         }
+        /* Real guest button fits the existing slot at both tested DPIs. */
+        G.core.role=LR_ROLE_GUEST;G.core.state=LR_ST_GUEST_PLAYING;
+        update_checks();
+        wchar_t caption[80];GetWindowTextW(G.logs,caption,80);
+        if(wcscmp(caption,L"Send logs to host"))bad_at(&bad,__LINE__);
+        RECT log_rect,resync_rect;GetWindowRect(G.logs,&log_rect);GetWindowRect(G.resync,&resync_rect);
+        if(log_rect.right>=resync_rect.left || log_rect.bottom-log_rect.top<D(34))bad_at(&bad,__LINE__);
+        HDC button_dc=GetDC(G.logs);HGDIOBJ old_font=SelectObject(button_dc,G.font);SIZE extent;
+        GetTextExtentPoint32W(button_dc,caption,(int)wcslen(caption),&extent);SelectObject(button_dc,old_font);ReleaseDC(G.logs,button_dc);
+        if(extent.cx>log_rect.right-log_rect.left-D(12))bad_at(&bad,__LINE__);
+        diagnostics_feedback("Logs received by the host. You do not need to send any files yourself.");
+        G.game=GetCurrentProcess();overlay_publish();
+        if(!g_overlay_view || strcmp(g_overlay_view->role,"GUEST") || !strstr(g_overlay_view->runtime,"received by the host"))bad_at(&bad,__LINE__);
+        overlay_close();G.game=NULL;
         printf("Launcher UI fixture dpi=%d: wrapping, vertical scrollbar, preserved scroll, party rows and "
                "checkbox identity: %s\n",
                PREVIEW_DPI, bad ? "FAILED" : "OK");
+        live_party_close();UnmapViewOfFile(party_shared);CloseHandle(party_mapping);
         DestroyWindow(G.wnd);
         return bad ? 1 : 0;
     }

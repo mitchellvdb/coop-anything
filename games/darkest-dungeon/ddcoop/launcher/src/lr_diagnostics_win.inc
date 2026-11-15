@@ -180,10 +180,16 @@ static void diagnostics_changed(void *ctx, int finished) {
     if (finished)
         G.diag_done_at = now_ms();
     if (d->role == 2) {
-        if (finished)
+        G.diag_request_failed=0;
+        if(!finished)diagnostics_feedback("Sending logs to the host. Keep this launcher open until the host confirms receipt.");
+        if (finished) {
+            diagnostics_feedback(d->phase==6?"Logs received by the host. You do not need to send any files yourself.":
+                "Log delivery was not confirmed. Your original logs remain on this PC; keep the launcher open and retry.");
             logline("automatic diagnostics: %s; local copy: %s",
                     d->phase == 6 ? "received by host" : "delivery failed; original logs remain on this PC",
                     G.diag_dir);
+        }
+        SetWindowTextW(G.logs,diagnostics_caption());
         return;
     }
     char report[2048];
@@ -220,7 +226,7 @@ static void diagnostics_changed(void *ctx, int finished) {
         SetWindowTextW(G.logs, label);
         return;
     }
-    SetWindowTextW(G.logs, L"Copy logs");
+    SetWindowTextW(G.logs,diagnostics_caption());
     int ok = G.diag_dir[0] != 0;
     lr_logzip zip = {0};
     if (ok)
@@ -315,6 +321,7 @@ static void diagnostics_reset(void) {
     lr_diag_free(&G.diagnostics);
     memset(&G.diagnostics, 0, sizeof G.diagnostics);
     G.diag_open = 0;
+    G.diag_feedback[0]=0;G.diag_feedback_until=0;G.diag_request_failed=0;
     G.diag_keep_until = G.diag_done_at = 0;
     G.diag_folder_id = 0;
     G.diag_dir[0] = 0;

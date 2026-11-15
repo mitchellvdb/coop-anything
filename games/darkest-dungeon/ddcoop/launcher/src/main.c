@@ -95,7 +95,9 @@ static struct {
     char diag_dir[LR_PATH_MAX];
     uint32_t diag_folder_id;
     unsigned diag_files[4];
-    int diag_open,diag_scan_ready,diag_seen_stop;
+    int diag_open,diag_scan_ready,diag_seen_stop,diag_request_failed;
+    char diag_feedback[180];
+    uint64_t diag_feedback_until;
     uint64_t diag_keep_until,diag_done_at,diag_scan_offset,diag_scan_at;
     int hosting_pending;         /* host: waiting for the lobby before starting the game */
     uint64_t hosting_since;
@@ -390,6 +392,8 @@ static void diagnostics_reset(void);
 static void diagnostics_sync(void);
 static void diagnostics_mark(void);
 static void diagnostics_tick(uint64_t now);
+static const wchar_t *diagnostics_caption(void);
+static void diagnostics_feedback(const char *);
 static int spawn_game_process(const char *exe, const char *args, HANDLE *process);
 
 static void slot_path(char *path, size_t cap) { lr_join(path, cap, G.moddir, "ddcoop-slot.txt"); }
@@ -983,7 +987,33 @@ static void collect_logs(int open_folder) {
     lr_write_file(path, (const uint8_t *)summary, safe_len);
     if (open_folder) ShellExecuteW(NULL, L"explore", W(dir), NULL, NULL, SW_SHOWNORMAL);
 }
-static void do_logs(void) { collect_logs(1); }
+static void diagnostics_feedback(const char *text) {
+    snprintf(G.diag_feedback,sizeof G.diag_feedback,"%s",text);G.diag_feedback_until=now_ms()+15000;
+}
+static const wchar_t *diagnostics_caption(void) {
+    if(G.core.role!=LR_ROLE_GUEST)return L"Collect logs";
+    if(G.diag_request_failed && now_ms()<G.diag_feedback_until)return L"Host unavailable";
+    if(G.diagnostics.active || G.diagnostics.notice_pending)return L"Sending logs...";
+    if(G.diag_done_at && now_ms()<G.diag_done_at+15000)
+        return G.diagnostics.phase==6?L"Host received logs":L"Send failed: retry";
+    return L"Send logs to host";
+}
+static void do_logs(void) {
+    if(G.core.role==LR_ROLE_GUEST) {
+        G.diag_open=0; /* No Explorer window or guest Desktop fallback for this button. */
+        G.diag_request_failed=0;
+        if(!diagnostics_request(LR_DIAG_MANUAL,0)) {
+            G.diag_request_failed=1;
+            diagnostics_feedback("No connected host could accept the logs. Keep this launcher open and reconnect to send them.");
+        } else if(G.diagnostics.active || G.diagnostics.notice_pending)
+            diagnostics_feedback("Sending logs to the host. Keep this launcher open until the host confirms receipt.");
+        else if(G.diagnostics.phase==6)
+            diagnostics_feedback("The host has already received this report. Wait a moment before requesting another.");
+        else diagnostics_feedback("Please wait a moment, then retry sending logs to the host.");
+        return;
+    }
+    collect_logs(1);
+}
 #include "lr_diagnostics_win.inc"
 
 static BOOL CALLBACK close_game_window(HWND wnd, LPARAM pid) {
@@ -1241,11 +1271,12 @@ static void update_checks(void) {
         SendMessageW(G.checks,EM_LINESCROLL,0,first-now);
     }
 
+    if(!G.diagnostics.active || G.core.role==LR_ROLE_GUEST)SetWindowTextW(G.logs,diagnostics_caption());
     char status[512];
     if (s == LR_ST_FAILED)
         snprintf(status, sizeof status, "Problem: %s", G.core.error);
     else
-        snprintf(status, sizeof status, "%s", G.core.status);
+        snprintf(status, sizeof status, "%s", G.diag_feedback[0] && now_ms()<G.diag_feedback_until?G.diag_feedback:G.core.status);
     if (strcmp(status, G.last_status) != 0) {
         snprintf(G.last_status, sizeof G.last_status, "%s", status);
         SetWindowTextW(G.status, W(status));
@@ -1644,8 +1675,8 @@ static void build_window(void) {
     G.slot = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 190, y, 464, 240, ID_SLOT, G.font);
     y += 36;
     G.host = control(L"BUTTON", L"Host a game", BS_PUSHBUTTON, 14, y, 200, 34, ID_HOST, G.font);
-    G.stop = control(L"BUTTON", L"Stop session", BS_PUSHBUTTON, 224, y, 140, 34, ID_STOP, G.font);
-    G.logs = control(L"BUTTON", L"Copy logs", BS_PUSHBUTTON, 374, y, 130, 34, ID_LOGS, G.font);
+    G.stop = control(L"BUTTON", L"Stop session", BS_PUSHBUTTON, 224, y, 110, 34, ID_STOP, G.font);
+    G.logs = control(L"BUTTON", L"Collect logs", BS_PUSHBUTTON | WS_TABSTOP, 344, y, 160, 34, ID_LOGS, G.font);
     G.resync = control(L"BUTTON", L"Resync...", BS_PUSHBUTTON | WS_TABSTOP, 514, y, 140, 34, ID_RESYNC, G.font);
     y += 42;
     G.save_box = control(L"BUTTON", L"Save progress when hosting", BS_AUTOCHECKBOX | WS_TABSTOP, 14, y, 260, 26, ID_SAVE, G.font);

@@ -37,11 +37,11 @@ static void overlay_publish(void) {
     next.updated = now_ms();
     snprintf(next.role, sizeof next.role, "%s",
              G.core.role == LR_ROLE_HOST    ? "HOST"
-             : G.core.role == LR_ROLE_GUEST ? "GAST"
+             : G.core.role == LR_ROLE_GUEST ? "GUEST"
                                             : "DDCoop");
     snprintf(next.status, sizeof next.status, "%s",
              G.core.error[0] && G.core.state == LR_ST_FAILED ? G.core.error : G.core.status);
-    snprintf(next.runtime, sizeof next.runtime, "%s", G.runtime_line);
+    snprintf(next.runtime, sizeof next.runtime, "%s", G.diag_feedback[0] && now_ms()<G.diag_feedback_until?G.diag_feedback:G.runtime_line);
     for (unsigned i = 0; i < DD_OVERLAY_CHECKS; i++) {
         next.check_ok[i] = G.ok[i];
         snprintf(next.checks[i], sizeof next.checks[i], "%s", G.check_text[i]);
