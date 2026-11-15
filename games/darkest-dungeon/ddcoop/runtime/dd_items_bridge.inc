@@ -184,6 +184,48 @@ static int loot_ready(const walk_view *v) {
         safe_read((uintptr_t)v->display + 0x40e0, &begin, 8) &&
         safe_read((uintptr_t)v->display + 0x40e8, &end, 8) && begin == end;
 }
+/* OverlayLoot::Draw715610 uses +8 InventoryBar, whose +8 inventory owns the UI Item copies and
+ * +10..18 widgets. The selected Item therefore need not belong to the raid's canonical Loot inventory.
+ * Resolve only a member of this currently open, ready loot bar. Keep duplicate copies distinct by
+ * occurrence within that same inventory; never search arbitrary windows or move a presentation object. */
+static int hamlet_loot_widget_source(const dd_hamlet *s,uint64_t widget,uint64_t selected,
+                                    uint64_t *inventory,uint32_t *owner,uint32_t *slot) {
+    walk_view v={0};uint64_t bar=0,shown=0,begin=0,end=0,wb=0,we=0,wrapper=0;
+    uint32_t type=0,id=0,q=0,normal=0;unsigned widgets=0,occurrence=0,shown_matches=0;
+    if(!widget || !selected || !g_walk_view(&v) || !loot_ready(&v) ||
+       !safe_read(v.display+DD_WALK_LOOT_OVERLAY+8,&bar,8) || !bar ||
+       !safe_read(bar+8,&shown,8) || !shown || !safe_read(bar+0x10,&wb,8) || !safe_read(bar+0x18,&we,8) ||
+       we<wb || (we-wb)%8 || (we-wb)/8>64 ||
+       !safe_read(shown+8,&begin,8) || !safe_read(shown+0x10,&end,8) || end<begin ||
+       (end-begin)%0x5a8u || (end-begin)/0x5a8u>64 ||
+       selected<begin || (selected-begin)%0x5a8u || selected>=end ||
+       !safe_read(widget+0x28,&wrapper,8) || wrapper!=shown ||
+       !hamlet_read(s,selected,&q,4) || q!=1 || !hamlet_read(s,selected+0x44,&type,4) ||
+       !hamlet_read(s,selected+0x88,&id,4) || !id ||
+       !hamlet_read(s,s->image+0x2a6f868,&normal,4) || type!=normal)return 0;
+    for(uint64_t at=wb;at<we;at+=8){uint64_t p=0;if(!safe_read(at,&p,8))return 0;if(p==widget)widgets++;}
+    if(widgets!=1)return 0;
+    for(uint64_t at=begin;at<end;at+=0x5a8u) {
+        uint32_t n=0,t=0,key=0;
+        if(!hamlet_read(s,at,&n,4))return 0;
+        if(!n)continue;
+        if(!hamlet_read(s,at+0x44,&t,4) || !hamlet_read(s,at+0x88,&key,4))return 0;
+        if(n==1 && t==type && key==id){shown_matches++;if(at<selected)occurrence++;}
+    }
+    uint64_t inv=0;unsigned count=0,matches=0,chosen=0;
+    if(!dd_hamlet_inventory(s,DD_TRINKET_LOOT,&inv,&count) || inv!=v.raid+DD_WALK_RAID_LOOT)return 0;
+    for(unsigned at=0;at<count;at++) {
+        uint32_t n=0,t=0,key=0;if(!dd_hamlet_item(s,inv,at,&t,&key,&n))return 0;
+        if(n==1 && t==type && key==id){if(matches==occurrence)chosen=at;matches++;}
+    }
+    if(!matches || matches!=shown_matches || occurrence>=matches)return 0;
+    *inventory=inv;*owner=DD_TRINKET_LOOT;*slot=chosen;
+    dd_log("Trinket: rooted loot widget source slot=%u occurrence=%u",chosen,occurrence);
+    return 1;
+}
+
+static int hamlet_bulk_in_raid(void) {walk_view v;return g_walk_view(&v);}
+
 /* Every player's click remains shared, including a second loot window. */
 static int loot_local(void) {
     return g_game_apply_depth || !walk_shared();

@@ -653,8 +653,12 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
                 break;
             }
         }
-    if ((q[0] && type[0] != normal) || (q[1] && type[1] != normal))
+    if ((q[0] && type[0] != normal) || (q[1] && type[1] != normal)) {
+        dd_log("Trinket: non-trinket endpoint source=%u:%u %08x/%08x/%u wanted=%08x/%08x destination=%u:%u %08x/%08x/%u wanted=%08x/%08x player=%d",
+            owners[0],slots[0],type[0],id[0],q[0],a->u.move.src_type,a->u.move.src_id,
+            owners[1],slots[1],type[1],id[1],q[1],a->u.move.dst_type,a->u.move.dst_id,g_request_player);
         return hamlet_fail("trinket endpoint holds something that is not a trinket", 0);
+    }
     if (q[0] != 1 || type[0] != a->u.move.src_type || id[0] != a->u.move.src_id ||
         type[1] != a->u.move.dst_type || id[1] != a->u.move.dst_id ||
         !dd_hamlet_can_equip(s, owners[1], slots[1], id[0], owners[0] == owners[1] ? slots[0] : UINT32_MAX) ||
@@ -694,10 +698,13 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
            owners[1], slots[1], id[0], id[1]);
     return 1;
 }
+#include "dd_trinket_bulk_bridge.inc"
 static int hamlet_apply(const dd_action *a) {
     dd_hamlet s;
     if (!g_hamlet_open_model(&s)) return hamlet_fail("normal campaign unavailable", 0);
     switch (a->kind) {
+    case DD_ACT_UNEQUIP_ALL:
+        return trinket_bulk_apply(&s,a);
     case DD_ACT_SKILL:
         return hamlet_skill_apply(&s, a);
     case DD_ACT_RENAME:
@@ -1008,6 +1015,7 @@ static void __fastcall hook_hamlet_location(void *roster, void *entry, int32_t l
  * raid inventory. Native pickup7ee320 copies the Item at widget+30. Resolve that
  * exact address in the bounded canonical bag/loot vectors, never by trinket ID:
  * two identical trinkets must remain distinguishable. */
+static int hamlet_loot_widget_source(const dd_hamlet *,uint64_t,uint64_t,uint64_t *,uint32_t *,uint32_t *);
 static int hamlet_raid_drag_source(const dd_hamlet *s, uint64_t selected, uint64_t *inventory, uint32_t *owner, uint32_t *slot) {
     if (!selected) return 0;
     for (unsigned i=0;i<2;i++) {
@@ -1057,7 +1065,8 @@ static void hamlet_trinket_pickup(unsigned kind, void *ui, void *arg2, void *arg
         (void)safe_read((uintptr_t)ui+0x28,&wrapper,8);
         if (model && safe_read((uintptr_t)ui+0x30,&selected,8) &&
             (hamlet_raid_drag_source(&s,selected,&inventory,&owner,&slot) ||
-             hamlet_raid_drag_copy(&s,wrapper,selected,&inventory,&owner,&slot))) {
+             hamlet_raid_drag_copy(&s,wrapper,selected,&inventory,&owner,&slot) ||
+             hamlet_loot_widget_source(&s,(uintptr_t)ui,selected,&inventory,&owner,&slot))) {
             endpoint=1;
             dd_log("Trinket: canonical raid source=%u slot=%u",owner,slot);
         }
@@ -1189,8 +1198,8 @@ static int __fastcall hook_trinket_area_inventory(void *a, void *b, void *c) {
     return result;
 }
 static void hamlet_bulk(unsigned kind, void *capture) {
-    if (!g_game_apply_depth && hamlet_local_active()) {
-        shop_notice("Automatic sorting and 'unequip all' are not synchronized yet. Move "
+    if (!g_game_apply_depth && hamlet_local_active() && kind==0) {
+        shop_notice("Automatic sorting is not synchronized yet. Move "
                     "trinkets individually by dragging in this test.");
         return;
     }
@@ -1231,6 +1240,7 @@ static const hamlet_hook_spec g_hamlet_hooks[] = {
     {"trinket_drop_inventory", (uintptr_t)hook_trinket_drop_inventory, &g_trinket_drop[1], 18},
     {"trinket_area_hero", (uintptr_t)hook_trinket_area_hero, &g_trinket_drop[2], 19},
     {"trinket_area_inventory", (uintptr_t)hook_trinket_area_inventory, &g_trinket_drop[3], 23},
+    {"trinket_unequip_all_model",(uintptr_t)hook_trinket_bulk_model,&g_trinket_bulk_model,14},
     {"trinket_sort_button", (uintptr_t)hook_trinket_sort, &g_hamlet_bulk[0], 7},
     {"trinket_unequip_all_dialog", (uintptr_t)hook_trinket_unequip_all, &g_hamlet_bulk[1], 11},
 };

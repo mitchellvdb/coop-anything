@@ -131,6 +131,9 @@ int dd_hamlet_panel(const dd_hamlet *s, uint32_t vt_rva, uint64_t *out) {
     /* Pinned TownDisplay constructor 6ce2c0 -> 6ce970. These are embedded normal-mode panels,
      * not members of the save-screen registry at 117d9c0. Resolve afresh on every use. */
     switch (vt_rva) {
+    case 0xebef28:
+        offset = 0x4058;
+        break; /* Normal RealmInventory, normal Town ctor6da6e0: +17a8 base, then ctor6dad90 +28b0. */
     case 0xec00a0:
         offset = 0x2f48;
         break; /* RosterList */

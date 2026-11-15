@@ -65,6 +65,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_OWNERS: return 1+4*5+1;
     case DD_ACT_EMBARK:
     case DD_ACT_PREPARE: return 1+4*2;
+    case DD_ACT_UNEQUIP_ALL: return 1+8+8+2;
     case DD_ACT_TREATMENT: return 1+4+2+4+64;
     default: return 0;
     }
@@ -98,6 +99,7 @@ int dd_action_valid(const dd_action *a) {
         }
         return count>0;
     }
+    case DD_ACT_UNEQUIP_ALL: return a->u.unequip.before && a->u.unequip.after && a->u.unequip.count && a->u.unequip.count<=128;
     case DD_ACT_TREATMENT: {
         const char *q=a->u.treatment.quirk;size_t n=0;
         if((a->u.treatment.activity!=DD_ACTIVITY_QUIRK_TREATMENT && a->u.treatment.activity!=DD_ACTIVITY_DISEASE_TREATMENT) ||
@@ -193,6 +195,8 @@ static void w_action(wr *w, const dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)w_u32(w,a->u.owners.heroes[i]);
         w_u32(w,a->u.owners.revision);w_u8(w,a->u.owners.mask);break;
+    case DD_ACT_UNEQUIP_ALL:
+        w_u64(w,a->u.unequip.before);w_u64(w,a->u.unequip.after);w_u16(w,a->u.unequip.count);break;
     case DD_ACT_TREATMENT:
         w_u8(w,a->u.treatment.activity);w_u8(w,a->u.treatment.slot);w_u8(w,a->u.treatment.group);w_u8(w,a->u.treatment.state);
         w_u16(w,a->u.treatment.entry);w_u32(w,a->u.treatment.hero_id);w_bytes(w,a->u.treatment.quirk,64);break;
@@ -262,6 +266,8 @@ static void r_action(rd *r, dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)a->u.owners.heroes[i]=r_u32(r);
         a->u.owners.revision=r_u32(r);a->u.owners.mask=r_u8(r);break;
+    case DD_ACT_UNEQUIP_ALL:
+        a->u.unequip.before=r_u64(r);a->u.unequip.after=r_u64(r);a->u.unequip.count=r_u16(r);break;
     case DD_ACT_TREATMENT:
         a->u.treatment.activity=r_u8(r);a->u.treatment.slot=r_u8(r);a->u.treatment.group=r_u8(r);a->u.treatment.state=r_u8(r);
         a->u.treatment.entry=r_u16(r);a->u.treatment.hero_id=r_u32(r);r_bytes(r,a->u.treatment.quirk,64);break;

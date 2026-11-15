@@ -1,5 +1,5 @@
 /* Uses real Hamlet hooks/authority/reads. Only native game operations and read-only roots are faked. */
-static uint8_t hm_entries[3][0x1638], hm_wallet[4 * 0x48], hm_town[0x4100], hm_widgets[4][0x180],
+static uint8_t hm_entries[3][0x1638], hm_wallet[4 * 0x48], hm_town[0x4800], hm_widgets[4][0x180],
     hm_slots[4][0x300];
 #define hm_roster_panel (hm_town + 0x2f48)
 #define hm_embark (hm_town + 0x3640)
@@ -1281,10 +1281,10 @@ static void hm_trinkets(void) {
     hm_reset(DD_ROLE_HOST);
     hook_trinket_sort(NULL);
     hook_trinket_unequip_all(NULL);
-    CHECK(!hm_native && g_shop_notice[0]);
+    CHECK(hm_native==1 && g_shop_notice[0]); /* Unequip All opens its ordinary local confirmation; model still waits. */
     g_cfg.role = DD_ROLE_OFF;
     hook_trinket_sort(NULL);
-    CHECK(hm_native == 1);
+    CHECK(hm_native == 2);
     hm_reset(DD_ROLE_GUEST);
     putptr(source_ui + 0x30, (uintptr_t)hm_estate[0]);
     putint(hm_estate[0], 2);
@@ -1358,6 +1358,32 @@ static void hm_secret_room_trinkets(void) {
     putint(source + 0xb8, 0);
     putptr(target + 0x18, (uintptr_t)(hm_entries[0] + 8 + 0x1280));
     putint(target + 0xa8, 1);
+    /* Native OverlayLoot owns a separate InventoryBar at +8. Its widgets and Item copies are not the
+     * Raid+5140 wrapper modeled by the old fixture. The live test90 log refused this source. */
+    uint8_t loot_bar[0x30]={0}, ui_inventory[0x30]={0}, ui_items[2][0x5a8]={0};
+    uint64_t ui_widgets[2]={(uintptr_t)source,0};
+    memcpy(ui_items[0],presentation,sizeof presentation);
+    putptr(hm_display+DD_WALK_LOOT_OVERLAY+8,(uintptr_t)loot_bar);
+    putptr(loot_bar+8,(uintptr_t)ui_inventory);putptr(loot_bar+0x10,(uintptr_t)ui_widgets);
+    putptr(loot_bar+0x18,(uintptr_t)(ui_widgets+2));
+    putptr(ui_inventory+8,(uintptr_t)ui_items);putptr(ui_inventory+0x10,(uintptr_t)(ui_items+2));
+    putptr(source+0x28,(uintptr_t)ui_inventory);putptr(source+0x30,(uintptr_t)ui_items[0]);
+    {
+        dd_hamlet model;uint64_t inv=0;uint32_t owner=0,at=0;uint8_t foreign[0x100]={0};
+        CHECK(g_hamlet_open_model(&model));memcpy(foreign,source,sizeof foreign);
+        CHECK(hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[0],&inv,&owner,&at) && owner==DD_TRINKET_LOOT && at==2);
+        CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)foreign,(uintptr_t)ui_items[0],&inv,&owner,&at));
+        CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)(ui_items+2),&inv,&owner,&at));
+        hm_loot_window(3);CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[0],&inv,&owner,&at));hm_loot_window(2);
+        ui_widgets[1]=(uintptr_t)source;CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[0],&inv,&owner,&at));ui_widgets[1]=0;
+        putptr(ui_inventory+0x10,(uintptr_t)(ui_items+2)+1);CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[0],&inv,&owner,&at));
+        putptr(ui_inventory+0x10,(uintptr_t)(ui_items+2));
+        uint8_t old[0x5a8];memcpy(old,hm_raid_loot[0],sizeof old);memcpy(hm_raid_loot[0],hm_raid_loot[2],sizeof old);
+        CHECK(!hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[0],&inv,&owner,&at)); /* Copy counts disagree. */
+        memcpy(ui_items[1],ui_items[0],sizeof old);putptr(source+0x30,(uintptr_t)ui_items[1]);
+        CHECK(hamlet_loot_widget_source(&model,(uintptr_t)source,(uintptr_t)ui_items[1],&inv,&owner,&at) && at==2); /* Second identical head, not the first. */
+        memcpy(hm_raid_loot[0],old,sizeof old);memset(ui_items[1],0,sizeof old);putptr(source+0x30,(uintptr_t)ui_items[0]);
+    }
     hook_trinket_pickup_inventory(source, NULL, NULL, drag);
     CHECK(g_trinket_drag.valid == 1 && g_trinket_drag.slot==2 && !g_shop_notice[0]);
     CHECK(!hook_trinket_drop_hero(target, NULL, drag));
@@ -1445,6 +1471,7 @@ static void hm_secret_room_trinkets(void) {
     putptr(sale_image + 0x118e2c8, 0);
     puts("Secret-room trinkets: loot slot to hero uses native Item lifetime on host and guest; second head stays in the chest");
 }
+static void hm_bulk_checks(void);
 static void hamlet_transactions(void) {
     hm_names_and_skills();
     hm_upgrades_and_refresh();
@@ -1460,5 +1487,82 @@ static void hamlet_transactions(void) {
     hm_party_panel_wait();
     hm_trinkets();
     hm_secret_room_trinkets();
+    hm_bulk_checks();
     hm_connection_loss();
+}
+
+/* One native model operation, effects modeled. A remote inventory window may be closed. */
+static unsigned hb_calls,hb_saves,hb_partial;
+static int hb_no_raid(walk_view *v){(void)v;return 0;}
+static int hb_has_raid(walk_view *v){memset(v,0,sizeof *v);v->raid=1;return 1;}
+static void __fastcall hb_save(void *campaign,int flag){CHECK(campaign==world_campaign && !flag);hb_saves++;}
+static void __fastcall hb_native(void *campaign,void *estate) {
+    CHECK(campaign==world_campaign && estate==world_campaign+0xe88);hb_calls++;
+    for(unsigned h=0;h<3;h++) {
+        uint32_t status=0;memcpy(&status,hm_entries[h]+0x15b0,4);if(status==3)continue;
+        for(unsigned slot=0;slot<2;slot++)if(hm_gear[h][slot][0]) {
+            unsigned dest=0;while(dest<4 && hm_estate[dest][0])dest++;CHECK(dest<4);if(dest==4)return;
+            memcpy(hm_estate[dest],hm_gear[h][slot],0x5a8);memset(hm_gear[h][slot],0,0x5a8);
+            if(hb_partial)return;
+        }
+    }
+}
+static void hb_reset(unsigned player) {
+    hm_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST);g_cfg.player=(int)player;
+    g_town.next_request=(player<<24)|1u;hb_calls=hb_saves=hb_partial=0;
+    g_walk_view=hb_no_raid;g_trinket_bulk_model=hb_native;g_trinket_bulk_caller=hm_input;g_recruit_save[0]=hb_save;
+    putint(hm_entries[1]+0x15b0,2);putint(hm_entries[2]+0x15b0,3);
+    memcpy(hm_gear[0][0],hm_estate[0],0x5a8);memcpy(hm_gear[1][1],hm_estate[0],0x5a8);
+    memcpy(hm_gear[2][1],hm_estate[1],0x5a8); /* Native excludes the dead hero, but keeps both identical live trinkets. */
+    putptr(hm_town+0x4058,(uintptr_t)sale_image+0xebef28);putint(hm_town+0x4058+0x538,0);
+}
+static dd_msg hb_codec(dd_msg m) {
+    uint8_t bytes[DD_PROTO_HEADER+DD_PROTO_MAX_BODY];size_t used=0;dd_msg out={0};
+    size_t n=dd_encode(&m,bytes,sizeof bytes);CHECK(n && dd_decode(bytes,n,&out,&used)==DD_DECODE_OK && used==n);return out;
+}
+static void hb_result(void) {
+    unsigned n=0,a=0,b=0;for(unsigned i=0;i<4;i++)if(hm_estate[i][0]){uint32_t id=0;memcpy(&id,hm_estate[i]+0x88,4);n++;a+=id==101;b+=id==102;}
+    CHECK(n==4 && a==3 && b==1 && !hm_gear[0][0][0] && !hm_gear[1][1][0] && hm_gear[2][1][0]);
+    uint32_t dirty=0;memcpy(&dirty,hm_town+0x4058+0x538,4);
+    CHECK(hb_calls==1 && hb_saves==1 && dirty==1 && !hm_item_alive && !g_town.needs_resync);
+}
+static void hm_bulk_checks(void) {
+    trinket_bulk_model_fn old_model=g_trinket_bulk_model;
+    int (*old_caller)(uintptr_t)=g_trinket_bulk_caller;int (*old_walk)(walk_view *)=g_walk_view;
+    recruit_save_fn old_save=g_recruit_save[0];dd_msg apply={0},request={0};
+    for(unsigned player=0;player<4;player++) {
+        hb_reset(player);hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);
+        if(player) {
+            CHECK(!hb_calls && !hb_saves && hm_gear[0][0][0] && sent==1 && last_message.type==DD_MSG_TOWN_REQUEST);
+            request=hb_codec(last_message);hb_reset(0);CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();
+        }
+        CHECK(g_town.accepted==1 && last_message.type==DD_MSG_TOWN_APPLY && last_message.u.town.action.kind==DD_ACT_UNEQUIP_ALL);
+        hb_result();apply=hb_codec(last_message);
+        for(unsigned guest=1;guest<=3;guest++) {
+            hb_reset(guest);
+            uint8_t temp[0x5a8];memcpy(temp,hm_estate[0],sizeof temp);memcpy(hm_estate[0],hm_estate[1],sizeof temp);memcpy(hm_estate[1],temp,sizeof temp);
+            uint64_t entry=world_roster[0];world_roster[0]=world_roster[2];world_roster[2]=entry;
+            CHECK(queue_push(&g_incoming,&apply));dd_runtime_poll();hb_result();CHECK(g_town.applied_seq==1);
+            /* Replayed APPLY is never a second native call. */
+            CHECK(queue_push(&g_incoming,&apply));dd_runtime_poll();CHECK(hb_calls==1 && g_town.needs_resync);
+        }
+    }
+    /* Crossed confirmations with equal prestate coalesce to one native effect. */
+    hb_reset(1);hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);request=hb_codec(last_message);
+    hb_reset(0);CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();hb_result();
+    request.u.town.request_id=0x02000001u;CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();
+    CHECK(g_town.accepted==2 && hb_calls==1 && !g_town.needs_resync);
+    /* A stale held/estate item rejects before native work. */
+    hb_reset(0);putint(hm_gear[0][0]+0x88,999);CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();
+    CHECK(!hb_calls && !g_town.accepted && g_town.rejected==1 && !g_town.needs_resync);
+    /* Partial native result stops and never becomes an acknowledged success. */
+    hb_reset(2);hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);request=hb_codec(last_message);
+    hb_reset(0);hb_partial=1;CHECK(queue_push(&g_incoming,&request));dd_runtime_poll();
+    CHECK(hb_calls==1 && !hb_saves && !g_town.accepted && g_town.needs_resync);
+    hb_reset(1);g_trinket_bulk_caller=hm_not_input;hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);CHECK(!sent && !hb_calls);
+    hb_reset(1);g_walk_view=hb_has_raid;hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);CHECK(!sent && !hb_calls);
+    hb_reset(1);g_session_ready=0;hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);CHECK(!sent && !hb_calls);
+    hb_reset(0);memset(hm_gear,0,sizeof hm_gear);hook_trinket_bulk_model(world_campaign,world_campaign+0xe88);CHECK(!sent && !hb_calls);
+    g_trinket_bulk_model=old_model;g_trinket_bulk_caller=old_caller;g_walk_view=old_walk;g_recruit_save[0]=old_save;
+    puts("Unequip All: all4 initiators/3 receivers, native model once, no remote panel, estate/roster reorder, duplicate IDs, dead hero retention, crossed/replayed/stale requests, partial effects and raid/unready/foreign caller refusal verified");
 }

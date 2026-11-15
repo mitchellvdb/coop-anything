@@ -51,6 +51,7 @@ static dd_action act(uint8_t kind) {
     case DD_ACT_TRINKET_MOVE: a.u.move.src_type=1;a.u.move.src_id=1;a.u.move.dst_slot=1;break;
     case DD_ACT_FORMATION_RESET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_FORMATION_SET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
+    case DD_ACT_UNEQUIP_ALL: a.u.unequip.before=1;a.u.unequip.after=2;a.u.unequip.count=3;break;
     case DD_ACT_TREATMENT: a.u.treatment.activity=DD_ACTIVITY_QUIRK_TREATMENT;a.u.treatment.slot=1;a.u.treatment.group=1;a.u.treatment.state=1;a.u.treatment.entry=2;a.u.treatment.hero_id=7;strcpy(a.u.treatment.quirk,"kleptomaniac");break;
     case DD_ACT_PARTY: a.u.party.before[0]=1;a.u.party.after[1]=1;break;
     case DD_ACT_SUPPLIES: a.u.supplies.op=DD_SUPPLY_BUY;a.u.supplies.type=0x72f14069;
