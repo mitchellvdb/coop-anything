@@ -10,7 +10,7 @@ enum {
     DD_PLACE_HERO, DD_PLACE_GRAVEYARD, DD_PLACE_ANCESTOR, DD_PLACE_ACTIVITY_LOG,
     DD_PLACE_DUNGEON, DD_PLACE_LOADING, DD_PLACE_BUILDING, DD_PLACE_COUNT
 };
-static const char *dd_presence_label(unsigned code) {
+static inline const char *dd_presence_label(unsigned code) {
     static const char *const labels[] = {
         "Status unavailable", "Hamlet", "Guild", "Blacksmith", "Tavern", "Abbey",
         "Sanitarium", "Survivalist", "Stagecoach", "Nomad Wagon", "Heirloom exchange",
@@ -20,7 +20,7 @@ static const char *dd_presence_label(unsigned code) {
     };
     return labels[code < DD_PLACE_COUNT ? code : 0];
 }
-static int dd_presence_valid(unsigned kind, unsigned mask, const uint8_t place[4]) {
+static inline int dd_presence_valid(unsigned kind, unsigned mask, const uint8_t place[4]) {
     if (kind > 1 || !mask || mask > 15 || (kind == 1 ? !(mask & 1) : ((mask & 1) || (mask & (mask-1))))) return 0;
     for (unsigned i=0;i<4;i++)
         if (place[i]>=DD_PLACE_COUNT || (!(mask&(1u<<i)) && place[i])) return 0;
