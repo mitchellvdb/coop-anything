@@ -170,6 +170,24 @@ static void test_roundtrip(void) {
         walk_len = dd_encode(&w, buf, sizeof buf);
         CHECK(walk_len && dd_decode(buf, walk_len, &back, &walk_used) == DD_DECODE_BAD_VALUE, "busy is 0 or 1");
     }
+    /* Presence is finite display data, never an ordered action. */
+    for(unsigned kind=0;kind<2;kind++)for(unsigned player=1;player<4;player++) {
+        dd_msg a={0},b={0};size_t used=0;
+        a.type=DD_MSG_PRESENCE;a.u.presence.kind=(uint8_t)kind;
+        a.u.presence.mask=kind?15:(uint8_t)(1u<<player);
+        for(unsigned i=0;i<4;i++)if(a.u.presence.mask&(1u<<i))a.u.presence.place[i]=(uint8_t)(DD_PLACE_GUILD+i);
+        size_t bytes=dd_encode(&a,buf,sizeof buf);
+        CHECK(bytes==22 && dd_decode(buf,bytes,&b,&used)==DD_DECODE_OK && used==bytes &&
+              !memcmp(&a.u.presence,&b.u.presence,sizeof a.u.presence),"presence round trip");
+        buf[18]=DD_PLACE_COUNT;
+        CHECK(dd_decode(buf,bytes,&b,&used)==DD_DECODE_BAD_VALUE,"presence unknown location refused");
+        a.seq=1;CHECK(!dd_encode(&a,buf,sizeof buf),"presence cannot carry action sequence");
+        a.seq=0;a.u.presence.kind=2;CHECK(!dd_encode(&a,buf,sizeof buf),"presence kind bounded");
+        a.u.presence.kind=0;a.u.presence.mask=3;CHECK(!dd_encode(&a,buf,sizeof buf),"guest cannot publish host/multiple rows");
+        a.u.presence.kind=1;a.u.presence.mask=14;CHECK(!dd_encode(&a,buf,sizeof buf),"snapshot must contain host");
+        a.u.presence.mask=1;a.u.presence.place[3]=DD_PLACE_GUILD;
+        CHECK(!dd_encode(&a,buf,sizeof buf),"absent row cannot carry location");
+    }
     p.type = DD_MSG_PING;
     p.u.ping.time_ms = 0x0102030405060708ULL;
     n = dd_encode(&p, buf, sizeof buf);

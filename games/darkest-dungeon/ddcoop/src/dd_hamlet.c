@@ -153,6 +153,61 @@ int dd_hamlet_panel(const dd_hamlet *s, uint32_t vt_rva, uint64_t *out) {
     *out = town + offset;
     return 1;
 }
+/* Current normal TownDisplay: dynamic building screens are owned at5548..5550
+ * and registered in GuiSystem+48 by6dcd6e..6dcda9. Native6e0b75 reads their
+ * state58. Embedded screen offsets are from ctor6da6e0 ->6dad90, not old town. */
+static unsigned presence_building(uint32_t vt) {
+    switch(vt) {
+    case 0xebb8d8:return DD_PLACE_GUILD;
+    case 0xeb8c70:return DD_PLACE_BLACKSMITH;
+    case 0xec1c50:return DD_PLACE_TAVERN;
+    case 0xeb6b78:return DD_PLACE_ABBEY;
+    case 0xec0720:return DD_PLACE_SANITARIUM;
+    case 0xeb9ae0:return DD_PLACE_SURVIVALIST;
+    case 0xec0dc8:return DD_PLACE_STAGECOACH;
+    case 0xebd730:return DD_PLACE_WAGON;
+    case 0xebb5a8:return DD_PLACE_GRAVEYARD;
+    case 0xec1750:return DD_PLACE_ANCESTOR;
+    default:return DD_PLACE_BUILDING;
+    }
+}
+unsigned dd_hamlet_presence(const dd_hamlet *s) {
+    static const struct {uint32_t offset,vt;unsigned code;} embedded[] = {
+        {0x3770,0xebdde8,DD_PLACE_PROVISIONS}, {0x38c0,0xee2ae8,DD_PLACE_HERO},
+        {0x4058,0xebef28,DD_PLACE_TRINKETS}, {0x45b8,0xebbda0,DD_PLACE_HEIRLOOMS},
+        {0x4670,0xec2020,DD_PLACE_EVENT}, {0x2a00,0xeba368,DD_PLACE_DISTRICTS},
+        {0x3478,0xebe530,DD_PLACE_EXPEDITIONS}, {0x17a8,0xeb7c68,DD_PLACE_ACTIVITY_LOG}
+    };
+    uint64_t town=0,raid=0,vt=0,begin=0,manager=0;
+    unsigned count=0,found=DD_PLACE_HAMLET;
+    uint8_t mode=1;
+    if(!rd(s,s->image+0x2a6d4bb,&mode,1) || mode ||
+       !ptr(s,s->image+0x118e2c8,&raid) || raid ||
+       !ptr(s,s->image+0x118e360,&town) || !town || town>UINT64_MAX-0x6200 ||
+       !ptr(s,town,&vt) || vt!=s->image+0xec37a8 ||
+       !ptr(s,town+0x1730,&manager) || !manager ||
+       !vector(s,town+0x5548,8,32,&begin,&count))return DD_PLACE_UNKNOWN;
+    /* Highest visible overlay wins over the building underneath it. Invalid
+     * child identity means unavailable, never reuse last frame's location. */
+    for(unsigned i=0;i<sizeof embedded/sizeof embedded[0];i++) {
+        uint32_t state=0;
+        if(!ptr(s,town+embedded[i].offset,&vt) || vt!=s->image+embedded[i].vt ||
+           !word(s,town+embedded[i].offset+0x58,&state) || state>7)return DD_PLACE_UNKNOWN;
+        if(state>=1 && state<=4)return embedded[i].code;
+    }
+    for(unsigned i=0;i<count;i++) {
+        uint64_t panel=0,owner=0;uint32_t state=0;
+        if(!ptr(s,begin+8*i,&panel) || !panel || panel>UINT64_MAX-0x60 ||
+           !ptr(s,panel,&vt) || vt<s->image || vt-s->image>UINT32_MAX ||
+           !ptr(s,panel+8,&owner) || owner!=town || !word(s,panel+0x58,&state) || state>7)
+            return DD_PLACE_UNKNOWN;
+        if(state>=1 && state<=4) {
+            if(found!=DD_PLACE_HAMLET)return DD_PLACE_UNKNOWN; /* transition: two buildings visible */
+            found=presence_building((uint32_t)(vt-s->image));
+        }
+    }
+    return found;
+}
 static int party_ids_valid(const dd_hamlet *s, const uint32_t ids[4], int available) {
     for (unsigned i = 0; i < 4; i++)
         if (ids[i]) {

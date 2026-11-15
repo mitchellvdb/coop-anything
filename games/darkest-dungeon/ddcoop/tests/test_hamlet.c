@@ -80,7 +80,36 @@ static dd_hamlet setup(void) {
     CHECK(dd_hamlet_open(&s, read_mem, NULL, image, campaign));
     return s;
 }
+static void presence_checks(void) {
+    static const uint32_t off[]={0x3770,0x38c0,0x4058,0x45b8,0x4670,0x2a00,0x3478,0x17a8};
+    static const uint32_t vt[]={0xebdde8,0xee2ae8,0xebef28,0xebbda0,0xec2020,0xeba368,0xebe530,0xeb7c68};
+    static const unsigned code[]={DD_PLACE_PROVISIONS,DD_PLACE_HERO,DD_PLACE_TRINKETS,DD_PLACE_HEIRLOOMS,
+        DD_PLACE_EVENT,DD_PLACE_DISTRICTS,DD_PLACE_EXPEDITIONS,DD_PLACE_ACTIVITY_LOG};
+    static const uint32_t building[]={0xebb8d8,0xeb8c70,0xec1c50,0xeb6b78,0xec0720,0xeb9ae0,0xec0dc8,0xebd730,0xebb5a8,0xec1750};
+    static const unsigned place[]={DD_PLACE_GUILD,DD_PLACE_BLACKSMITH,DD_PLACE_TAVERN,DD_PLACE_ABBEY,DD_PLACE_SANITARIUM,
+        DD_PLACE_SURVIVALIST,DD_PLACE_STAGECOACH,DD_PLACE_WAGON,DD_PLACE_GRAVEYARD,DD_PLACE_ANCESTOR};
+    dd_hamlet s=setup();p64(town+0x1730,registry);vec(town+0x5548,panels,8);p64(panels,screen);
+    p64(screen+8,town);p64(screen,image+building[0]);
+    for(unsigned i=0;i<8;i++){p64(town+off[i],image+vt[i]);p32(town+off[i]+0x58,0);}
+    CHECK(dd_hamlet_presence(&s)==DD_PLACE_HAMLET);
+    for(unsigned i=0;i<10;i++)for(unsigned state=0;state<8;state++) {
+        p64(screen,image+building[i]);p32(screen+0x58,state);
+        CHECK(dd_hamlet_presence(&s)==(state>=1 && state<=4?place[i]:DD_PLACE_HAMLET));
+    }
+    p64(screen,image+building[0]);p32(screen+0x58,4);
+    for(unsigned i=0;i<8;i++) {
+        p32(town+off[i]+0x58,4);CHECK(dd_hamlet_presence(&s)==code[i]);
+        p32(town+off[i]+0x58,0);
+    }
+    p64(screen+8,0);CHECK(dd_hamlet_presence(&s)==DD_PLACE_UNKNOWN);p64(screen+8,town);
+    vec(town+0x5548,panels,33*8);CHECK(dd_hamlet_presence(&s)==DD_PLACE_UNKNOWN);
+    vec(town+0x5548,panels,16);p64(panels+8,screen);CHECK(dd_hamlet_presence(&s)==DD_PLACE_UNKNOWN);
+    vec(town+0x5548,panels,8);p64(image+0x118e2c8,screen);CHECK(dd_hamlet_presence(&s)==DD_PLACE_UNKNOWN);
+    p64(image+0x118e2c8,0);p64(town+off[0],0);CHECK(dd_hamlet_presence(&s)==DD_PLACE_UNKNOWN);
+    puts("Presence native model: all10 buildings/all8 panel states, overlay precedence, malformed/ambiguous/raid snapshots refused");
+}
 int main(void) {
+    presence_checks();
     dd_hamlet s = setup();
     /* A secret-room trinket is in raid loot, not estate storage. Never treat
      * its inventory as a hero or let an arbitrary pointer become an endpoint. */

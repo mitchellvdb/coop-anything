@@ -20,10 +20,11 @@ static LRESULT CALLBACK fixture_proc(HWND w, UINT m, WPARAM a, LPARAM b) {
     }
     return DefWindowProcW(w, m, a, b);
 }
+static int fixture_w=1280,fixture_h=720;
 static void fixture_size(void *window, int *w, int *h) {
     (void)window;
-    *w = 1280;
-    *h = 720;
+    *w = fixture_w;
+    *h = fixture_h;
 }
 static int event(uint32_t kind, int x, int y, int key) {
     uint8_t e[56] = {0};
@@ -250,6 +251,50 @@ int main(int argc, char **argv) {
                 CHECK(!glIsEnabled(GL_SCISSOR_TEST) && !glIsEnabled(GL_BLEND) && mask[0] && !mask[1] && mask[2] && !mask[3]);
                 CHECK(glGetError() == GL_NO_ERROR);
                 s->players[1][0] = 0;
+            }
+            /* Same blocks in town: player-number order, names and independent locations. */
+            {
+                unsigned char codes[4]={DD_PLACE_HAMLET,DD_PLACE_GUILD,DD_PLACE_SANITARIUM,DD_PLACE_UNKNOWN};
+                char label[64];unsigned char px[4]={0};
+                strcpy(s->players[0],"Rowan");strcpy(s->players[1],"Avery");
+                strcpy(s->players[2],"Camille");strcpy(s->players[3],"Very long player name for test");
+                s->updated=GetTickCount64();O.last_read=0;
+                dd_overlay_presence(1,15,1,codes);dd_overlay_draw((void *)1);
+                CHECK(O.in_town && block_count()==4 && strstr(O.name_key,"P2  Avery|Guild"));
+                party_box(0,&x,&y,&w,&h);CHECK(x==12 && h==46);
+                glReadPixels(x+2,y+h-2,1,1,GL_RGBA,GL_UNSIGNED_BYTE,px);CHECK(px[0]>180 && px[1]<180);
+                party_box(1,&x,&y,&w,&h);
+                glReadPixels(x+2,y+h-2,1,1,GL_RGBA,GL_UNSIGNED_BYTE,px);CHECK(px[1]>150 && px[0]<120);
+                /* Both name and location rows have non-empty rasterized glyphs. */
+                for(int line=0;line<2;line++) {
+                    unsigned painted=0;
+                    for(int yy=line?24:3;yy<(line?43:22);yy++)for(int xx=w+10;xx<2*w;xx++)
+                        painted+=O.name_pixels[((size_t)yy*O.name_w+xx)*4+3]>20;
+                    CHECK(painted>10);
+                }
+                party_box(3,&x,&y,&w,&h);
+                glReadPixels(x+2,y+h-2,1,1,GL_RGBA,GL_UNSIGNED_BYTE,px);CHECK(px[0]>90 && px[0]<150);
+                if(argc>1) {char out[260];snprintf(out,sizeof out,"%s.hamlet.bmp",argv[1]);save_region(out,0,y-8,4*(w+6)+24,h+28);}
+                codes[1]=DD_PLACE_PROVISIONS;dd_overlay_presence(1,15,1,codes);dd_overlay_draw((void *)1);
+                CHECK(strstr(O.name_key,"P2  Avery|Provisions") && !strstr(O.name_key,"|Guild"));
+                dd_overlay_presence(1,9,0,codes);dd_overlay_draw((void *)1);
+                CHECK(block_count()==2 && O.presence_player[0]==0 && O.presence_player[1]==3);
+                /* Name fallback and long UTF8 names keep finite text and stable geometry. */
+                O.fresh=0;party_label(1,label,sizeof label);CHECK(!strcmp(label,"Player 4"));O.fresh=1;
+                DWORD objects=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
+                for(int n=0;n<80;n++) {
+                    fixture_w=n%2?400:1280;
+                    dd_overlay_presence(n%2,15,0,codes);dd_overlay_draw((void *)1);
+                    party_box(3,&x,&y,&w,&h);
+                    if(O.in_town)CHECK(x+w<=fixture_w-12);
+                }
+                CHECK(GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS)<=objects+2);
+                fixture_w=1280;dd_overlay_presence(0,0,0,codes);dd_overlay_draw((void *)1);
+                CHECK(!O.in_town && block_count()==4);
+                glGetBooleanv(GL_COLOR_WRITEMASK,mask);glGetIntegerv(GL_VIEWPORT,viewport);
+                CHECK(mask[0] && !mask[1] && mask[2] && !mask[3] && !glIsEnabled(GL_BLEND));
+                CHECK(viewport[0]==11 && viewport[1]==17 && viewport[2]==400 && viewport[3]==500 && glGetError()==GL_NO_ERROR);
+                memset(s->players,0,sizeof s->players);O.last_read=0;
             }
             dd_overlay_party(0, NULL, NULL);
             CHECK(!O.party_count && !O.party_player[0]);

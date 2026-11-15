@@ -33,6 +33,10 @@ void dd_overlay_turn(int turn) { overlay_turn_state = turn; }
 static int overlay_party_count, overlay_party_owner[4];
 static float overlay_party_stress[4];
 static int overlay_party_player[4];
+static int overlay_presence_town;static unsigned overlay_presence_mask;static unsigned char overlay_presence_codes[4];
+void dd_overlay_presence(int town,unsigned mask,int self,const unsigned char place[4]) {
+    (void)self;overlay_presence_town=town;overlay_presence_mask=mask;memcpy(overlay_presence_codes,place,4);
+}
 void dd_overlay_party_players(const int player[4]) {
     for (int i = 0; i < 4; i++) overlay_party_player[i] = player ? player[i] : -1;
 }
@@ -913,6 +917,7 @@ static void treatment_draft_checks(void) {
 #include "runtime_transport_stop_fixture.inc"
 #include "runtime_recruit_pool_fixture.inc"
 #include "runtime_notice_fixture.inc"
+#include "runtime_presence_fixture.inc"
 int main(void) {
     queue_init(&g_pool_controls);
     queue_init(&g_incoming);
@@ -954,6 +959,7 @@ int main(void) {
         queue_clear(&g_outgoing);
         reset(DD_ROLE_HOST);
     }
+    presence_checks();
     transport_stop_checks();
     reset(DD_ROLE_HOST);
     recruit_transactions();

@@ -1131,6 +1131,7 @@ static void bag_drag_done(void);
 #include "dd_walk_bridge.inc"
 #include "dd_recruit_pool_bridge.inc"
 #include "dd_weekly_bridge.inc"
+#include "dd_presence_bridge.inc"
 
 enum { DD_RUNTIME_HOOK_COUNT = 9 + sizeof g_hamlet_hooks / sizeof *g_hamlet_hooks +
     sizeof g_supply_hooks / sizeof *g_supply_hooks + sizeof g_departure_hooks / sizeof *g_departure_hooks +
@@ -1257,12 +1258,24 @@ static int session_loop(dd_conn *c, int host, int player) {
     InterlockedExchange(&g_session_seen, 1);
     if (host) dd_log("direct TCP session ready (role=host, guest player %d, %ld connected)", player, (long)InterlockedCompareExchange(&g_guest_count, 0, 0));
     else dd_log("direct TCP session ready (role=guest, player %d)", g_cfg.player);
+    dd_msg presence_last={0};
+    uint64_t presence_sent_at=0;
     for (;;) {
         dd_msg m;
         if (!session_send_pending(c, out, dd_conn_send)) return 0;
+        dd_msg status;uint64_t presence_now=GetTickCount64();
+        presence_message(host,&status,presence_now);
+        if(!presence_sent_at || presence_now-presence_sent_at>=1000 || memcmp(&status.u.presence,&presence_last.u.presence,sizeof status.u.presence)) {
+            if(!dd_conn_send(c,&status))return 0;
+            presence_last=status;presence_sent_at=presence_now;
+        }
         dd_poll_result p = dd_conn_poll(c, 20, &m);
         if (p == DD_POLL_CLOSED) return 0;
         if (p != DD_POLL_MSG) continue;
+        if(m.type==DD_MSG_PRESENCE) {
+            (void)presence_receive(&m,host,player,GetTickCount64());
+            continue; /* Display-only: no gameplay queue/ACK/effect, including wrong-role controls. */
+        }
         if (m.type == DD_MSG_SYNC_STOP) {
             InterlockedExchange(&g_peer_sync_stop, (LONG)m.u.load.slot);
             if (host) InterlockedCompareExchange(&g_transport_sync_stop, (LONG)m.u.load.slot, 0);
@@ -1333,6 +1346,7 @@ static DWORD WINAPI guest_main(void *socket) {
         dd_conn_free(&c);
         return 0;
     }
+    presence_clear(player);
     queue_clear(guest_out(player - 1));
     InterlockedExchange(&g->load_slot, 0);
     InterlockedExchange(&g->busy, 0);
@@ -1341,6 +1355,7 @@ static DWORD WINAPI guest_main(void *socket) {
     InterlockedExchange64(&g_guest_change_at, (LONG64)GetTickCount64());
     if (!session_loop(&c, 1, player)) dd_log("guest disconnected (player %d)", player);
     InterlockedExchange(&g->ready, 0);
+    presence_clear(player);
     InterlockedExchange64(&g_walk_intents[player - 1], 0);
     InterlockedExchange(&g->load_slot, 0);
     queue_clear(guest_out(player - 1));
@@ -1393,6 +1408,7 @@ static DWORD WINAPI network_main(void *unused) {
             dd_conn c;
             if (!dd_conn_init(&c, s)) { dd_net_close(s); Sleep(1000); continue; }
             if (dd_conn_handshake_guest(&c, g_cfg.password, DD_HELLO_TIMEOUT_MS) && exchange_hello(&c, 0, NULL)) {
+                presence_clear(-1);
                 if (!session_loop(&c, 0, g_cfg.player)) dd_log("host disconnected");
                 InterlockedExchange(&g_session_lost, 1);
             } else {
@@ -1541,6 +1557,7 @@ static void runtime_poll_once(void) {
     if (peer_stop) runtime_stop_shared((uint32_t)peer_stop, g_cfg.role == DD_ROLE_HOST); /* The host tells the other guests. */
     frontend_poll();
     runtime_publish_state();
+    presence_poll();
     alone_town_poll();
     if (!InterlockedCompareExchange(&g_campaign_active, 0, 0)) {
         g_shop_status = -1;

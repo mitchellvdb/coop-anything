@@ -4,6 +4,7 @@
 #include "dd_overlay.h"
 #include "dd_overlay_wire.h"
 #include "dd_log.h"
+#include "dd_presence.h"
 #include <windows.h> /* The Windows SDK requires this before GL/gl.h. */
 #include <GL/gl.h>
 #include <stddef.h>
@@ -56,7 +57,9 @@ static struct {
     HFONT name_font;
     int name_w, name_h, name_font_px, name_dirty;
     GLuint name_texture;
-    char name_key[256];
+    char name_key[768];
+    int in_town, presence_count, presence_player[4], presence_self;
+    unsigned char presence_code[4];
 } O;
 
 /* Function pointers deliberately use the Windows OpenGL calling convention. */
@@ -293,12 +296,25 @@ static void turn_strip(void) {
     if (!scissor) glDisable(GL_SCISSOR_TEST);
     glColorMask(mask[0], mask[1], mask[2], mask[3]);
 }
+void dd_overlay_presence(int town,unsigned mask,int self,const unsigned char place[4]) {
+    O.in_town=town!=0;O.presence_count=0;O.presence_self=self;
+    for(int p=0;p<4;p++)if(mask&(1u<<p)) {
+        int i=O.presence_count++;O.presence_player[i]=p;
+        O.presence_code[i]=place && place[p]<DD_PLACE_COUNT?place[p]:0;
+    }
+}
+static int block_count(void) {return O.in_town?O.presence_count:O.party_count;}
 /* Where block i (0 = the front rank) goes, in GL pixels (origin bottom left). */
 static void party_box(int i, int *x, int *y, int *w, int *h) {
     int strip = O.draw_h >= 900 ? 12 : 8;
     *w = O.draw_w / 16 < 60 ? 60 : O.draw_w / 16;
     *h = *w * 2 / 5;
-    *x = 12 + (O.party_count - 1 - i) * (*w + 6);
+    if(O.in_town) {
+        int available=(O.draw_w-24-18)/4;
+        *w=O.draw_w/7;if(*w<126)*w=126;if(*w>200)*w=200;if(*w>available)*w=available;
+        *h=46;
+    }
+    *x = 12 + (O.in_town?i:(O.party_count - 1 - i)) * (*w + 6);
     *y = O.draw_h - strip - 6 - *h;
 }
 static void party_clear(int x, int y, int w, int h, float r, float g, float b) {
@@ -317,13 +333,15 @@ static void party_marks(void) {
     glGetBooleanv(GL_COLOR_WRITEMASK, mask);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_SCISSOR_TEST);
-    for (int i = 0; i < O.party_count; i++) {
+    for (int i = 0; i < block_count(); i++) {
         int x, y, w, h, bar;
         party_box(i, &x, &y, &w, &h);
         bar = h / 4 < 3 ? 3 : h / 4;
-        if (O.party_owner[i] == DD_OVERLAY_TURN_MINE) party_clear(x, y, w, h, 0.30f, 0.80f, 0.45f);
-        else if (O.party_owner[i] == DD_OVERLAY_TURN_OTHER) party_clear(x, y, w, h, 0.92f, 0.55f, 0.20f);
+        int owner=O.in_town?(O.presence_code[i]?(O.presence_player[i]==O.presence_self?DD_OVERLAY_TURN_MINE:DD_OVERLAY_TURN_OTHER):0):O.party_owner[i];
+        if (owner == DD_OVERLAY_TURN_MINE) party_clear(x, y, w, h, 0.30f, 0.80f, 0.45f);
+        else if (owner == DD_OVERLAY_TURN_OTHER) party_clear(x, y, w, h, 0.92f, 0.55f, 0.20f);
         else party_clear(x, y, w, h, 0.45f, 0.45f, 0.45f);
+        if(O.in_town)continue;
         party_clear(x + 2, y + 2, w - 4, bar, 0.08f, 0.08f, 0.08f);
         party_clear(x + 2, y + 2, (int)((w - 4) * O.party_stress[i] / 200.0f), bar, 0.95f, 0.95f, 0.95f);
     }
@@ -566,7 +584,7 @@ static void raster(void) {
     }
 footer:
     fill(4, O.height - 36, PANEL_W - 8, 32, RGB(34, 43, 56));
-    text(18, O.height - 29, 100, 24, "Copy logs", white, 0);
+    text(18, O.height - 29, 100, 24, O.fresh && (!strcmp(O.snapshot.role,"GUEST") || !strcmp(O.snapshot.role,"GAST"))?"Send logs":"Collect logs", white, 0);
     text(135, O.height - 29, 100, 24, "Copy code", white, 0);
     text(263, O.height - 29, 98, 24, "Launcher", white, 0);
     GdiFlush();
@@ -681,12 +699,16 @@ static void draw_texture(GLuint id, const void *pixels, int tw, int th, float x,
 /* The owner's name in each party block, black on its colour, above the stress bar. The bitmap is rebuilt only
  * when a label or the block size changes; between those the texture is drawn as it is. */
 static const char *party_label(int i, char *out, size_t cap) {
-    int player = O.party_player[i] - 1;
+    int player = O.in_town?O.presence_player[i]:O.party_player[i] - 1;
     if (player < 0) {
         if (cap) out[0] = 0;
         return out;
     }
-    if (O.fresh && O.snapshot.players[player][0]) snprintf(out, cap, "%s", O.snapshot.players[player]);
+    if (O.fresh && O.snapshot.players[player][0]) {
+        if(O.in_town)snprintf(out,cap,"P%d  %s",player+1,O.snapshot.players[player]);
+        else snprintf(out,cap,"%s",O.snapshot.players[player]);
+    }
+    else if (O.in_town)snprintf(out,cap,"Player %d",player+1);
     else if (player == 0) snprintf(out, cap, "Host");
     else snprintf(out, cap, "Player %d", player + 1);
     return out;
@@ -695,31 +717,31 @@ static int name_bitmap(int width, int height, int font_px) {
     if (!O.name_dc && !(O.name_dc = CreateCompatibleDC(NULL))) return 0;
     if (width != O.name_w || height != O.name_h || !O.name_bitmap) {
         BITMAPINFO info = {0};
-        if (O.name_bitmap) DeleteObject(O.name_bitmap);
-        O.name_bitmap = NULL;
-        O.name_pixels = NULL;
+
         info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
         info.bmiHeader.biWidth = width;
         info.bmiHeader.biHeight = -height;
         info.bmiHeader.biPlanes = 1;
         info.bmiHeader.biBitCount = 32;
         info.bmiHeader.biCompression = BI_RGB;
-        O.name_bitmap = CreateDIBSection(O.name_dc, &info, DIB_RGB_COLORS, (void **)&O.name_pixels, NULL, 0);
-        if (!O.name_bitmap || !O.name_pixels) {
-            O.name_w = O.name_h = 0;
-            return 0;
-        }
-        SelectObject(O.name_dc, O.name_bitmap);
+        void *pixels=NULL;
+        HBITMAP next=CreateDIBSection(O.name_dc,&info,DIB_RGB_COLORS,&pixels,NULL,0);
+        if(!next || !pixels){if(next)DeleteObject(next);return 0;}
+        SelectObject(O.name_dc,next);
+        if(O.name_bitmap)DeleteObject(O.name_bitmap);
+        O.name_bitmap=next;O.name_pixels=pixels;
         O.name_w = width;
         O.name_h = height;
     }
     if (font_px != O.name_font_px || !O.name_font) {
-        if (O.name_font) DeleteObject(O.name_font);
+
         /* Grey antialiasing, not ClearType: the coverage becomes the alpha below. */
-        O.name_font = CreateFontW(-font_px, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0,
+        HFONT next = CreateFontW(-font_px, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0,
                                   L"Segoe UI");
-        O.name_font_px = O.name_font ? font_px : 0;
-        if (!O.name_font) return 0;
+        if(!next)return 0;
+        SelectObject(O.name_dc,next);
+        if(O.name_font)DeleteObject(O.name_font);
+        O.name_font=next;O.name_font_px=font_px;
     }
     return 1;
 }
@@ -728,14 +750,15 @@ static void party_names(void) {
     int x, y, w, h, any = 0; /* the strip starts at x = 12 like the leftmost block (party_box) */
     size_t k;
     party_box(0, &x, &y, &w, &h);
-    int bar = h / 4 < 3 ? 3 : h / 4, top = 3, bottom = h - bar - 2, width = O.party_count * (w + 6) - 6;
-    int font_px = (bottom - top) * 4 / 5;
+    int count=block_count(),bar = h / 4 < 3 ? 3 : h / 4, top = 3, bottom = O.in_town?23:h - bar - 2, width = count * (w + 6) - 6;
+    int font_px = O.in_town?13:(bottom - top) * 4 / 5;
     if (font_px < 9 || width <= 0) return;
-    k = (size_t)snprintf(key, sizeof key, "%d %d %d", O.party_count, w, h);
-    for (int i = 0; i < O.party_count && k < sizeof key; i++) {
+    k = (size_t)snprintf(key, sizeof key, "%d %d %d %d", O.in_town,count, w, h);
+    for (int i = 0; i < count && k < sizeof key; i++) {
         party_label(i, labels[i], sizeof labels[i]);
         any |= labels[i][0] != 0;
-        k += (size_t)snprintf(key + k, sizeof key - k, "|%s", labels[i]);
+        if(O.in_town) k += (size_t)snprintf(key+k,sizeof key-k,"|%s|%s",labels[i],dd_presence_label(O.presence_code[i]));
+        else k += (size_t)snprintf(key+k,sizeof key-k,"|%s",labels[i]);
     }
     if (!any || !gl_ready()) return;
     if (strcmp(key, O.name_key)) {
@@ -744,12 +767,17 @@ static void party_names(void) {
         SetBkMode(O.name_dc, TRANSPARENT);
         SetTextColor(O.name_dc, RGB(255, 255, 255));
         SelectObject(O.name_dc, O.name_font);
-        for (int i = 0; i < O.party_count; i++) {
+        for (int i = 0; i < count; i++) {
             wchar_t wide[64] = {0};
-            int left = (O.party_count - 1 - i) * (w + 6);
+            int left = (O.in_town?i:(count - 1 - i)) * (w + 6);
             RECT r = {left + 4, top, left + w - 4, bottom};
             MultiByteToWideChar(CP_UTF8, 0, labels[i], -1, wide, 63);
             DrawTextW(O.name_dc, wide, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+            if(O.in_town) {
+                r.top=23;r.bottom=h-3;
+                MultiByteToWideChar(CP_UTF8,0,dd_presence_label(O.presence_code[i]),-1,wide,63);
+                DrawTextW(O.name_dc,wide,-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX);
+            }
         }
         GdiFlush();
         for (int i = 0; i < width * h; i++) {
@@ -766,7 +794,7 @@ static void party_names(void) {
     O.name_dirty = 0;
 }
 void dd_overlay_draw(void *window) {
-    if ((!O.visible && !O.turn && !O.party_count) || !window) return;
+    if ((!O.visible && !O.turn && !block_count()) || !window) return;
     read_snapshot();
     if (!g_overlay_window_size) {
         HMODULE sdl = GetModuleHandleW(L"SDL2_orig.dll");
@@ -783,8 +811,8 @@ void dd_overlay_draw(void *window) {
     g_overlay_drawable_size(window, &O.draw_w, &O.draw_h);
     if (w < 400 || h < 280 || O.draw_w <= 0 || O.draw_h <= 0) return;
     if (O.turn && wglGetCurrentContext()) turn_strip();
-    if (O.party_count && wglGetCurrentContext()) party_marks();
-    if (O.party_count && wglGetCurrentContext()) party_names();
+    if (block_count() && wglGetCurrentContext()) party_marks();
+    if (block_count() && wglGetCurrentContext()) party_names();
     if (!O.visible) return;
     O.width = w;
     O.scale = w >= 1800 ? 1.25f : 1.0f;

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "dd_trinket.h"
+#include "dd_presence.h"
 #define DD_HAMLET_HEROES 64
 #define DD_HAMLET_NAME 64
 #define DD_HAMLET_SKILLS 32
@@ -30,6 +31,8 @@ int dd_hamlet_currency(const dd_hamlet *, uint32_t, int32_t *);
 int dd_hamlet_exchange_valid(uint32_t, int32_t, uint32_t, int32_t);
 /* Pinned normal TownDisplay embedded panel; rechecks root/child vtables. -1=unavailable, 0=unknown kind. */
 int dd_hamlet_panel(const dd_hamlet *, uint32_t, uint64_t *);
+/* Passive normal TownDisplay location. Never writes or calls a game function. */
+unsigned dd_hamlet_presence(const dd_hamlet *);
 int dd_hamlet_party(const dd_hamlet *, uint32_t out[4]); /* Old IDs: identity/uniqueness, even if now busy. */
 int dd_hamlet_party_valid(const dd_hamlet *, const uint32_t ids[4]); /* NEW destination: all available. */
 int dd_hamlet_party_slots(const dd_hamlet *, uint64_t slots[4]);

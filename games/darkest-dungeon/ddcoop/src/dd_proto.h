@@ -13,10 +13,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "dd_trinket.h"
+#include "dd_presence.h"
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
 #define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
-#define DD_PROTO_VERSION 40 /* whole-stack raid bag/loot exchange with both endpoint quantities */
+#define DD_PROTO_VERSION 41 /* display-only player presence */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -32,6 +33,7 @@ typedef enum {
     DD_MSG_SYNC_STOP = 10, /* either peer: shared gameplay must stop; u.load.slot is bounded reason1..3 */
     DD_MSG_LOAD = 9,         /* both directions: this copy waits at the save screen to load menu slot u.load.slot */
     DD_MSG_POOL = 12, /* main-thread pool preflight, anchored after ordered actions */
+    DD_MSG_PRESENCE = 14, /* display-only guest location / host player snapshot */
     DD_MSG_WEEKLY = 13, /* host seed, consumed at exact native RaidFinish entry */
     DD_MSG_BUSY = 11,        /* guest -> host: 1 while a window in the raid (curio, loot, menu) keeps it from walking, 0 when free */
 } dd_msg_type;
@@ -125,6 +127,7 @@ typedef struct {
     uint32_t seq;
     union {
         dd_hello hello;
+        struct {uint8_t kind,mask,place[4];} presence;
         struct { uint32_t request_id; dd_action action; } town;   /* REQUEST and APPLY */
         struct { uint32_t request_id; uint8_t reason; } reject;
         struct { uint64_t time_ms; } ping;                        /* PING and PONG */

@@ -355,6 +355,7 @@ static size_t body_size(const dd_msg *m) {
     case DD_MSG_POOL: return 4+4+8+4+1+1;
     case DD_MSG_WEEKLY: return 12;
     case DD_MSG_BUSY: return 4;
+    case DD_MSG_PRESENCE: return 6;
     default: return 0;
     }
 }
@@ -367,6 +368,7 @@ size_t dd_encode(const dd_msg *m, uint8_t *buf, size_t cap) {
     if(m->type==DD_MSG_WEEKLY && (m->seq || !m->u.weekly.epoch || !m->u.weekly.rules || m->u.weekly.rules>2147483646u ||
                                   !m->u.weekly.guid || m->u.weekly.guid>DD_PROTO_GUID_MAX))return 0;
     if(m->type==DD_MSG_POOL && (m->seq || !m->u.pool.epoch || m->u.pool.anchor==UINT32_MAX || m->u.pool.count>64 || m->u.pool.op<1 || m->u.pool.op>3 || m->u.pool.player>3 || (m->u.pool.op==2 ? !m->u.pool.player : m->u.pool.player!=0)))return 0;
+    if(m->type==DD_MSG_PRESENCE && (m->seq || !dd_presence_valid(m->u.presence.kind,m->u.presence.mask,m->u.presence.place)))return 0;
     wr w = {buf, cap, 0, 0};
     w_u32(&w, DD_PROTO_MAGIC);
     w_u16(&w, DD_PROTO_VERSION);
@@ -404,6 +406,8 @@ size_t dd_encode(const dd_msg *m, uint8_t *buf, size_t cap) {
         w_u32(&w,m->u.pool.epoch);w_u32(&w,m->u.pool.anchor);w_u64(&w,m->u.pool.digest);w_u32(&w,m->u.pool.count);w_u8(&w,m->u.pool.op);w_u8(&w,m->u.pool.player);break;
     case DD_MSG_WEEKLY:
         w_u32(&w,m->u.weekly.epoch);w_u32(&w,m->u.weekly.rules);w_u32(&w,m->u.weekly.guid);break;
+    case DD_MSG_PRESENCE:
+        w_u8(&w,m->u.presence.kind);w_u8(&w,m->u.presence.mask);w_bytes(&w,m->u.presence.place,4);break;
     case DD_MSG_BUSY:
         w_u32(&w, m->u.busy.busy);
         break;
@@ -422,7 +426,7 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
     m->type = r_u16(&h);
     m->seq = r_u32(&h);
     uint32_t body = r_u32(&h);
-    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_WEEKLY) return DD_DECODE_BAD_TYPE;
+    if (m->type < DD_MSG_HELLO || m->type > DD_MSG_PRESENCE) return DD_DECODE_BAD_TYPE;
     if (body == 0 || body > DD_PROTO_MAX_BODY) return DD_DECODE_BAD_LENGTH;
     if (len < DD_PROTO_HEADER + (size_t)body) return DD_DECODE_SHORT;
 
@@ -474,6 +478,9 @@ dd_decode_result dd_decode(const uint8_t *buf, size_t len, dd_msg *m, size_t *us
         m->u.weekly.epoch=r_u32(&r);m->u.weekly.rules=r_u32(&r);m->u.weekly.guid=r_u32(&r);
         if(!r.bad && (m->seq || !m->u.weekly.epoch || !m->u.weekly.rules || m->u.weekly.rules>2147483646u ||
                       !m->u.weekly.guid || m->u.weekly.guid>DD_PROTO_GUID_MAX))return DD_DECODE_BAD_VALUE;break;
+    case DD_MSG_PRESENCE:
+        m->u.presence.kind=r_u8(&r);m->u.presence.mask=r_u8(&r);r_bytes(&r,m->u.presence.place,4);
+        if(!r.bad && (m->seq || !dd_presence_valid(m->u.presence.kind,m->u.presence.mask,m->u.presence.place)))return DD_DECODE_BAD_VALUE;break;
     case DD_MSG_BUSY:
         m->u.busy.busy = r_u32(&r);
         if (!r.bad && m->u.busy.busy > 1) return DD_DECODE_BAD_VALUE;
