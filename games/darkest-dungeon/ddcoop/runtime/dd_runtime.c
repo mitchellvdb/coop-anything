@@ -1640,6 +1640,7 @@ static void runtime_poll_once(void) {
             hamlet_request_done(m.u.town.request_id,0);
             formation_request_done(m.u.town.request_id);
             hunger_request_done(m.u.town.request_id);
+            wave_request_done(m.u.town.request_id);
             quest_return_request_done(m.u.town.request_id);
             provisions_request_done(m.u.town.request_id,0);
             if (m.u.town.action.kind == DD_ACT_WAGON_BUY && m.u.town.request_id == g_shop_request) g_shop_request = 0;
@@ -1649,6 +1650,7 @@ static void runtime_poll_once(void) {
             dd_log("host rejected town request %u (reason=%u)", m.u.reject.request_id, m.u.reject.reason);
             hamlet_request_done(m.u.reject.request_id,1);
             hunger_request_done(m.u.reject.request_id);
+            wave_request_done(m.u.reject.request_id);
             quest_return_request_done(m.u.reject.request_id);
             formation_request_rejected(m.u.reject.request_id);
             embark_request_done(m.u.reject.request_id);

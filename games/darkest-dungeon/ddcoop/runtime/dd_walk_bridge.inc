@@ -1089,4 +1089,5 @@ static const hamlet_hook_spec g_walk_hooks[] = {
     {"hunger_show", (uintptr_t)hook_hunger_show, &g_hunger_show, 14},
     {"hunger_eat", (uintptr_t)hook_hunger_eat, &g_hunger_eat, 13},
     {"hunger_refuse", (uintptr_t)hook_hunger_refuse, &g_hunger_refuse, 15},
+    {"wave_continue", (uintptr_t)hook_wave_continue, &g_wave_continue, 8},
 };

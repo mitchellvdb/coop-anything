@@ -30,6 +30,7 @@ static int item_use_phase(const walk_view *v) {
 static uint64_t (*g_item_controller)(void) = item_controller;
 static void results_bag_reset(void);
 static void hunger_reset(void);
+static void wave_reset(void);
 static void quest_return_reset(void);
 static int loot_open(const walk_view *v);
 #include "dd_full_notice_bridge.inc"
@@ -38,6 +39,7 @@ static void items_reset(void) {
     g_tutorial_panel_reset();
     results_bag_reset();
     hunger_reset();
+    wave_reset();
     quest_return_reset();
     g_item_wait_until = g_loot_done_at = g_loot_asked_at = 0;
     g_loot_request = g_loot_asked_key = 0;
@@ -90,6 +92,7 @@ static void item_use_rules_send(const walk_view *v) {
     dd_town_host_observed(&g_town, &a);
 }
 #include "dd_hunger_bridge.inc"
+#include "dd_wave_bridge.inc"
 /* 429750 DungeonController::HeroUseItem (controller, hero, inventory, slot, 1): the panel's click, the loot window's, the controller's. */
 static uint64_t __fastcall hook_item_use(void *controller, void *hero, void *inventory, int32_t slot, uint32_t flag) {
     walk_view v;
@@ -1255,6 +1258,9 @@ static int item_gate(const dd_msg *m) {
     } else if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) {
         limit = 30000;
         go = g_quest_return_done || (have && quest_return_gate_ready(&v));
+    } else if (a->u.item.op == DD_ITEM_OP_WAVE_CONTINUE) {
+        limit = 30000;
+        go = have && wave_gate_ready(&v, a);
     } else if (a->u.item.op == DD_ITEM_OP_HUNGER) {
         limit = 30000;
         go = have && hunger_gate_ready(&v, a);
@@ -1346,6 +1352,7 @@ static int item_select_apply(const walk_view *v, const dd_action *a) {
     return 1;
 }
 static int item_apply(const dd_action *a) {
+    if (a->u.item.op == DD_ITEM_OP_WAVE_CONTINUE) return wave_apply(a);
     if (a->u.item.op == DD_ITEM_OP_FULL_NOTICE) return full_notice_apply(a);
     if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) return quest_return_apply(a);
     if (a->u.item.op == DD_ITEM_OP_HUNGER) return hunger_apply(a);

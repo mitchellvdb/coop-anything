@@ -36,6 +36,10 @@ known EXE/build parity, missing/changed/unknown features, duplicates and invalid
 schemas. Matching reports are not entitlements or live co-op compatibility.
 This comparison is not yet an automatic cross-launcher DLC-data handshake.
 
+Test91 adds the normal wave-room Continue button to the shared ordered stream;
+see WAVE-test91.md for the exact native ABI, modeled checks and live test limits.
+This is not complete wave/shard/endless DLC support.
+
 Synthetic regression tests cover all nine features, five hero codecs, missing
 witnesses, shared data changes, subset comparison, no mutation, schema/build
 mismatch and link guards. One real Windows symlink creation is skipped if the

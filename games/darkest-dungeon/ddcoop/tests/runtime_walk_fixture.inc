@@ -1,5 +1,5 @@
 /* Uses the real walk hooks and FIFO. Only the game's view, move call, input check and travel call are faked. */
-static uint8_t wk_display[0x4200], wk_areas[3][0x140], wk_props[2][0x140], wk_heroes[4][0x1400], wk_result[0x10];
+static uint8_t wk_display[0x4800], wk_areas[3][0x140], wk_props[2][0x140], wk_heroes[4][0x1400], wk_result[0x10];
 static uint64_t wk_prop_list[2], wk_party[4], wk_prop_table[6], wk_result_table[3];
 static unsigned wk_interacts, wk_runs, wk_frees, wk_overlays, wk_traps, wk_selects;
 static int wk_interact_option, wk_select_index, wk_use_done;

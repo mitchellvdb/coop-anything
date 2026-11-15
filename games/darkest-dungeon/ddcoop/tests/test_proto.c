@@ -515,7 +515,36 @@ static void full_notice_wire_checks(void) {
         CHECK(!dd_encode(&bad,wire,sizeof wire),"malformed full notice refused");
     }
 }
+static void wave_wire_checks(void) {
+    dd_msg m={0},decoded;uint8_t wire[512];size_t used=0;
+    m.type=DD_MSG_TOWN_APPLY;m.seq=23;
+    dd_action *a=&m.u.town.action;a->kind=DD_ACT_ITEM;a->u.item.op=DD_ITEM_OP_WAVE_CONTINUE;
+    a->u.item.hero=255;a->u.item.area=100;a->u.item.id=7;a->u.item.type=2;
+    a->u.item.amount=1;a->u.item.round=3;a->u.item.turn=1;a->u.item.rules=0x12345678;
+    size_t n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&decoded,&used)==DD_DECODE_OK && used==n,"wave Continue roundtrip");
+    CHECK(!memcmp(&m.u.town.action,&decoded.u.town.action,sizeof *a),"wave room/native phase identity preserved");
+    for(unsigned field=0;field<12;field++) {
+        dd_msg bad=m;
+        switch(field) {
+        case 0:bad.u.town.action.u.item.id=0;break;
+        case 1:bad.u.town.action.u.item.id=UINT32_MAX;break;
+        case 2:bad.u.town.action.u.item.state=29;break;
+        case 3:bad.u.town.action.u.item.hero=0;break;
+        case 4:bad.u.town.action.u.item.inv=1;break;
+        case 5:bad.u.town.action.u.item.flag=1;break;
+        case 6:bad.u.town.action.u.item.slot=1;break;
+        case 7:bad.u.town.action.u.item.pos=1;break;
+        case 8:bad.u.town.action.u.item.type=16;break;
+        case 9:bad.u.town.action.u.item.amount=16;break;
+        case 10:bad.u.town.action.u.item.round=1000000;break;
+        case 11:bad.u.town.action.u.item.turn=4096;break;
+        }
+        CHECK(!dd_encode(&bad,wire,sizeof wire),"malformed wave Continue refused");
+    }
+}
 int main(void) {
+    wave_wire_checks();
     full_notice_wire_checks();
     recruit_wire_checks();
     test_desync_wire();
