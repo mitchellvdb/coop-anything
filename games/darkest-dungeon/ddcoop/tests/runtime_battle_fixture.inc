@@ -899,6 +899,18 @@ static void results_and_bag_checks(void) {
     g_game_apply_depth = 1;
     CHECK(hook_trinket_drop_hero(NULL, NULL, NULL) == 7 && !g_bag_moved);
     g_game_apply_depth = 0;
+    /* The inventory-kind slot callbacks mark a drag too (14 Nov 01:25:24: a stack made there was never shared). */
+    g_bag_moved = 0;hook_trinket_drop_inventory(NULL, NULL, NULL);CHECK(g_bag_moved);
+    {
+        void *saved[2];memcpy(saved, &g_trinket_finish[2], sizeof saved);memset(&g_trinket_finish[2], 0, sizeof saved);
+        g_bag_moved = 0;hook_trinket_finish_inventory(NULL, NULL);CHECK(g_bag_moved);
+        g_bag_moved = 0;hook_trinket_cancel_inventory(NULL, NULL);CHECK(g_bag_moved);
+        memcpy(&g_trinket_finish[2], saved, sizeof saved);
+    }
+    g_bag_moved = 0;hook_trinket_area_inventory(NULL, NULL, NULL);CHECK(g_bag_moved);
+    g_bag_moved = 0;hook_trinket_area_hero(NULL, NULL, NULL);CHECK(g_bag_moved);
+    g_game_apply_depth = 1;g_bag_moved = 0;hook_trinket_drop_inventory(NULL, NULL, NULL);CHECK(!g_bag_moved);g_game_apply_depth = 0;
+    g_bag_moved = 0;
     /* A move from slot 0 to empty slot 3. */
     CHECK(hook_trinket_drop_hero(NULL, NULL, NULL) == 7 && g_bag_moved);
     { uint8_t held[DD_ITEM_SIZE]; memcpy(held, it_bag, DD_ITEM_SIZE); memcpy(it_bag + 3 * DD_ITEM_SIZE, held, DD_ITEM_SIZE); memset(it_bag, 0, DD_ITEM_SIZE); }
@@ -1154,6 +1166,23 @@ static void item_transactions(void) {
     CHECK(hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) == 1 && it_uses == 1 && sent == 1 && last_message.type == DD_MSG_TOWN_APPLY);
     dd_action use = last_message.u.town.action;
     CHECK(use.kind == DD_ACT_ITEM && use.u.item.op == DD_ITEM_OP_USE && use.u.item.slot == 3 && !use.u.item.inv && use.u.item.hero == 1 && !use.u.item.state && use.u.item.flag == 1);
+    /* Right after a prop was opened the host orders no ordinary use: another copy's curio overlay may already be open
+     * and route the item there (14 Nov 01:55:49). The host refuses, the guest is told no, nothing stops. */
+    {
+        it_reset(DD_ROLE_HOST);
+        g_walk_prop_used_at = GetTickCount64();
+        CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && !sent && !g_town.needs_resync);
+        it_reset(DD_ROLE_HOST);
+        g_walk_prop_used_at = GetTickCount64();
+        dd_msg ask = {0};
+        ask.type = DD_MSG_TOWN_REQUEST;ask.u.town.request_id = (1u << 24) | 7;ask.u.town.action = use;
+        CHECK(queue_push(&g_incoming, &ask));
+        dd_runtime_poll();
+        CHECK(!it_uses && last_message.type == DD_MSG_TOWN_REJECT && !g_town.needs_resync);
+        g_walk_prop_used_at = GetTickCount64() - DD_ITEM_PROP_SETTLE_MS - 1;
+        CHECK(hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) == 1 && it_uses == 1);
+        g_walk_prop_used_at = 0;
+    }
     it_reset(DD_ROLE_GUEST);
     CHECK(!hook_item_use((void *)(uintptr_t)0x1234, hero, bag, 3, 1) && !it_uses && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST);
     it_reset(DD_ROLE_GUEST);

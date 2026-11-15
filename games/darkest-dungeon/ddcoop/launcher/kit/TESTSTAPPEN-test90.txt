@@ -1,0 +1,80 @@
+DDCoop test90 - Hamlet return, town event recruits, Sanitarium (2-4 players)
+
+Close game windows before installing. The host installs test90; friends on
+test77 or newer can accept its signed update when joining. Everyone uses test90
+(the connection protocol changed). No new solo/duo kit is included.
+
+New in test90, test these first:
+H. Finish a raid and return to the Hamlet. The new week must start without a
+   stop ("The Stagecoach candidates differ" was the cause until now). Then
+   recruit at the Stagecoach, as host and as a guest.
+E. When a town event ("Hear Ye") offers a hero, drag it to the roster, once as
+   host and once as a guest (another week). The hero must join the roster on
+   every screen and disappear from the event everywhere; gold must match. Keep
+   the event screen open on every screen until it is done. If it stops, send
+   the report (log lines start with "Town event recruit").
+Q. Put a hero with a bad quirk in the Sanitarium (quirk treatment) and click the
+   quirk to remove, as host and as a guest. Every screen must show the same
+   choice; after the next week the quirk must be gone everywhere. Also as a
+   guest: placing a hero there must work. Repeat with a disease treatment.
+
+From test89:
+R. In a raid, drag a supply onto another stack of the same kind in the bag and
+   onto an empty slot, as host and as a guest. Bags must match; gold and
+   heirlooms in the Hamlet must match.
+C. Click a curio and use an item from the bag right away. "Wait a moment: an
+   object was just opened" may appear; it must never stop the session.
+   (A stop when a curio is used while a guest's party is still walking is a
+   known open problem; send that report.)
+F. With a full bag, take all loot and let one player close the "not enough
+   room" notice. If it stays open on another screen, send the report.
+
+From test88:
+S. Skills at the Guild, as a GUEST: buy a new combat skill for a hero, then
+   select (equip) it in the hero's skill screen. It must work, and show the
+   same on every screen. Also as a guest: upgrade a skill a level, then check
+   on another screen that the hero's skill shows the new level. Then the same
+   as the host. A newly learned skill may be selected by itself when the hero
+   has fewer than four selected; that must happen on every screen alike.
+   Deselecting and selecting skills must work for every player.
+
+From test87:
+A. Loot, then a trinket onto a hero: open a chest or curio with several items,
+   take one item, then drag a trinket (from the loot or from the bag) onto a
+   hero, as host and as a guest. It must move on every screen without a stop,
+   also when the items landed in different bag slots on the other screens.
+B. Walk through doors after taking loot. If a bag differs at a door, the guest
+   now gets the host's bag (logs: "Bag repair started" and "Bag repair
+   verified") and the game goes on. If it still stops, send the report: both
+   logs now list every bag slot ("Bag host ..." / "Bag guest ...").
+
+The test86 steps below still apply.
+
+1. Start in the Hamlet. Recruit from each player's Stagecoach. Hover/open a
+   candidate's quirks on one screen only before recruiting. Shared heroes must
+   match. If checking candidates stops, keep launchers open for the report.
+2. With a guest, move trinkets between inventory and heroes, including a hero
+   placed in the Tavern/Abbey. A legitimate class or duplicate restriction may
+   still refuse. Gold and inventory must match. Try learning/selecting skills
+   and buying food; a remaining failure now has more precise diagnostic traces.
+3. In a fight, select a hero in the guest launcher and press Take control.
+   The guest should gain its turn through the shared ownership update. On a
+   Houndmaster's own turn try Dog Treats and compare buff and item quantity.
+4. After a fight immediately drag the same party into another order. Wait for
+   animation and check every copy, then travel. Repeat with a different player.
+5. With a full bag, Take All loot. One player dismisses inventory-full OK.
+   The same informational popup must close everywhere. Repeat as a guest.
+   Try a trinket directly from loot onto a hero. Note any refusal; this engine
+   behavior still needs live confirmation despite passing modeled regressions.
+6. Return to the Hamlet after a normal mission, then recruit, provision and
+   embark again with a guest leading. A candidate-pool stop is still possible:
+   the root of all reported return failures is not yet confirmed. Send that
+   combined report; do not force past a stop with independent local actions.
+7. F9 must omit dead heroes after the saved roster refresh. The guest desktop
+   should stay clear of new fallback reports. One combined host Desktop ZIP
+   contains each available participant or explicitly marks a missing one.
+
+Keep every launcher open until report collection/recovery finishes, even after
+closing a game. If the link is already lost, missing logs cannot be retrieved.
+If no report appears, use Copy logs on the host. Reports stay private.
+Press-any-key screens still need each player's click in this kit.

@@ -84,4 +84,11 @@ exact(0x5d1f00, '48 8b 96 c8 13 00 00 48 8b 86 d0 13 00 00')
 exact(0x5d1f8a, '48 8b 96 98 13 00 00 48 8b 86 a0 13 00 00')
 exact(0x5ccaf0, '48 8b 97 e0 13 00 00 48 8b 87 e8 13 00 00')
 exact(0x5ccb70, '48 8b 8f b0 13 00 00 48 8b 87 b8 13 00 00')
-print('PASS Stagecoach logical fingerprint ABI: candidate stride/ID/availability, name/class, XP/equipment, skills and persisted quirk fields; pinned EXE, read-only')
+# 5d03f0 (add a quirk) builds the 0x38 entry at rsp+40: the vector at +48..+5f (3c8950), then +64, +68..+6a, +6c, +70,
+# but never +60, which it copies into the entry's +20 (saved as mission_count). That word is stack garbage, different on
+# every copy, so the fingerprint leaves it out.
+exact(0x5d0593, '44 89 6c 24 64 c6 44 24 68 00 44 88 64 24 69 c6 44 24 6a 00 44 89 7c 24 6c 89 5c 24 70')
+exact(0x5d05f7, '8b 44 24 60 41 89 41 20 8b 44 24 64')
+exact(0x5d058d, 'e8 be 83 df ff')  # call 3c8950(rsp+48): writes +48..+5f only
+exact(0x3c896a, '48 89 29 48 89 69 08 48 89 69 10')
+print('PASS Stagecoach logical fingerprint ABI: candidate stride/ID/availability, name/class, XP/equipment, skills and persisted quirk fields (uninitialised +20 excluded); pinned EXE, read-only')

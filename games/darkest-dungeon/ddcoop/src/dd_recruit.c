@@ -1,5 +1,6 @@
 #include "dd_recruit.h"
 #include "dd_text.h"
+#include <stdio.h>
 #include <string.h>
 
 static int rd(const dd_recruit *s, uint64_t at, void *out, size_t n) {
@@ -173,7 +174,7 @@ static int fingerprint_vectors(const dd_recruit *s,uint64_t hero,unsigned campin
 static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *out,uint32_t *id_out,uint64_t parts[5]) {
     uint32_t id=0,klass_id=0,level[3]={0};uint64_t klass=0,quirks=0,after=0;
     unsigned qn=0,an=0;uint8_t available=0;
-    uint64_t hash=UINT64_C(14695981039346656037);fingerprint_word(&hash,2); /* gameplay schema: UI-only new/viewed flags excluded */
+    uint64_t hash=UINT64_C(14695981039346656037);fingerprint_word(&hash,3); /* gameplay schema: UI-only new/viewed flags and +20 excluded */
     if(hero>UINT64_MAX-0x15b0 || !rd(s,hero+0x137c,&id,4) || !id || !rd(s,hero+0x15a8,&available,1) || available>1 ||
        !ptr(s,hero+0x1320,&klass) || !klass || klass>UINT64_MAX-0xd8 || !rd(s,klass+0xd4,&klass_id,4) || !klass_id ||
        !rd(s,hero+0x1328,level,sizeof level))return 0;
@@ -196,7 +197,10 @@ static int fingerprint_entry_once(const dd_recruit *s,uint64_t hero,uint64_t *ou
         for(unsigned j=0;j<i;j++)if(ids[j]==ids[i])return 0;
         for(unsigned j=0;j<3;j++)if(flags[j]>1)return 0;
         fingerprint_word(&hash,ids[i]);if(!fingerprint_name(s,definition,&hash))return 0;
-        fingerprint_word(&hash,data[0]);fingerprint_word(&hash,data[1]);
+        /* +20 (saved as mission_count) is never written when a quirk is added: 5d03f0 copies an uninitialised stack word
+         * into it, so two copies that generate the same recruits hold different values there (owner 15 Nov 01:19:47 and
+         * 01:54:55: host 27d6af38 / 464fb028, guest 0, every other field equal). The game itself gives it no meaning. */
+        fingerprint_word(&hash,data[1]);
         /* +28 replaces_quirk_viewed and +29 is_new are presentation flags. Opening a hero/tooltip
          * can change these on one screen. +2a is_locked changes gameplay and remains compared. */
         fingerprint_word(&hash,flags[2]);
@@ -236,6 +240,43 @@ int dd_recruit_fingerprint_parts(const dd_recruit *s,uint32_t id,uint64_t out[5]
        !fingerprint_entry_once(s,c.entry,&hash,&first,a) || first!=id ||
        !fingerprint_entry_once(s,c.entry,&hash,&second,b) || second!=id || memcmp(a,b,sizeof a))return 0;
     memcpy(out,a,sizeof a);return 1;
+}
+int dd_recruit_event_candidate(const dd_recruit *s,uint32_t id,uint64_t *entry,uint8_t *available) {
+    uint64_t begin=0,at=0;unsigned n=0;
+    if(entry)*entry=0;
+    if(available)*available=0;
+    if(!s || !s->read || !id || !entry || !available || !s->campaign || s->campaign>UINT64_MAX-0x1808-0x48 ||
+       !vec(s,s->campaign+0x1808+0x38,0x15b0,DD_RECRUIT_MAX_CANDIDATES,&begin,&n))return 0;
+    for(unsigned i=0;i<n;i++) {
+        uint32_t got=0;uint8_t open=0;at=begin+(uint64_t)i*0x15b0;
+        if(!rd(s,at+0x137c,&got,4))return 0;
+        if(got!=id)continue;
+        if(!rd(s,at+0x15a8,&open,1) || open>1)return 0;
+        *entry=at;*available=open;return 1;
+    }
+    return 0;
+}
+int dd_recruit_event_fingerprint(const dd_recruit *s,uint32_t id,uint64_t *out) {
+    uint64_t entry=0,hash=0;uint8_t available=0;uint32_t got=0;
+    if(!out)return 0;*out=0;
+    if(!dd_recruit_event_candidate(s,id,&entry,&available) || !fingerprint_entry(s,entry,&hash,&got) || got!=id)return 0;
+    *out=hash;return 1;
+}
+int dd_recruit_quirk_text(const dd_recruit *s,uint32_t id,char *out,size_t cap) {
+    dd_recruit_choice c;uint64_t quirks=0;unsigned qn=0;size_t k=0;
+    if(!out || cap<2)return 0;
+    out[0]=0;
+    if(!s || !s->read || !id || !dd_recruit_candidate(s,id,&c) || c.entry>UINT64_MAX-0x1390 ||
+       !vec(s,c.entry+0x1380,0x38,64,&quirks,&qn))return 0;
+    for(unsigned i=0;i<qn && k+64<cap;i++) {
+        uint64_t q=quirks+(uint64_t)i*0x38,definition=0;uint32_t qid=0,data[4]={0};uint8_t flags[3]={0};
+        if(!ptr(s,q,&definition) || !definition || definition>UINT64_MAX-0x44 || !rd(s,definition+0x40,&qid,4) ||
+           !rd(s,q+0x20,data,8) || !rd(s,q+0x28,flags,3) || !rd(s,q+0x2c,data+2,8)) {
+            k+=(size_t)snprintf(out+k,cap-k," ?");continue;
+        }
+        k+=(size_t)snprintf(out+k,cap-k," %08x:%08x/%08x/%u%u%u/%08x/%08x",qid,data[0],data[1],flags[0],flags[1],flags[2],data[2],data[3]);
+    }
+    return 1;
 }
 static int pool_digest_once(const dd_recruit *s,uint64_t *out,unsigned *count) {
     if(out)*out=0;if(count)*count=0;

@@ -21,6 +21,7 @@ static uint64_t item_controller(void) {
     safe_read(image_base() + DD_ITEM_CONTROLLER_RVA, &controller, 8);
     return controller;
 }
+#define DD_ITEM_PROP_SETTLE_MS 2000u
 static int item_use_phase(const walk_view *v) {
     uint64_t now = GetTickCount64();
     return !v->battle && v->state > 1 && v->state != 6 && v->state != 7 &&
@@ -130,6 +131,12 @@ static uint64_t __fastcall hook_item_use(void *controller, void *hero, void *inv
             return 0;
         }
         g_item_use_asked_at = now;
+    }
+    /* The host's own ordinary use right after a prop was opened: the same race as a guest's (see item_apply). */
+    if (g_cfg.role == DD_ROLE_HOST && !a.u.item.state && g_walk_prop_used_at && GetTickCount64() - g_walk_prop_used_at < DD_ITEM_PROP_SETTLE_MS) {
+        dd_log("Item: use slot=%d waits: a prop was opened %llu ms ago", slot, (unsigned long long)(GetTickCount64() - g_walk_prop_used_at));
+        shop_notice("Wait a moment: an object was just opened. Then use the item again.");
+        return 0;
     }
     item_use_rules_send(&v);
     item_send(&a); /* Sent whatever the game says: it decides the same on both. */
@@ -766,15 +773,45 @@ static void bag_templates_clear(void) {
         if(g_hamlet_destroy)g_hamlet_destroy(g_bag_templates[i]);
     }
 }
+/* Why a bag repair cannot start on this copy now, or NULL. Only the bag itself is needed: the loot of a new area may
+ * not exist yet right after a door, which is exactly when a repair starts. */
+static const char *bag_templates_problem(const walk_view *v) {
+    uint64_t begin=0;unsigned n=0;bag_slot item;
+    if(!g_hamlet_copy || !g_hamlet_swap || !g_hamlet_destroy)return "native Item copy unavailable";
+    if(!bag_span(v->raid,0,&begin,&n))return "bag not readable";
+    for(unsigned i=0;i<n;i++)if(!bag_read_slot(begin+(uint64_t)i*DD_ITEM_SIZE,&item))return "bag slot not readable";
+    return NULL;
+}
+/* One line with every bag slot (count x type/id), so the two copies' logs show where a bag went apart. */
+static void bag_log_contents(const char *who, const walk_view *v) {
+    char line[DD_BAG_SLOTS * 26 + 1];
+    size_t k=0;uint64_t begin=0;unsigned n=0;
+    line[0]=0;
+    if(!bag_span(v->raid,0,&begin,&n)) { dd_log("Bag %s: not readable",who);return; }
+    for(unsigned i=0;i<n && k+28<sizeof line;i++) {
+        bag_slot s;
+        if(!bag_read_slot(begin+(uint64_t)i*DD_ITEM_SIZE,&s)) { k+=(size_t)snprintf(line+k,sizeof line-k," %u:?",i);continue; }
+        if(s.count<=0)k+=(size_t)snprintf(line+k,sizeof line-k," %u:-",i);
+        else k+=(size_t)snprintf(line+k,sizeof line-k," %u:%dx%08x/%08x",i,s.count,s.type,s.id);
+    }
+    dd_log("Bag %s (%u slots, hash %08x):%s",who,n,walk_bag_hash(v->raid),line);
+}
 static int bag_templates_begin(const walk_view *v) {
     bag_templates_clear();
-    if(!g_hamlet_copy || !g_hamlet_swap || !g_hamlet_destroy)return 0;
+    if(bag_templates_problem(v))return 0;
     for(uint8_t inv=0;inv<2;inv++) {
         uint64_t begin=0;unsigned n=0;
-        if(!bag_span(v->raid,inv,&begin,&n))goto fail;
+        if(!bag_span(v->raid,inv,&begin,&n)) {
+            if(!inv)goto fail;
+            dd_log("Bag repair: this area's loot is not readable yet; templates from the bag only");
+            break;
+        }
         for(unsigned i=0;i<n;i++) {
             bag_slot item;
-            if(!bag_read_slot(begin+(uint64_t)i*DD_ITEM_SIZE,&item))goto fail;
+            if(!bag_read_slot(begin+(uint64_t)i*DD_ITEM_SIZE,&item)) {
+                if(!inv)goto fail;
+                break;
+            }
             if(item.count<=0)continue;
             unsigned k=0;for(;k<g_bag_templates_count;k++)
                 if(g_bag_templates_keys[k].type==item.type && g_bag_templates_keys[k].id==item.id)break;
@@ -841,6 +878,7 @@ static void bag_send_all(const walk_view *v) {
     for (unsigned i = 0; i < count; i++)
         if (!bag_read_slot(begin + (uint64_t)i * DD_ITEM_SIZE, &s[i])) return;
     dd_log("Item: the guest asks for the bag; %u slots go out", count);
+    bag_log_contents("host", v);
     dd_action check = {0};
     check.kind = DD_ACT_ITEM; check.u.item.op = DD_ITEM_OP_BAG_CHECK; check.u.item.hero = 255;
     check.u.item.type = walk_bag_hash(v->raid);
@@ -1145,7 +1183,8 @@ static int item_gate(const dd_msg *m) {
     } else if (a->u.item.op == DD_ITEM_OP_RULES || a->u.item.op == DD_ITEM_OP_BAG_SLOT || a->u.item.op == DD_ITEM_OP_BAG_ASK) {
         go = 1;
     } else if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) {
-        limit = 10000; go = have;
+        /* Right after a door the next area may still be loading: wait until the bag can be read. */
+        limit = 10000; go = have && (a->u.item.flag || !bag_templates_problem(&v));
     } else if (a->u.item.op == DD_ITEM_OP_USE && !a->u.item.state) {
         limit = 10000;
         go = have && item_use_phase(&v) && v.area == a->u.item.area;
@@ -1288,7 +1327,12 @@ static int item_apply(const dd_action *a) {
     if (a->u.item.op == DD_ITEM_OP_BAG_CHECK) {
         if (g_cfg.role != DD_ROLE_GUEST) return 0;
         if (!a->u.item.flag) {
-            if(!bag_templates_begin(&v)){runtime_sync_stop(2);return 0;}
+            if(!bag_templates_begin(&v)) {
+                const char *why=bag_templates_problem(&v);
+                dd_log("Bag repair could not start: %s",why?why:"more kinds of items than templates");
+                runtime_sync_stop(2);return 0;
+            }
+            dd_log("Bag repair started: %u item kinds kept as templates",g_bag_templates_count);
             g_bag_repairing = 1; g_bag_repair_hash = a->u.item.type; return 1;
         }
         uint32_t actual = walk_bag_hash(v.raid);
@@ -1431,6 +1475,15 @@ static int item_apply(const dd_action *a) {
     if (g_cfg.role == DD_ROLE_HOST && a->u.item.state && hero_owner(b.actor) != (g_request_player ? g_request_player : 1)) {
         dd_log("Item: guest player %d asked outside their active hero's turn", g_request_player);
         return 0;
+    }
+    /* An ordinary use right after a prop was ordered: on a copy whose curio overlay is already open the same item may route
+     * to the curio instead, and that copy refuses (owner's run 14 Nov 01:55:49: the guest's item use came 50 ms after the
+     * host's curio click; ordinary on the host, a curio choice on the guest, stop). The host orders, so it waits it out. */
+    if (g_cfg.role == DD_ROLE_HOST && !a->u.item.state && g_walk_prop_used_at && GetTickCount64() - g_walk_prop_used_at < DD_ITEM_PROP_SETTLE_MS) {
+        dd_log("Item: use slot=%d refused: a prop was opened %llu ms ago; try again", a->u.item.slot,
+               (unsigned long long)(GetTickCount64() - g_walk_prop_used_at));
+        if (!g_request_player) shop_notice("Wait a moment: an object was just opened. Then use the item again.");
+        return refused;
     }
     dd_action choice={0};
     int curio_route=prop_item_route(&v,(void *)(uintptr_t)controller,

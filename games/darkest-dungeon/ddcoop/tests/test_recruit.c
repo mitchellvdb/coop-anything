@@ -208,7 +208,7 @@ static void fingerprints(void) {
         {0x13080000+0x1328,11},{0x13080000+0x132c,2},{0x13080000+0x1330,3},
         {0x13080000+0x15a8,0},{0x130b0000,1},{0x130b0000+4,0},{0x130b0000+0x40,0},
         {0x130b0000+0x60,1},{0x130b0000+0x80,0},{0x130d0000+0x40,5},{0x130d0000,0x78697271},
-        {0x130c0000+0x20,9},{0x130c0000+0x24,9},
+        {0x130c0000+0x24,9},
         {0x130c0000+0x2a,0},{0x130c0000+0x2c,9},{0x130c0000+0x30,9}
     };
     for(unsigned i=0;i<sizeof changes/sizeof *changes;i++) {
@@ -222,6 +222,10 @@ static void fingerprints(void) {
         CHECK(!valid || other!=candidate);
         CHECK(!dd_recruit_pool_digest(&s,&other,&count) || other!=initial);
     }
+    /* Quirk +20 is uninitialised by the game when a quirk is added (5d03f0); it differs between copies and is not compared. */
+    content_setup();CHECK(open(&s));p32(0x130c0000+0x20,0x464fb028);
+    CHECK(dd_recruit_fingerprint(&s,40,&other) && other==candidate);
+    CHECK(dd_recruit_pool_digest(&s,&other,&count) && other==initial);
     /* Opening a candidate card changes only these two presentation flags, never its gameplay identity. */
     content_setup();CHECK(open(&s));uint64_t details[5];
     CHECK(dd_recruit_fingerprint_parts(&s,40,details) && details[4]==candidate);
@@ -232,6 +236,15 @@ static void fingerprints(void) {
         CHECK(dd_recruit_fingerprint_parts(&s,40,details) && details[4]==candidate);
     }
     CHECK(!dd_recruit_fingerprint_parts(&s,999,details) && !details[4]);
+    /* Quirk field text for the logs: id, +20, +24, flags +28..+2a, +2c, +30, per quirk, no names. */
+    {
+        char text[512];
+        content_setup();CHECK(open(&s));
+        CHECK(dd_recruit_quirk_text(&s,40,text,sizeof text));
+        CHECK(!strcmp(text," 00000001:00000003/00000004/101/00000006/00000007 00000002:00000003/00000004/101/00000006/00000007"));
+        CHECK(!strstr(text,"quirk_a"));
+        CHECK(!dd_recruit_quirk_text(&s,999,text,sizeof text) && !text[0]);
+    }
     content_setup();CHECK(open(&s));reads=0;CHECK(dd_recruit_pool_digest(&s,&other,&count));int total=reads;
     for(int i=1;i<=total;i++) {
         content_setup();CHECK(open(&s));reads=0;fail_at=i;other=123;count=123;
@@ -279,10 +292,28 @@ static void fingerprints(void) {
     CHECK(!dd_recruit_pool_digest(&s,NULL,NULL));
     puts("Stagecoach fingerprints: stable logical content, pointer/padding/order independence, same-ID changes, bounded duplicate/invalid guards, every read failure and vector mutation: checked");
 }
+/* Town event heroes: TownEvent::System at campaign+1808, Hero entries at +38 like the Stagecoach's; same fingerprint. */
+static void event_candidates(void) {
+    dd_recruit s;uint64_t entry=0,event=0,normal_print=0;uint8_t available=9;
+    content_setup();CHECK(open(&s));
+    CHECK(!dd_recruit_event_candidate(&s,40,&entry,&available) && !entry && !available); /* no event list */
+    CHECK(dd_recruit_fingerprint(&s,40,&normal_print) && normal_print);
+    vec(campaign+0x1808+0x38,entries,2*0x15b0);
+    CHECK(dd_recruit_event_candidate(&s,40,&entry,&available) && entry==entries && available==1);
+    CHECK(dd_recruit_event_fingerprint(&s,40,&event) && event==normal_print);
+    CHECK(!dd_recruit_event_candidate(&s,99,&entry,&available) && !entry);
+    p8(entries+0x15a8,0);
+    CHECK(dd_recruit_event_candidate(&s,40,&entry,&available) && entry==entries && !available);
+    p8(entries+0x15a8,2);
+    CHECK(!dd_recruit_event_candidate(&s,40,&entry,&available));
+    vec(campaign+0x1808+0x38,entries,0x15b0+8); /* not whole entries */
+    CHECK(!dd_recruit_event_candidate(&s,40,&entry,&available));
+}
 int main(void) {
     normal();
     invalid();
     fingerprints();
+    event_candidates();
     printf("Stagecoach snapshot: candidate identity, normal model, genuine rows, "
            "capacity/duplicate/corruption guards: %s (%d failures)\n",
            failures ? "FAILED" : "OK", failures);

@@ -1,6 +1,33 @@
 DDCoop - development test kit {VERSION}
 
-New in test86
+New in test90
+Returning to the Hamlet no longer stops the session on the Stagecoach check: the
+game leaves one quirk value of new recruits uninitialised, so it differed
+between screens; it is no longer compared. A hero a town event offers ("Hear
+Ye") is now recruited on every screen when anyone drags it to the roster. The
+quirk or disease chosen for a hero in the Sanitarium is now shared, and guests
+can place heroes there again. Everything from test89 is included.
+
+Earlier: test89
+Stacking or moving a supply inside the raid bag is now shared (it could make
+the bags differ and the return to the Hamlet stop on different gold). Using an
+item within two seconds after a curio was opened now asks you to wait a moment
+instead of stopping the session. More logging for the inventory-full notice and
+the Stagecoach candidates. Everything from test88 is included.
+
+Earlier: test88
+A skill a guest buys at the Guild is now learned on every screen, so guests can
+select (equip) new skills too, not only deselect them; a host's skill upgrade
+now reaches the guests' heroes. A newly learned skill is selected by itself on
+every screen alike when there is room. Everything from test87 is included.
+
+Earlier: test87
+A trinket dragged onto a hero right after taking loot no longer stops a guest
+whose items landed in other bag slots. The bag check at a door can now repair a
+guest's bag from the host's instead of stopping; when bags differ, both logs
+list every bag slot. Everything from test86 is included.
+
+Earlier: test86
 Stagecoach startup retries and quirk display-flag handling; post-combat party
 reorder; shared inventory-full OK even when handled after drawing; guest Hamlet
 trinket slot mapping; combat item turn ownership; dead heroes hidden in F9; guest

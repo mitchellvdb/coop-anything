@@ -43,7 +43,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_ACTIVITY: return 1 + 1 + 1 + 1 + 4 + 4 + 4;
     case DD_ACT_ASSIGN_HERO: return 1 + 1 + 1 + 4;
     case DD_ACT_BUY_UPGRADE: return 1 + 4 + 1 + 4;
-    case DD_ACT_RECRUIT: return 1+4+8;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT: return 1+4+8;
     case DD_ACT_DISMISS: return 1 + 4;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: return 1 + 2 + 2;
@@ -65,6 +65,7 @@ static size_t action_body_size(uint8_t kind) {
     case DD_ACT_OWNERS: return 1+4*5+1;
     case DD_ACT_EMBARK:
     case DD_ACT_PREPARE: return 1+4*2;
+    case DD_ACT_TREATMENT: return 1+4+2+4+64;
     default: return 0;
     }
 }
@@ -97,6 +98,17 @@ int dd_action_valid(const dd_action *a) {
         }
         return count>0;
     }
+    case DD_ACT_TREATMENT: {
+        const char *q=a->u.treatment.quirk;size_t n=0;
+        if((a->u.treatment.activity!=DD_ACTIVITY_QUIRK_TREATMENT && a->u.treatment.activity!=DD_ACTIVITY_DISEASE_TREATMENT) ||
+           a->u.treatment.slot>=3 || a->u.treatment.group>=3 || a->u.treatment.state>2 || a->u.treatment.entry>=64 ||
+           !a->u.treatment.hero_id || a->u.treatment.hero_id==UINT32_MAX)return 0;
+        while(n<64 && q[n]) {
+            char c=q[n++];
+            if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.'||c==' '))return 0;
+        }
+        return n>0 && n<64;
+    }
     case DD_ACT_ACTIVITY:
         return a->u.activity.op>=1 && a->u.activity.op<=4 && a->u.activity.activity<DD_ACTIVITY_COUNT_ &&
             a->u.activity.slot<3 && a->u.activity.hero_id && a->u.activity.hero_id!=UINT32_MAX && a->u.activity.revision && a->u.activity.epoch;
@@ -106,7 +118,7 @@ int dd_action_valid(const dd_action *a) {
         uint8_t c = a->u.upgrade.code; /* level letters/digits seen: '0'.., 'a'.. */
         return a->u.upgrade.tree != 0 && ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z'));
     }
-    case DD_ACT_RECRUIT:return a->u.recruit.hero_id && a->u.recruit.hero_id!=UINT32_MAX && a->u.recruit.fingerprint;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT:return a->u.recruit.hero_id && a->u.recruit.hero_id!=UINT32_MAX && a->u.recruit.fingerprint;
     case DD_ACT_DISMISS: return a->u.hero.hero_id != 0;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: return a->u.items.count >= 1 && a->u.items.count <= 999;
@@ -181,12 +193,15 @@ static void w_action(wr *w, const dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)w_u32(w,a->u.owners.heroes[i]);
         w_u32(w,a->u.owners.revision);w_u8(w,a->u.owners.mask);break;
+    case DD_ACT_TREATMENT:
+        w_u8(w,a->u.treatment.activity);w_u8(w,a->u.treatment.slot);w_u8(w,a->u.treatment.group);w_u8(w,a->u.treatment.state);
+        w_u16(w,a->u.treatment.entry);w_u32(w,a->u.treatment.hero_id);w_bytes(w,a->u.treatment.quirk,64);break;
     case DD_ACT_ACTIVITY:
         w_u8(w,a->u.activity.op);w_u8(w,a->u.activity.activity);w_u8(w,a->u.activity.slot);
         w_u32(w,a->u.activity.hero_id);w_u32(w,a->u.activity.revision);w_u32(w,a->u.activity.epoch);break;
     case DD_ACT_ASSIGN_HERO: w_u8(w, a->u.assign.activity); w_u8(w, a->u.assign.slot); w_u32(w, a->u.assign.hero_id); break;
     case DD_ACT_BUY_UPGRADE: w_u32(w, a->u.upgrade.tree); w_u8(w, a->u.upgrade.code); w_u32(w, a->u.upgrade.hero_id); break;
-    case DD_ACT_RECRUIT: w_u32(w,a->u.recruit.hero_id);w_u64(w,a->u.recruit.fingerprint);break;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT: w_u32(w,a->u.recruit.hero_id);w_u64(w,a->u.recruit.fingerprint);break;
     case DD_ACT_DISMISS: w_u32(w, a->u.hero.hero_id); break;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: w_u16(w, a->u.items.slot); w_u16(w, a->u.items.count); break;
@@ -247,12 +262,15 @@ static void r_action(rd *r, dd_action *a) {
     case DD_ACT_OWNERS:
         for(unsigned i=0;i<4;i++)a->u.owners.heroes[i]=r_u32(r);
         a->u.owners.revision=r_u32(r);a->u.owners.mask=r_u8(r);break;
+    case DD_ACT_TREATMENT:
+        a->u.treatment.activity=r_u8(r);a->u.treatment.slot=r_u8(r);a->u.treatment.group=r_u8(r);a->u.treatment.state=r_u8(r);
+        a->u.treatment.entry=r_u16(r);a->u.treatment.hero_id=r_u32(r);r_bytes(r,a->u.treatment.quirk,64);break;
     case DD_ACT_ACTIVITY:
         a->u.activity.op=r_u8(r);a->u.activity.activity=r_u8(r);a->u.activity.slot=r_u8(r);
         a->u.activity.hero_id=r_u32(r);a->u.activity.revision=r_u32(r);a->u.activity.epoch=r_u32(r);break;
     case DD_ACT_ASSIGN_HERO: a->u.assign.activity = r_u8(r); a->u.assign.slot = r_u8(r); a->u.assign.hero_id = r_u32(r); break;
     case DD_ACT_BUY_UPGRADE: a->u.upgrade.tree = r_u32(r); a->u.upgrade.code = r_u8(r); a->u.upgrade.hero_id = r_u32(r); break;
-    case DD_ACT_RECRUIT: a->u.recruit.hero_id=r_u32(r);a->u.recruit.fingerprint=r_u64(r);break;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT: a->u.recruit.hero_id=r_u32(r);a->u.recruit.fingerprint=r_u64(r);break;
     case DD_ACT_DISMISS: a->u.hero.hero_id = r_u32(r); break;
     case DD_ACT_PROVISION_BUY:
     case DD_ACT_PROVISION_RETURN: a->u.items.slot = r_u16(r); a->u.items.count = r_u16(r); break;

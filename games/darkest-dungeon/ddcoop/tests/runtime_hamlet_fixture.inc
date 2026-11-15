@@ -388,7 +388,54 @@ static void hm_names_and_skills(void) {
     }
     puts("Hamlet bridge: names, combat/camping selection, stale names/masks and unlearned skills verified");
 }
+/* Like 5d41b0 / 5d3c20: the purchased levels become the hero's skill levels here, not in the purchase itself. */
+static unsigned hm_learn_index[2] = {7, 7}, hm_combat_refreshes, hm_auto_limit = 4;
+static void __fastcall hm_hero_combat_levels(void *hero) { hm_combat_refreshes++; if (hm_learn_index[0] < 7) hm_levels[hm_index(hero)][0][hm_learn_index[0]] = 0; }
+static void __fastcall hm_hero_camping_levels(void *hero) { hm_skill_calls++; if (hm_learn_index[1] < 7) hm_levels[hm_index(hero)][1][hm_learn_index[1]] = 0; }
+static uint8_t __fastcall hm_auto(void *hero, uint32_t index) { (void)hero; return index < 7; }
+static uint32_t __fastcall hm_selected_count(void *hero) {
+    uint64_t end = 0;unsigned h = hm_index(hero);memcpy(&end, (uint8_t *)hero + 0x13d0, 8);
+    return (uint32_t)((end - (uintptr_t)hm_selected[h][0]) / 4);
+}
+static uint32_t __fastcall hm_selected_limit(void *hero) { (void)hero; return hm_auto_limit; }
+static int hm_is_selected(unsigned h, unsigned camping, uint32_t index) {
+    uint64_t end = 0;memcpy(&end, hm_entries[h] + 8 + (camping ? 0x13a0 : 0x13d0), 8);
+    for (uint32_t *p = hm_selected[h][camping]; (uintptr_t)p < end; p++) if (*p == index) return 1;
+    return 0;
+}
+/* Owner 13 Nov: only the host could equip skills. A combat skill bought by a guest was never learned on the host (only
+ * camping levels were refreshed), so the host refused selecting it. Every copy now refreshes both kinds and selects a
+ * newly learned skill the way the Guild does when there is room. */
+static void hm_skill_learning_checks(void) {
+    for (unsigned camping = 0; camping < 2; camping++) {
+        hm_reset(DD_ROLE_HOST);
+        g_hero_skills = hm_hero_camping_levels;
+        g_hero_combat_skills = hm_hero_combat_levels;g_hero_skill_auto = hm_auto;
+        g_hero_selected_count = hm_selected_count;g_hero_selected_limit = hm_selected_limit;
+        hm_learn_index[0] = hm_learn_index[1] = 7;hm_learn_index[camping] = 1;hm_combat_refreshes = 0;hm_auto_limit = 4;
+        CHECK(hm_levels[0][camping][1] == UINT32_MAX && !hm_is_selected(0, camping, 1));
+        hamlet_upgrade_refresh(1);
+        CHECK(hm_combat_refreshes == 1 && hm_levels[0][camping][1] == 0);
+        CHECK(hm_is_selected(0, camping, 1) && hm_native == 1); /* learned and, with room, selected as the Guild does */
+        hamlet_upgrade_refresh(1);
+        CHECK(hm_is_selected(0, camping, 1) && hm_native == 1); /* nothing new: never toggled off again */
+        /* No room: learned, not selected. */
+        hm_reset(DD_ROLE_HOST);
+        g_hero_skills = hm_hero_camping_levels;
+        g_hero_combat_skills = hm_hero_combat_levels;g_hero_skill_auto = hm_auto;
+        g_hero_selected_count = hm_selected_count;g_hero_selected_limit = hm_selected_limit;
+        hm_learn_index[0] = hm_learn_index[1] = 7;hm_learn_index[camping] = 1;
+        if (camping) { hm_selected[0][1][2] = 3;hm_selected[0][1][3] = 4;putptr(hm_entries[0] + 8 + 0x13a0, (uintptr_t)(hm_selected[0][1] + 4)); }
+        else hm_auto_limit = 2;
+        hamlet_upgrade_refresh(1);
+        CHECK(hm_levels[0][camping][1] == 0 && !hm_is_selected(0, camping, 1) && !hm_native);
+    }
+    g_hero_combat_skills = NULL;g_hero_skill_auto = NULL;g_hero_selected_count = g_hero_selected_limit = NULL;
+    hm_learn_index[0] = hm_learn_index[1] = 7;hm_auto_limit = 4;
+    puts("Skill learning: combat and camping levels refreshed on every copy; a newly learned skill selected as the Guild does when there is room, never toggled off, left alone without room");
+}
 static void hm_upgrades_and_refresh(void) {
+    hm_skill_learning_checks();
     for (unsigned camping = 0; camping < 2; camping++) {
         uint8_t request_bytes[12] = {0};
         putint(request_bytes, 123);
@@ -1347,6 +1394,25 @@ static void hm_secret_room_trinkets(void) {
     CHECK(!g_incoming.count);
     CHECK(!hm_raid_loot[1][0] && hm_gear[0][1][0x88] == 101 && hm_raid_loot[0][0x88] == 102);
     CHECK(g_town.applied_seq == 1 && !g_town.needs_resync && !hm_item_alive);
+    /* The host's slot holds no trinket here but a stack of something else, the trinket is elsewhere (12 Nov 19:27):
+     * the trinket is found and moved, the stack is left alone. */
+    hm_raid_reset(DD_ROLE_GUEST);
+    memcpy(hm_raid_loot[1], hm_raid_loot[2], 0x5a8);
+    {
+        uint32_t stack = 3, other_type = 0, other_id = 55;
+        memcpy(&other_type, hm_raid_loot[2] + 0x44, 4);
+        other_type ^= 0x5a5a5a5au;
+        memcpy(hm_raid_loot[2], &stack, 4);
+        memcpy(hm_raid_loot[2] + 0x44, &other_type, 4);
+        memcpy(hm_raid_loot[2] + 0x88, &other_id, 4);
+        CHECK(queue_push(&g_incoming, &apply));
+        dd_runtime_poll();
+        uint32_t q = 0, t = 0, d = 0;
+        memcpy(&q, hm_raid_loot[2], 4);memcpy(&t, hm_raid_loot[2] + 0x44, 4);memcpy(&d, hm_raid_loot[2] + 0x88, 4);
+        CHECK(!g_incoming.count && !hm_raid_loot[1][0] && hm_gear[0][1][0x88] == 101);
+        CHECK(q == 3 && t == other_type && d == 55);
+        CHECK(g_town.applied_seq == 1 && !g_town.needs_resync && !hm_item_alive);
+    }
     /* It never comes, or holds something else: no silent ACK; shared actions stop. */
     hm_raid_reset(DD_ROLE_GUEST);
     memset(hm_raid_loot, 0, sizeof hm_raid_loot);

@@ -58,6 +58,8 @@ static void __fastcall hook_activity_source_finish(void *,void *);
 static void __fastcall hook_activity_source_remove(void *,void *);
 static int formation_apply(const dd_action *a);
 static int formation_set_apply(const dd_action *a);
+static int treatment_apply(const dd_action *a);
+static int event_recruit_apply(const dd_action *a);
 static int hamlet_apply(const dd_action *a);
 static void hamlet_reset(void);
 static void hamlet_refresh_schedule(uint32_t id);
@@ -576,6 +578,11 @@ static void recruit_log_candidate(const char *label,const dd_recruit *s,uint32_t
         dd_log("Stagecoach detail %s hero=%u identity=%016llx gear=%016llx combat=%016llx camping=%016llx quirks=%016llx",label,id,
             (unsigned long long)p[0],(unsigned long long)p[1],(unsigned long long)p[2],(unsigned long long)p[3],(unsigned long long)p[4]);
     else dd_log("Stagecoach detail %s hero=%u unreadable",label,id);
+    /* Owner's run 14 Nov 01:58:02: only the quirks part differed, for all three candidates. Which field? */
+    {
+        char text[64*48+1];
+        if(dd_recruit_quirk_text(s,id,text,sizeof text))dd_log("Stagecoach quirks %s hero=%u:%s",label,id,text);
+    }
 }
 static void recruit_log_pool(const char *label) {
     dd_recruit s;uint64_t begin=0,end=0;
@@ -654,6 +661,7 @@ static void __fastcall hook_recruit_hide(void *panel) {
     }
     g_original_recruit_hide(panel);
 }
+#include "dd_event_recruit_bridge.inc"
 static int __fastcall hook_roster_drop(void *target,void *position,void *drag) {
     if(!g_original_roster_drop)return 0;
     if(!InterlockedCompareExchange(&g_campaign_active,0,0) || g_cfg.role==DD_ROLE_OFF)
@@ -662,6 +670,7 @@ static int __fastcall hook_roster_drop(void *target,void *position,void *drag) {
     uint64_t entry=0;uint32_t id=0;dd_recruit s;dd_recruit_choice choice;
     int candidate=safe_read((uintptr_t)drag+8,&entry,8) && entry && safe_read((uintptr_t)entry+0x137c,&id,4) &&
         g_recruit_open_model(&s) && dd_recruit_candidate(&s,id,&choice) && choice.available && choice.entry==entry;
+    if(!candidate && event_recruit_drop(entry,id))return 0; /* a town event's hero: shared like a Stagecoach recruit */
     if(!candidate)return g_original_roster_drop(target,position,drag); /* ordinary roster reordering */
     uint32_t special_limit=0;
     if(!safe_read((uintptr_t)entry+0x144c,&special_limit,4) || special_limit) {
@@ -729,7 +738,14 @@ static int activity_kind(void *activity) {
     if (strstr(name, "Meditation@Activity@Building")) return DD_ACTIVITY_MEDITATION;
     if (strstr(name, "Prayer@Activity@Building")) return DD_ACTIVITY_PRAYER;
     if (strstr(name, "Flagellation@Activity@Building")) return DD_ACTIVITY_FLAGELLATION;
-    if (strstr(name, "QuirkTreatment@Activity@Building")) return DD_ACTIVITY_QUIRK_TREATMENT;
+    /* The Sanitarium makes both of its activities as QuirkTreatment (54f8ba, 54f93d); the disease one has +23e set.
+     * Until test90 both read as 6, so the town model found two and gave neither: a guest's Sanitarium placement was
+     * refused until the host had that building open (owner 15 Nov 01:21:38). */
+    if (strstr(name, "QuirkTreatment@Activity@Building")) {
+        uint8_t disease = 0;
+        if (!safe_read((uintptr_t)activity + 0x23e, &disease, 1)) return -1;
+        return disease ? DD_ACTIVITY_DISEASE_TREATMENT : DD_ACTIVITY_QUIRK_TREATMENT;
+    }
     if (strstr(name, "DiseaseTreatment@Activity@Building")) return DD_ACTIVITY_DISEASE_TREATMENT;
     return -1;
 }
@@ -929,6 +945,8 @@ static int runtime_apply_inner(void *unused, const dd_action *a) {
     if (!a || !dd_action_valid(a)) return 0;
     if(a->kind==DD_ACT_FORMATION_RESET)return formation_apply(a);
     if(a->kind==DD_ACT_FORMATION_SET)return formation_set_apply(a);
+    if(a->kind==DD_ACT_TREATMENT)return treatment_apply(a);
+    if(a->kind==DD_ACT_EVENT_RECRUIT)return event_recruit_apply(a);
     if(a->kind==DD_ACT_OWNERS)return hero_owners_apply(a);
     if(a->kind==DD_ACT_PREPARE)return prepare_apply(a);
     if(a->kind==DD_ACT_EMBARK)return embark_apply(a);
@@ -1103,6 +1121,7 @@ static int bag_drag_refused(void *ui, int on_shop);
 static void supply_drag_pickup(void *ui);
 static int supply_drag_finish(void *ui);
 static void bag_drag_done(void);
+#include "dd_treatment_bridge.inc"
 #include "dd_hamlet_bridge.inc"
 #include "dd_activity_bridge.inc"
 #include "dd_supplies_bridge.inc"

@@ -61,7 +61,20 @@ static void __fastcall hook_confirm_enqueue(void *manager, const char *name, voi
         g_walk_view(&v) && (!v.battle || loot_open(&v)) && v.area == g_full_loot_area;
     if (!g_confirm_enqueue) return;
     g_confirm_enqueue(manager, name, params);
-    if (!track) return;
+    if (!track) {
+        /* Owner, 14 Nov: the inventory-full notice still closed on one screen only, and no log said why. Name each
+         * condition once per popup, so the next report shows which one kept it local. */
+        if (walk_shared() && name && full_notice_name((uintptr_t)name)) {
+            walk_view w = {0};
+            uintptr_t cb = 1;
+            int have = g_walk_view(&w), readable = params && safe_read((uintptr_t)params + 0x38, &cb, 8);
+            dd_log("Inventory-full: popup kept local here: loot_seq=%u caller=%llx allowed=%d callback=%s area=%08x loot_area=%08x battle=%u loot_open=%d",
+                   g_full_loot_seq, (unsigned long long)((uintptr_t)_ReturnAddress() - image_base()),
+                   g_full_notice_caller((uintptr_t)_ReturnAddress() - image_base()), readable ? (cb ? "set" : "empty") : "unreadable",
+                   have ? w.area : 0, g_full_loot_area, have ? w.battle : 0, have ? loot_open(&w) : -1);
+        }
+        return;
+    }
     uintptr_t entry = full_notice_entry((uintptr_t)manager,1);
     if (!entry || !full_notice_name(entry)) {
         dd_log("Inventory-full: native entry could not be identified"); runtime_sync_stop(3); return;

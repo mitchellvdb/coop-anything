@@ -44,13 +44,14 @@ static dd_action act(uint8_t kind) {
     case DD_ACT_ACTIVITY: a.u.activity.op=1;a.u.activity.activity=DD_ACTIVITY_BAR;a.u.activity.slot=0;a.u.activity.hero_id=7;a.u.activity.revision=1;a.u.activity.epoch=1;break;
     case DD_ACT_ASSIGN_HERO: a.u.assign.activity = DD_ACTIVITY_MEDITATION; a.u.assign.slot = 2; a.u.assign.hero_id = 7; break;
     case DD_ACT_BUY_UPGRADE: a.u.upgrade.tree = 0x3fb36379; a.u.upgrade.code = '0'; a.u.upgrade.hero_id = 1; break;
-    case DD_ACT_RECRUIT: a.u.recruit.hero_id = 30;a.u.recruit.fingerprint=UINT64_C(0x1020304050607080); break;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT: a.u.recruit.hero_id = 30;a.u.recruit.fingerprint=UINT64_C(0x1020304050607080); break;
     case DD_ACT_DISMISS: a.u.hero.hero_id = 30; break;
     case DD_ACT_RENAME: a.u.rename.hero_id=1;strcpy(a.u.rename.before,"Hero");strcpy(a.u.rename.after,"Hero B");break;
     case DD_ACT_SKILL: a.u.skill.hero_id=1;a.u.skill.after=1;break;
     case DD_ACT_TRINKET_MOVE: a.u.move.src_type=1;a.u.move.src_id=1;a.u.move.dst_slot=1;break;
     case DD_ACT_FORMATION_RESET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_FORMATION_SET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
+    case DD_ACT_TREATMENT: a.u.treatment.activity=DD_ACTIVITY_QUIRK_TREATMENT;a.u.treatment.slot=1;a.u.treatment.group=1;a.u.treatment.state=1;a.u.treatment.entry=2;a.u.treatment.hero_id=7;strcpy(a.u.treatment.quirk,"kleptomaniac");break;
     case DD_ACT_PARTY: a.u.party.before[0]=1;a.u.party.after[1]=1;break;
     case DD_ACT_SUPPLIES: a.u.supplies.op=DD_SUPPLY_BUY;a.u.supplies.type=0x72f14069;
         a.u.supplies.gold=75;memset(a.u.supplies.before,0x5a,32);break;
@@ -398,6 +399,20 @@ static void test_desync_wire(void) {
     m.u.town.action=act(DD_ACT_FORMATION_RESET);
     m.u.town.action.u.formation.after[1]=2;
     CHECK(!dd_encode(&m,wire,sizeof wire),"duplicate formation ID refused");
+    m=town(DD_MSG_TOWN_REQUEST,act(DD_ACT_EVENT_RECRUIT));
+    n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.kind==DD_ACT_EVENT_RECRUIT &&
+          out.u.town.action.u.recruit.hero_id==30 && out.u.town.action.u.recruit.fingerprint==UINT64_C(0x1020304050607080),"event recruit round trip");
+    m.u.town.action.u.recruit.fingerprint=0;CHECK(!dd_encode(&m,wire,sizeof wire),"event recruit needs a fingerprint");
+    m=town(DD_MSG_TOWN_REQUEST,act(DD_ACT_TREATMENT));
+    n=dd_encode(&m,wire,sizeof wire);
+    CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.kind==DD_ACT_TREATMENT &&
+          !strcmp(out.u.town.action.u.treatment.quirk,"kleptomaniac") && out.u.town.action.u.treatment.entry==2 &&
+          out.u.town.action.u.treatment.state==1,"treatment round trip");
+    m.u.town.action.u.treatment.activity=DD_ACTIVITY_BAR;CHECK(!dd_encode(&m,wire,sizeof wire),"treatment only in the Sanitarium");
+    m.u.town.action=act(DD_ACT_TREATMENT);m.u.town.action.u.treatment.state=3;CHECK(!dd_encode(&m,wire,sizeof wire),"treatment state 0..2");
+    m.u.town.action=act(DD_ACT_TREATMENT);m.u.town.action.u.treatment.quirk[0]=0;CHECK(!dd_encode(&m,wire,sizeof wire),"treatment needs a quirk");
+    m.u.town.action=act(DD_ACT_TREATMENT);strcpy(m.u.town.action.u.treatment.quirk,"a\x01b");CHECK(!dd_encode(&m,wire,sizeof wire),"treatment quirk is plain text");
     m=town(DD_MSG_TOWN_REQUEST,act(DD_ACT_FORMATION_SET));
     n=dd_encode(&m,wire,sizeof wire);
     CHECK(n && dd_decode(wire,n,&out,&used)==DD_DECODE_OK && out.u.town.action.kind==DD_ACT_FORMATION_SET &&

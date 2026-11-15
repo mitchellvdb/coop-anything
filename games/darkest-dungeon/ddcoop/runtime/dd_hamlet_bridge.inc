@@ -88,8 +88,26 @@ static void hamlet_skill_trace(const dd_hamlet *,uint32_t,unsigned,unsigned,cons
  * purchases (Blacksmith callback 66aa20, then the hero's own vt+88 with 0), 5d3c20 the skill levels (Guild callback
  * 673210). Both only read the purchases; doing them again where the callback already ran changes nothing. Not mirrored:
  * the Guild's selecting a newly learned camping skill when fewer than four are selected. */
-static hamlet_notify_fn g_hero_equipment, g_hero_skills;
+static hamlet_notify_fn g_hero_equipment, g_hero_skills, g_hero_combat_skills;
+typedef uint8_t(__fastcall *hero_skill_auto_fn)(void *, uint32_t);
+typedef uint32_t(__fastcall *hero_count_fn)(void *);
+static hero_skill_auto_fn g_hero_skill_auto;
+static hero_count_fn g_hero_selected_count, g_hero_selected_limit;
 typedef void(__fastcall *hero_virtual_fn)(void *, uint64_t);
+/* Learned skills of one kind as a bit mask (level 0..4 learned), or 0 when unreadable. */
+static uint32_t hamlet_learned_mask(const dd_hamlet *s, const dd_hamlet_hero *h, unsigned camping, unsigned *selected) {
+    uint64_t lb=0,le=0,sb=0,se=0;uint32_t mask=0;
+    *selected=0;
+    uint64_t lp=h->hero+(camping?0x13b0:0x13e0),sp=h->hero+(camping?0x1398:0x13c8);
+    if(!hamlet_read(s,lp,&lb,8) || !hamlet_read(s,lp+8,&le,8) || le<lb || (le-lb)%4 || (le-lb)/4>32)return 0;
+    if(hamlet_read(s,sp,&sb,8) && hamlet_read(s,sp+8,&se,8) && se>=sb && (se-sb)%4==0 && (se-sb)/4<=8)*selected=(unsigned)((se-sb)/4);
+    for(unsigned i=0;i<(le-lb)/4;i++) {
+        uint32_t v=UINT32_MAX;
+        if(!hamlet_read(s,lb+i*4,&v,4))return 0;
+        if(v<=4)mask|=1u<<i;
+    }
+    return mask;
+}
 static void hamlet_upgrade_refresh(uint32_t id) {
     dd_hamlet s;
     dd_hamlet_hero hero;
@@ -99,12 +117,46 @@ static void hamlet_upgrade_refresh(uint32_t id) {
         if (id) dd_log("Upgrade: hero %u not refreshed; hero not found", id);
         return;
     }
+    unsigned selected[2] = {0, 0};
+    uint32_t learned_before[2] = {hamlet_learned_mask(&s, &hero, 0, &selected[0]), hamlet_learned_mask(&s, &hero, 1, &selected[1])};
     hamlet_read(&s, hero.hero + 0x132c, before, sizeof before);
     g_hero_equipment((void *)(uintptr_t)hero.hero);
     g_hero_skills((void *)(uintptr_t)hero.hero);
+    /* Combat skills too (683900 calls 5d41b0 first). Until test87 only the camping levels were refreshed: a combat skill
+     * a guest bought stayed unlearned on the host, which then refused that guest's selecting it ("only the host can
+     * equip skills", owner 13 Nov; 12 Nov 19:05 learned 7c on the guest, 6c on the host), and a host's skill upgrade
+     * left the old level on the guests (12 Nov 19:03, level 1 on the host, 0 on the guest). */
+    if (g_hero_combat_skills) g_hero_combat_skills((void *)(uintptr_t)hero.hero);
     if (hamlet_read(&s, hero.hero, &vt, 8) && hamlet_read(&s, vt + 0x88, &entry, 8) && image_range((uintptr_t)entry, 1))
         ((hero_virtual_fn)(uintptr_t)entry)((void *)(uintptr_t)hero.hero, 0);
     hamlet_read(&s, hero.hero + 0x132c, after, sizeof after);
+    /* The Guild selects a newly learned skill by itself when there is room, on the copy whose screen it ran on only.
+     * Every copy does the same here, by the game's own tests (camping 673210: fewer than four selected and more learned
+     * than selected; combat 683900: 5d43e0, then selected count 5d4d40 below limit 5d50f0), so selections stay equal.
+     * Where the game already selected it, it is selected and nothing happens. */
+    for (unsigned camping = 0; camping < 2; camping++) {
+        unsigned now_selected = 0;
+        uint32_t learned_after = hamlet_learned_mask(&s, &hero, camping, &now_selected), fresh = learned_after & ~learned_before[camping];
+        for (unsigned i = 0; fresh && i < 32; i++) {
+            int active = 0, room = 0;
+            if (!(fresh & (1u << i)) || !dd_hamlet_skill(&s, &hero, camping, i, &active) || active || !g_hamlet_toggle[camping]) continue;
+            if (camping) {
+                unsigned learned_count = 0, n = 0;
+                for (uint32_t m = learned_after; m; m &= m - 1) learned_count++;
+                (void)hamlet_learned_mask(&s, &hero, 1, &n);
+                room = n < 4 && learned_count > n;
+            } else {
+                room = g_hero_skill_auto && g_hero_selected_count && g_hero_selected_limit &&
+                       g_hero_skill_auto((void *)(uintptr_t)hero.hero, i) &&
+                       g_hero_selected_count((void *)(uintptr_t)hero.hero) < g_hero_selected_limit((void *)(uintptr_t)hero.hero);
+            }
+            if (!room) continue;
+            g_hamlet_toggle[camping]((void *)(uintptr_t)hero.hero, i);
+            dd_log("Upgrade: hero %u newly learned %s skill %u selected, as the Guild does", id, camping ? "camping" : "combat", i);
+            if (hero.entry) { uint8_t one = 1; WriteProcessMemory(GetCurrentProcess(), (void *)(uintptr_t)(hero.entry + 0x162c), &one, 1, NULL); }
+            if (g_recruit_save[0]) g_recruit_save[0]((void *)(uintptr_t)s.campaign, 0);
+        }
+    }
     hamlet_skill_trace(&s,id,0,0,"upgrade combat");
     hamlet_skill_trace(&s,id,1,0,"upgrade camping");
     dd_log("Upgrade: hero %u refreshed, weapon %d->%d, armour %d->%d, skills", id, before[0], after[0], before[1], after[1]);
@@ -558,6 +610,8 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
     uint32_t type[2] = {0}, id[2] = {0}, q[2] = {0}, normal = 0;
     uint32_t owners[2] = {a->u.move.src_hero, a->u.move.dst_hero};
     unsigned slots[2] = {a->u.move.src_slot, a->u.move.dst_slot};
+    /* A move ordered by another copy: its bag/loot/estate slot numbers can point at something else here (see below). */
+    int remote = g_cfg.role == DD_ROLE_GUEST || (g_cfg.role == DD_ROLE_HOST && g_request_player);
     if (!g_hamlet_copy || !g_hamlet_clear || !g_hamlet_destroy || !g_hamlet_swap || !g_hamlet_actor_refresh ||
         !hamlet_read(s, s->image + 0x2a6f868, &normal, 4))
         return hamlet_fail("trinket native operations unavailable", 0);
@@ -565,7 +619,8 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
         dd_hamlet_hero hero;
         if ((DD_TRINKET_IS_HERO(owners[i]) && (dd_hamlet_find(s, owners[i], &hero) != 1 || hero.location > 2)) ||
             !dd_hamlet_inventory(s, owners[i], &inv[i], &sizes[i]) ||
-            !dd_hamlet_item(s, inv[i], slots[i], &type[i], &id[i], &q[i]) || (q[i] && type[i] != normal) ||
+            !dd_hamlet_item(s, inv[i], slots[i], &type[i], &id[i], &q[i]) ||
+            (q[i] && type[i] != normal && (DD_TRINKET_IS_HERO(owners[i]) || !remote)) ||
             !hamlet_read(s, inv[i] + 8, &items[i], 8))
             return hamlet_fail("trinket inventory or endpoint unavailable", 0);
         base[i] = items[i];
@@ -576,7 +631,10 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
      * on the guest; the host's move to its hero failed here, the trinket stayed in this bag, and the door's bag repair
      * then dropped it, so the guest's hero had no trinket. The same trinket (type and ID) elsewhere in that inventory, or
      * for a move into it an empty slot, is just as good: those items are alike. Heroes keep their exact slots. */
-    if (g_cfg.role == DD_ROLE_GUEST || (g_cfg.role == DD_ROLE_HOST && g_request_player))
+    /* That other thing may also be no trinket at all, e.g. a torch stack where the host's loot pick put the trinket
+     * (owner's run 12 Nov 19:27:25, 19:27:56, 19:40:02: the host dragged a trinket from bag slot 5/2 onto a hero, the
+     * guest had it in slot 7 and refused before looking for it). */
+    if (remote)
         for (unsigned i = 0; i < 2; i++) {
             uint32_t want_type = i ? a->u.move.dst_type : a->u.move.src_type, want_id = i ? a->u.move.dst_id : a->u.move.src_id;
             if (DD_TRINKET_IS_HERO(owners[i]) || (type[i] == want_type && id[i] == want_id && (i || q[i] == 1))) continue;
@@ -595,6 +653,8 @@ static int hamlet_move_apply(const dd_hamlet *s, const dd_action *a) {
                 break;
             }
         }
+    if ((q[0] && type[0] != normal) || (q[1] && type[1] != normal))
+        return hamlet_fail("trinket endpoint holds something that is not a trinket", 0);
     if (q[0] != 1 || type[0] != a->u.move.src_type || id[0] != a->u.move.src_id ||
         type[1] != a->u.move.dst_type || id[1] != a->u.move.dst_id ||
         !dd_hamlet_can_equip(s, owners[1], slots[1], id[0], owners[0] == owners[1] ? slots[0] : UINT32_MAX) ||
@@ -1061,8 +1121,12 @@ static void hamlet_trinket_finish(unsigned kind, void *ui, void *data) {
 }
 static void __fastcall hook_trinket_finish_hero(void *a, void *b) { hamlet_trinket_finish(0, a, b); bag_drag_done(); }
 static void __fastcall hook_trinket_cancel_hero(void *a, void *b) { hamlet_trinket_finish(1, a, b); bag_drag_done(); }
-static void __fastcall hook_trinket_finish_inventory(void *a, void *b) { hamlet_trinket_finish(2, a, b); }
-static void __fastcall hook_trinket_cancel_inventory(void *a, void *b) { hamlet_trinket_finish(3, a, b); }
+/* Raid bag items are dragged through both slot kinds. A supply moved or stacked through the inventory-kind callbacks ran
+ * natively on that copy only and was never marked for bag_poll (owner's run 14 Nov 01:25:24: a guest stacked one item
+ * from bag slot 8 onto slot 3, 7+1 stayed on the host; the extra slot later left other loot behind on a full bag and the
+ * return to the Hamlet stopped on different gold/heirlooms). Every kind now marks the drag; bag_poll shares the slots. */
+static void __fastcall hook_trinket_finish_inventory(void *a, void *b) { hamlet_trinket_finish(2, a, b); bag_drag_done(); }
+static void __fastcall hook_trinket_cancel_inventory(void *a, void *b) { hamlet_trinket_finish(3, a, b); bag_drag_done(); }
 static int hamlet_trinket_drop(unsigned kind, void *ui, void *position, void *data) {
     if (!g_trinket_drag.valid || g_game_apply_depth || !hamlet_local_active())
         return g_trinket_drop[kind] ? g_trinket_drop[kind](ui, position, data) : 0;
@@ -1110,13 +1174,19 @@ static int __fastcall hook_trinket_drop_hero(void *a, void *b, void *c) {
     return result;
 }
 static int __fastcall hook_trinket_drop_inventory(void *a, void *b, void *c) {
-    return hamlet_trinket_drop(1, a, b, c);
+    int result = hamlet_trinket_drop(1, a, b, c);
+    bag_drag_done();
+    return result;
 }
 static int __fastcall hook_trinket_area_hero(void *a, void *b, void *c) {
-    return hamlet_trinket_drop(2, a, b, c);
+    int result = hamlet_trinket_drop(2, a, b, c);
+    bag_drag_done();
+    return result;
 }
 static int __fastcall hook_trinket_area_inventory(void *a, void *b, void *c) {
-    return hamlet_trinket_drop(3, a, b, c);
+    int result = hamlet_trinket_drop(3, a, b, c);
+    bag_drag_done();
+    return result;
 }
 static void hamlet_bulk(unsigned kind, void *capture) {
     if (!g_game_apply_depth && hamlet_local_active()) {
@@ -1136,6 +1206,8 @@ typedef struct {
     size_t length;
 } hamlet_hook_spec;
 static const hamlet_hook_spec g_hamlet_hooks[] = {
+    {"event_display_enter",(uintptr_t)hook_event_display_enter,&g_event_display_enter,5},
+    {"treatment_select",(uintptr_t)hook_treatment_select,&g_treatment_select,10},
     {"activity_slot_set_hero",(uintptr_t)hook_activity_set,&g_activity_set,10},
     {"activity_slot_drop",(uintptr_t)hook_activity_drop,&g_activity_drop,10},
     {"activity_slot_destruct",(uintptr_t)hook_activity_destroy,&g_activity_destroy,10},
@@ -1172,6 +1244,7 @@ static int hamlet_bind_native(void) {
     g_hamlet_skills_refresh = (hamlet_skills_refresh_fn)hamlet_address("character_refresh_skills");
     g_hamlet_roster_update = (hamlet_roster_update_fn)hamlet_address("roster_list_update");
     g_recruit_event = (recruit_event_fn)hamlet_address("recruit_event_send");
+    g_event_recruit_done = (event_recruit_done_fn)hamlet_address("event_recruit_done");
     g_recruit_clock = (recruit_clock_fn)hamlet_address("event_clock");
     g_recruit_save[0] = (recruit_save_fn)hamlet_address("save_roster");
     g_recruit_save[1] = (recruit_save_fn)hamlet_address("save_progression");
@@ -1187,6 +1260,11 @@ static int hamlet_bind_native(void) {
     g_hamlet_actor_refresh = (hamlet_notify_fn)hamlet_address("actor_refresh_trinkets");
     g_hero_equipment = (hamlet_notify_fn)hamlet_address("hero_equipment_levels");
     g_hero_skills = (hamlet_notify_fn)hamlet_address("hero_skill_levels");
-    return g_activity_blocked && g_activity_slot_blocked && g_hero_equipment && g_hero_skills && g_hamlet_add && g_hamlet_deduct && g_hamlet_notify && g_hamlet_swap && g_hamlet_copy &&
+    g_hero_combat_skills = (hamlet_notify_fn)hamlet_address("hero_combat_skill_levels");
+    g_hero_skill_auto = (hero_skill_auto_fn)hamlet_address("hero_combat_skill_auto");
+    g_hero_selected_count = (hero_count_fn)hamlet_address("hero_combat_selected_count");
+    g_hero_selected_limit = (hero_count_fn)hamlet_address("hero_combat_selected_limit");
+    return g_activity_blocked && g_activity_slot_blocked && g_hero_equipment && g_hero_skills && g_hero_combat_skills &&
+           g_hero_skill_auto && g_hero_selected_count && g_hero_selected_limit && g_hamlet_add && g_hamlet_deduct && g_hamlet_notify && g_hamlet_swap && g_hamlet_copy &&
            g_hamlet_clear && g_hamlet_destroy && g_hamlet_actor_refresh && g_hamlet_skills_refresh;
 }

@@ -102,13 +102,14 @@ static dd_action random_action(void) {
         a.u.upgrade.code = (uint8_t)('0' + rnd() % 4);
         a.u.upgrade.hero_id = rnd() % 12;
         break;
-    case DD_ACT_RECRUIT:a.u.recruit.hero_id=1+rnd()%47;a.u.recruit.fingerprint=1;break;
+    case DD_ACT_RECRUIT: case DD_ACT_EVENT_RECRUIT:a.u.recruit.hero_id=1+rnd()%47;a.u.recruit.fingerprint=1;break;
     case DD_ACT_DISMISS: a.u.hero.hero_id = 1 + rnd() % 47; break;
     case DD_ACT_RENAME: a.u.rename.hero_id=1;strcpy(a.u.rename.before,"Hero");strcpy(a.u.rename.after,"Hero B");break;
     case DD_ACT_SKILL: a.u.skill.hero_id=1;a.u.skill.after=1;break;
     case DD_ACT_TRINKET_MOVE: a.u.move.src_type=1;a.u.move.src_id=1;a.u.move.dst_slot=1;break;
     case DD_ACT_FORMATION_RESET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
     case DD_ACT_FORMATION_SET: a.u.formation.area=7;a.u.formation.before[0]=1;a.u.formation.before[1]=2;a.u.formation.after[0]=2;a.u.formation.after[1]=1;break;
+    case DD_ACT_TREATMENT: a.u.treatment.activity=DD_ACTIVITY_QUIRK_TREATMENT;a.u.treatment.slot=1;a.u.treatment.group=1;a.u.treatment.state=1;a.u.treatment.entry=2;a.u.treatment.hero_id=7;strcpy(a.u.treatment.quirk,"kleptomaniac");break;
     case DD_ACT_PARTY: a.u.party.before[0]=1;a.u.party.after[1]=1;break;
     case DD_ACT_SUPPLIES: a.u.supplies.op=DD_SUPPLY_BUY;a.u.supplies.type=1;a.u.supplies.gold=75;
         memset(a.u.supplies.before,0x5a,32);break;

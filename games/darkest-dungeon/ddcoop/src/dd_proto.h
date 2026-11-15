@@ -16,7 +16,7 @@
 
 #define DD_PROTO_MAGIC 0x50434444u /* "DDCP" */
 #define DD_PROTO_GUID_MAX 0x7fff0000u /* highest shared guid counter value accepted */
-#define DD_PROTO_VERSION 37 /* shared manual dungeon party order (FORMATION_SET) */
+#define DD_PROTO_VERSION 38 /* shared Sanitarium treatment choice (TREATMENT) and town event recruit (EVENT_RECRUIT) */
 #define DD_PROTO_HEADER 16
 #define DD_PROTO_MAX_BODY 256
 
@@ -62,6 +62,8 @@ typedef enum {
     DD_ACT_FORMATION_RESET = 23, /* dungeon default order, same stable IDs before/after */
     DD_ACT_ACTIVITY = 24, /* shared reserve/clear/accept, exact per-slot revision */
     DD_ACT_FORMATION_SET = 25, /* dungeon party order a player chose by hand: the same members, after is the whole new order */
+    DD_ACT_TREATMENT = 26, /* Sanitarium: a quirk/disease clicked in a slot's list; state is the result (0 none, 1, 2) */
+    DD_ACT_EVENT_RECRUIT = 27, /* the hero a town event offers (campaign+1808 list), dragged to the roster; u.recruit */
     DD_ACT_COUNT_
 } dd_action_kind;
 
@@ -94,6 +96,7 @@ typedef struct {
         struct {uint32_t heroes[4],revision;uint8_t mask;} owners;
         struct {uint32_t index,key;} prepare; /* PREPARE or EMBARK: shared mission identity */
         struct {uint32_t area,before[4],after[4];} formation;
+        struct {uint8_t activity,slot,group,state;uint16_t entry;uint32_t hero_id;char quirk[64];} treatment; /* activity 6/7, group 0..2 */
     } u;
 } dd_action;
 enum { DD_SUPPLY_BUY=1, DD_SUPPLY_RETURN=2, DD_SUPPLY_CANCEL=3 };

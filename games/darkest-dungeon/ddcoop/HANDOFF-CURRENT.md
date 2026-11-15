@@ -1,3 +1,90 @@
+# Current: test90 (Claude Code, 15 Nov 2026): test89 plus Hamlet-return fix, town event recruit, Sanitarium
+
+- Owner's test89 run 15 Nov (reports 631b3ef4..f7). Both Hamlet-return stops (01:19:47, 01:54:55) were the
+  Stagecoach pool compare: every new candidate's quirks differed only in +20 (host 27d6af38 / 464fb028, guest 0).
+  The game never initialises that word (5d03f0 copies an unwritten stack slot; saved as mission_count); the
+  fingerprint (schema 3) leaves it out (0a0e7cd).
+- Town event recruit ("Hear Ye" hero) was local only: those heroes live in TownEvent::System (campaign+1808, +38),
+  not in the Stagecoach. Now DD_ACT_EVENT_RECRUIT: Roster::AddEntry + the event screen's callback 6d0690 on every
+  copy; needs the event screen showing that hero on every copy (0a0e7cd).
+- Sanitarium: both activities were QuirkTreatment, so kind 6 was ambiguous and guest placements were refused; +23e
+  now gives kind 7. The quirk/disease clicked in a slot (6a3910) is DD_ACT_TREATMENT (9f04088). Protocol 38.
+- Open: 01:47 mid-raid stop, a guest's curio use declined by its game while its party was still walking (host had
+  used it). Inventory-full notice sharing still waits for a report.
+- 0.5.0-test90: C:\dev\ddcoop-handoff\0.5.0-test90\DDCoop-install.zip
+  Kit SHA256 510f737bdcf868be19ce30015351fe121b3a42a3d79f3e445cc8b495381de1b8
+  Runtime dc26e1bbee19462bebefded68ffb87336cf2663eafc1a832b9111933c58d6d85
+  Launcher b9472f740499ab26b832a7e757c6a5647202ad0b36ac602747dc6d823800a63d
+  ddcoop-kit.sig (serial 90) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, no failing suite; 22 native ABI proofs and the hook proof (148 addresses) pass on
+  the pinned EXE; overlay test passes; Windows launcher suites pass except test_lr_prepare_win, which fails while
+  Darkest.exe runs (the owner's game was open). Linux ASan/UBSan suite not run for test90. Not tested in a session.
+- Next: owner tests TEST-STEPS H/E/Q, then R/C/F. Codex: continue from hero-ownership 03921ca or later.
+
+# Current: test89 (Claude Code, 14 Nov 2026): test88 plus bag stacking, curio/item-use settle, diagnostics
+
+- Owner's test88 run 14 Nov (reports f3b20c38..3b). Return-to-Hamlet stop 01:35 (gold 9540/9530, heirlooms 24/26):
+  a guest's bag stacking drag through the inventory-kind slot callbacks was never shared (host 7+1, guest 8); the
+  extra slot left other loot behind on a full bag. All drop/finish/cancel/area hooks now mark the drag (fb89d86).
+  Live: the door bag repair now runs and verifies (01:25:42).
+- 01:55 stop: a guest's item use arrived 50 ms after the host's curio click (ordinary on host, curio route on guest).
+  The host refuses ordinary outside-fight uses for 2 s after any prop order, its own and guests' (fb89d86).
+- Diagnostics (7439fb0): inventory-full notice logs which tracking condition kept it local (no "Inventory-full" line
+  appeared in test88); Stagecoach logs each candidate's quirk fields (01:58: only the quirk part differed, all three).
+- 0.5.0-test89: C:\dev\ddcoop-handoff\0.5.0-test89\DDCoop-install.zip
+  Kit SHA256 2fdd980c7e3dd65e217043b64e8b2b7d40876121bdcc06e2452e3450ff192e77
+  Runtime e2cbe1acc9d5dbb26e3c484565126b734dedadd1c1df6932140370ab77e7cfc4
+  Launcher 12eccf3b645665ce1f560840732e418948adcb1661d51dd2e65137be18a7cf7a
+  ddcoop-kit.sig (serial 89) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, every suite 0 failures; 7 native ABI proofs and the hook proof pass on the pinned
+  EXE; overlay test passes; all Windows launcher suites pass including test_lr_prepare_win; Linux ASan/UBSan suite
+  passed. Not tested in a real session.
+- Next: owner tests TEST-STEPS R/C/F/H, then the test88 checks. Open: inventory-full notice sharing and the Stagecoach
+  quirk field, both need the next report. Codex: continue from hero-ownership e9f5a3e or later.
+
+# Current: test88 (Claude Code, 13 Nov 2026): test87 plus Guild skills for every player
+
+- Guild skills (eed0294): owner 13 Nov "only the host can equip skills". hamlet_upgrade_refresh called only 5d3c20
+  (camping levels); combat levels come from 5d41b0 (Guild combat callback 683900). A guest-bought combat skill stayed
+  unlearned on the host (12 Nov 19:05 learned 7c guest / 6c host; 16:58:59 refused "not learned"), and a host's skill
+  upgrade left the old level on guests (19:03). Now both refreshes run on every copy, and a newly learned skill is
+  selected by the Guild's own tests on every copy (camping 673210, combat 5d43e0 + 5d4d40 < 5d50f0).
+- Survey: no other guest-blocking gates found in the runtime; host-only in the launcher by design: assigning a hero to
+  another player, Resync, host saving.
+- 0.5.0-test88: C:\dev\ddcoop-handoff\0.5.0-test88\DDCoop-install.zip
+  Kit SHA256 dd40175694919821631e6e4545841b52cf2794ab8c35e802b41eb9c2a3ab8dd5
+  Runtime 1c3ee1a47a9042e264ab699005e534be58264d0bb32e835461a4ad1b22d76d5f
+  Launcher 06a28b7b456bdb37535346f3ad2f2f720100f35b653ca71f0a067c771f5c6636
+  ddcoop-kit.sig (serial 88) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, every suite 0 failures; 7 native ABI proofs (new test_skill_learning_layout.py)
+  and the hook proof (145 addresses, 93 hook targets) pass on the pinned EXE; overlay test passes; all Windows
+  launcher suites pass including test_lr_prepare_win; Linux ASan/UBSan suite passed. Not tested in a real session.
+- Next: owner tests TEST-STEPS S (guest buys/upgrades and selects skills), then A/B and the test86 steps. Codex:
+  continue from hero-ownership 96c6c55 or later.
+
+# Current: test87 (Claude Code, 13 Nov 2026): Codex test86 plus loot trinkets and the bag repair at doors
+
+- Codex test86 imported unchanged (835a5e1). Codex also published that source to the owner's GitHub repository
+  (coop-anything, branch game/darkest-dungeon-ddcoop).
+- Loot trinket onto a hero (86c687e): owner's test86 stops 12 Nov 19:27:25, 19:27:56, 19:40:02. After a loot pick the
+  trinket sat in another bag slot on the guest, whose slot held a non-trinket; hamlet_move_apply refused before its
+  "same trinket elsewhere" search. Remote bag/loot/estate endpoints now fall through to that search.
+- Bag repair at doors (9bb1e96): owner's stops 11 Nov 16:57, 12 Nov 19:15 and 19:32 (reason 2, 0.1 s after a door).
+  bag_templates_begin required the new area's loot inventory; now only the bag is required, the BAG_CHECK gate waits
+  until the bag is readable, failures log why, and both copies log every bag slot when bags differ. Why bags diverge
+  is still open; the next report will show the slots.
+- 0.5.0-test87: C:\dev\ddcoop-handoff\0.5.0-test87\DDCoop-install.zip
+  Kit SHA256 98d79ba9ebb5c929a9e6434cfa845dadbfb9a47b285ebcf6efd6c63d6daafadf
+  Runtime 9f0fe26dc3c7a8bcd622a2091299336c2de7e1ecb11343325ef2a0d4757143f9
+  Launcher 0c36344a7dc9f94f414ad58bf9d3bc32523a01eb57f91de727aea64ac4cc7691
+  ddcoop-kit.sig (serial 87) verified with the launcher's code and the owner key; Defender: no threats.
+- Validation: runtime tests exit 0, every suite 0 failures (new cases fail without the fixes); formation, provisions,
+  item-use, recruit, town-save, full-notice and hook ABI proofs pass on the pinned EXE; overlay test passes; all
+  Windows launcher suites pass including test_lr_prepare_win (game closed); Linux ASan/UBSan suite passed. Not
+  tested in a real session. No duo kit.
+- Next: owner tests TEST-STEPS A/B (trinket after loot, doors after loot) and the test86 steps. Codex: continue from
+  hero-ownership 0fa5eb2 or later.
+
 # Current: test86 (Codex,12 November2026)
 
 Start from the final test86 source archive / GitHub project branch, not the stale

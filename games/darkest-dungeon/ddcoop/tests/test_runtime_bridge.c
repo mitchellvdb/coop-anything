@@ -242,6 +242,81 @@ static void world_reset(int role) {
     g_recruit_save[3] = world_save3;
     dd_town_init(&g_town, NULL, runtime_apply, NULL, fake_send);
 }
+/* Town event recruit (DD_ACT_EVENT_RECRUIT): the candidate sits in TownEvent::System (campaign+1808, list at +38), not in the
+ * Stagecoach; the event screen (vtable ec2020) shows it in an active slot; 6d0690 is faked. */
+static uint8_t ev_display[0x200], ev_slot[0x400], ev_item[0x40];
+static uint64_t ev_slots[1];
+static unsigned ev_done_calls;
+static void __fastcall ev_done(void *captures, void *hero) {
+    uint64_t c[2];memcpy(c, captures, sizeof c);
+    CHECK(c[0] == (uintptr_t)ev_display && c[1] == (uintptr_t)world_campaign + 0x1808 && hero == world_entries && add_calls == 1);
+    ev_done_calls++;
+    world_entries[0x15a8] = 0;
+}
+static void ev_reset(int role, int with_display) {
+    world_reset(role);
+    InterlockedExchange(&g_session_ready, 1);
+    putptr(world_store + 0x68, 0);putptr(world_store + 0x70, 0); /* not a Stagecoach candidate */
+    putptr(world_campaign + 0x1808 + 0x38, (uintptr_t)world_entries);
+    putptr(world_campaign + 0x1808 + 0x40, (uintptr_t)(world_entries + sizeof world_entries));
+    memset(ev_display, 0, sizeof ev_display);memset(ev_slot, 0, sizeof ev_slot);memset(ev_item, 0, sizeof ev_item);
+    putptr(ev_display, image_base() + 0xec2020);
+    ev_slots[0] = (uintptr_t)ev_slot;
+    putptr(ev_display + 0x120, (uintptr_t)ev_slots);putptr(ev_display + 0x128, (uintptr_t)(ev_slots + 1));
+    putint(ev_slot + 0x58, 1);putptr(ev_slot + 0x158, (uintptr_t)ev_item);putptr(ev_item + 0x28, (uintptr_t)world_entries);
+    g_event_display = with_display ? (uintptr_t)ev_display : 0;
+    g_event_recruit_done = ev_done;
+    ev_done_calls = 0;
+}
+static void event_recruit_checks(void) {
+    uint64_t drag[] = {0, (uintptr_t)world_entries};
+    /* A guest drags the event hero: only a request, the game's drop is not run. */
+    ev_reset(DD_ROLE_GUEST, 1);
+    CHECK(!hook_roster_drop(NULL, NULL, drag));
+    CHECK(!drop_calls && !add_calls && !ev_done_calls && world_entries[0x15a8] == 1 && sent == 1 &&
+          last_message.type == DD_MSG_TOWN_REQUEST && last_message.u.town.action.kind == DD_ACT_EVENT_RECRUIT &&
+          last_message.u.town.action.u.recruit.hero_id == 40 && last_message.u.town.action.u.recruit.fingerprint);
+    dd_msg request = last_message;
+    /* The host orders it: roster add, then the event callback, once. */
+    ev_reset(DD_ROLE_HOST, 1);
+    CHECK(queue_push(&g_incoming, &request));
+    dd_runtime_poll();
+    CHECK(g_town.accepted == 1 && !g_town.needs_resync && add_calls == 1 && ev_done_calls == 1 && world_count == 2 &&
+          !world_entries[0x15a8] && last_message.type == DD_MSG_TOWN_APPLY);
+    dd_msg apply = last_message;
+    /* The guest applies the order the same way. */
+    ev_reset(DD_ROLE_GUEST, 1);
+    CHECK(queue_push(&g_incoming, &apply));
+    dd_runtime_poll();
+    CHECK(g_town.applied_seq == 1 && !g_town.needs_resync && add_calls == 1 && ev_done_calls == 1 && world_count == 2 &&
+          !world_entries[0x15a8]);
+    /* The host drags it itself. */
+    ev_reset(DD_ROLE_HOST, 1);
+    CHECK(!hook_roster_drop(NULL, NULL, drag));
+    CHECK(!drop_calls && add_calls == 1 && ev_done_calls == 1 && g_town.accepted == 1 && last_message.type == DD_MSG_TOWN_APPLY);
+    /* A copy without the event screen showing that hero changes nothing and stops. */
+    ev_reset(DD_ROLE_GUEST, 0);
+    CHECK(queue_push(&g_incoming, &apply));
+    dd_runtime_poll();
+    CHECK(g_town.needs_resync && !add_calls && !ev_done_calls && world_entries[0x15a8] == 1);
+    /* A different event hero (another fingerprint) is refused before anything changes. */
+    ev_reset(DD_ROLE_GUEST, 1);
+    strcpy((char *)world_entries + 8, "Other");
+    CHECK(queue_push(&g_incoming, &apply));
+    dd_runtime_poll();
+    CHECK(g_town.needs_resync && !add_calls && !ev_done_calls);
+    /* A full roster refuses on the host; the drag of a hero already taken is an ordinary roster move. */
+    ev_reset(DD_ROLE_HOST, 1);
+    world_capacity = 1;
+    CHECK(queue_push(&g_incoming, &request));
+    dd_runtime_poll();
+    CHECK(g_town.rejected == 1 && !add_calls && !ev_done_calls && world_entries[0x15a8] == 1);
+    ev_reset(DD_ROLE_GUEST, 1);
+    world_entries[0x15a8] = 0;
+    CHECK(hook_roster_drop(NULL, NULL, drag) == 1 && drop_calls == 1 && !sent);
+    g_event_display = 0;g_event_recruit_done = NULL;
+    puts("Town event recruit: guest drag asks first, host orders roster add + event callback once, guests apply it, no event screen or other hero refused, full roster rejected");
+}
 static void recruit_transactions(void) {
     world_reset(DD_ROLE_GUEST);
     uint64_t drag[] = {0, (uintptr_t)world_entries};
@@ -694,6 +769,111 @@ static void activity_transactions(void) {
     puts("Building placement without the building's screen: the activity comes from the town's buildings; two of a kind, a missing one and a looping tree refuse; the panel's activity still works");
 }
 
+
+/* Sanitarium treatment choice (DD_ACT_TREATMENT). A QuirkTreatment-like activity in the town model: slot 1 holds hero 7,
+ * its negative group (1) lists two quirks; 6a3910 is faked with the native toggle. */
+static uint8_t tr_act[0x300], tr_slots[3][24], tr_records[3 * 0x1e0], tr_entries[2][0x88];
+static unsigned tr_calls;
+static int tr_kind(void *activity) { return (uint8_t *)activity == tr_act ? tr_act[0x10] : at_kind(activity); }
+static void tr_model(int with_entries) {
+    uint64_t p;
+    activity_model();
+    memset(tr_act, 0, sizeof tr_act);memset(tr_slots, 0, sizeof tr_slots);memset(tr_records, 0, sizeof tr_records);
+    memset(tr_entries, 0, sizeof tr_entries);
+    tr_act[0x10] = DD_ACTIVITY_QUIRK_TREATMENT;
+    uint32_t hero = 7;memcpy(tr_slots[1], &hero, 4);
+    p = (uintptr_t)tr_slots;memcpy(tr_act + 0x78, &p, 8);p += sizeof tr_slots;memcpy(tr_act + 0x80, &p, 8);
+    p = (uintptr_t)tr_records;memcpy(tr_act + 0x190, &p, 8);p += sizeof tr_records;memcpy(tr_act + 0x198, &p, 8);
+    strcpy((char *)tr_entries[0], "kleptomaniac");tr_entries[0][0x81] = 1;
+    strcpy((char *)tr_entries[1], "lygophobia");tr_entries[1][0x81] = 1;tr_entries[1][0x82] = 1;
+    uint8_t *record = tr_records + 1 * 0x1e0 + 1 * 0xa0;
+    if (with_entries) { p = (uintptr_t)tr_entries;memcpy(record, &p, 8);p += sizeof tr_entries;memcpy(record + 8, &p, 8); }
+    at_lists[2][0] = (uintptr_t)tr_act;
+    { uint64_t begin = (uintptr_t)at_lists[2], end = begin + 8; memcpy(at_buildings[2] + 0xc0, &begin, 8); memcpy(at_buildings[2] + 0xc8, &end, 8); }
+    g_activity_kind = tr_kind;
+}
+static void __fastcall tr_native(void *functor) {
+    uint64_t activity = 0;int32_t group = 0, slot = 0, entry = 0;
+    memcpy(&activity, (uint8_t *)functor + 8, 8);memcpy(&group, (uint8_t *)functor + 0x10, 4);
+    memcpy(&slot, (uint8_t *)functor + 0x14, 4);memcpy(&entry, (uint8_t *)functor + 0x18, 4);
+    CHECK(activity == (uintptr_t)tr_act);
+    uint8_t *record = tr_records + slot * 0x1e0 + group * 0xa0, *e = tr_entries[entry];
+    uint32_t state = 0;
+    tr_calls++;
+    if (strncmp((char *)record + 0x18, (char *)e, 0x80)) {
+        memcpy(record + 0x18, e, 0x80);
+        state = e[0x81] ? 1 : e[0x82] ? 2 : 0;
+    } else {
+        uint32_t cur = 0;memcpy(&cur, e + 0x84, 4);
+        state = cur == 3 ? 0 : cur + 1;
+        if (state == 1 && !e[0x81]) state = e[0x82] ? 2 : 0;
+        else if (state == 2 && !e[0x82]) state = 0;
+        else if (state == 3) state = 0;
+        if (!state) memset(record + 0x18, 0, 0x80);
+    }
+    memcpy(e + 0x84, &state, 4);
+    memcpy(record + 0x98, &state, 4);
+}
+static void tr_reset(int role) { reset(role);dd_town_init(&g_town, NULL, runtime_apply, NULL, fake_send);g_treatment_select = tr_native;tr_calls = 0; }
+static void treatment_checks(void) {
+    uint8_t functor[0x20] = {0};
+    uint64_t act = (uintptr_t)tr_act;int32_t group = 1, slot = 1, entry = 0;
+    memcpy(functor + 8, &act, 8);memcpy(functor + 0x10, &group, 4);memcpy(functor + 0x14, &slot, 4);memcpy(functor + 0x18, &entry, 4);
+    uint8_t *record = tr_records + 1 * 0x1e0 + 1 * 0xa0;
+    uint32_t state = 0;
+    /* Host clicks kleptomaniac: it is chosen here through the native click, and ordered with its result. */
+    tr_model(1);tr_reset(DD_ROLE_HOST);
+    hook_treatment_select(functor);
+    memcpy(&state, record + 0x98, 4);
+    CHECK(tr_calls == 1 && state == 1 && !strcmp((char *)record + 0x18, "kleptomaniac") && sent == 1);
+    CHECK(last_message.type == DD_MSG_TOWN_APPLY && last_message.u.town.action.kind == DD_ACT_TREATMENT &&
+          last_message.u.town.action.u.treatment.state == 1 && last_message.u.town.action.u.treatment.hero_id == 7 &&
+          !strcmp(last_message.u.town.action.u.treatment.quirk, "kleptomaniac"));
+    dd_action order = last_message.u.town.action;
+    /* A guest whose list exists: the same native click. */
+    tr_model(1);tr_reset(DD_ROLE_GUEST);
+    wk_push(1, &order);dd_runtime_poll();
+    memcpy(&state, record + 0x98, 4);
+    CHECK(tr_calls == 1 && state == 1 && !strcmp((char *)record + 0x18, "kleptomaniac") && g_town.applied_seq == 1 && !g_town.needs_resync);
+    /* A guest that never built that slot's list (never opened the Sanitarium): the record itself is written. */
+    tr_model(0);tr_reset(DD_ROLE_GUEST);
+    wk_push(1, &order);dd_runtime_poll();
+    memcpy(&state, record + 0x98, 4);
+    CHECK(!tr_calls && state == 1 && !strcmp((char *)record + 0x18, "kleptomaniac") && g_town.applied_seq == 1 && !g_town.needs_resync);
+    /* A guest clicks: only a request, nothing changes before the host's order. */
+    tr_model(1);tr_reset(DD_ROLE_GUEST);
+    hook_treatment_select(functor);
+    memcpy(&state, record + 0x98, 4);
+    CHECK(!tr_calls && !state && sent == 1 && last_message.type == DD_MSG_TOWN_REQUEST && last_message.u.town.action.u.treatment.state == 1);
+    /* Clicking the chosen quirk again clears it, on the native and the written path alike. */
+    tr_model(1);tr_reset(DD_ROLE_HOST);
+    hook_treatment_select(functor);hook_treatment_select(functor);
+    memcpy(&state, record + 0x98, 4);
+    CHECK(!state && !record[0x18] && sent == 2 && last_message.u.town.action.u.treatment.state == 0);
+    order = last_message.u.town.action;
+    tr_model(0);tr_reset(DD_ROLE_GUEST);
+    strcpy((char *)record + 0x18, "kleptomaniac");state = 1;memcpy(record + 0x98, &state, 4);
+    wk_push(1, &order);dd_runtime_poll();
+    memcpy(&state, record + 0x98, 4);
+    CHECK(!state && !record[0x18] && !g_town.needs_resync);
+    /* A guest whose list would give another state (its entry already at 1): the sender's result is written, not refused. */
+    tr_model(1);tr_reset(DD_ROLE_GUEST);
+    strcpy((char *)record + 0x18, "kleptomaniac");state = 1;memcpy(record + 0x98, &state, 4);memcpy(tr_entries[0] + 0x84, &state, 4);
+    order.u.treatment.state = 1;
+    wk_push(1, &order);dd_runtime_poll();
+    memcpy(&state, record + 0x98, 4);
+    { uint32_t es = 0; memcpy(&es, tr_entries[0] + 0x84, 4);
+      CHECK(!tr_calls && state == 1 && es == 1 && !strcmp((char *)record + 0x18, "kleptomaniac") && g_town.applied_seq == 1 && !g_town.needs_resync); }
+    /* Another hero in that slot here: refused; on a guest that stops shared actions. */
+    tr_model(1);tr_reset(DD_ROLE_GUEST);
+    { uint32_t other = 8; memcpy(tr_slots[1], &other, 4); }
+    order.u.treatment.state = 1;
+    wk_push(1, &order);dd_runtime_poll();
+    CHECK(g_town.needs_resync && !g_town.applied_seq);
+    g_treatment_select = NULL;g_activity_kind = activity_kind;g_town_object = town_object;
+    puts("Sanitarium treatment: host click native and ordered with its result; guests apply natively or write the record when no list exists; guest click asks first; second click clears; a differing list takes the sender's result; other hero refused");
+}
+
 #include "runtime_transport_stop_fixture.inc"
 #include "runtime_recruit_pool_fixture.inc"
 #include "runtime_notice_fixture.inc"
@@ -741,6 +921,7 @@ int main(void) {
     transport_stop_checks();
     reset(DD_ROLE_HOST);
     recruit_transactions();
+    event_recruit_checks();
     recruit_pool_checks();
     sale_transactions();
     hook_machine_code();
@@ -775,6 +956,7 @@ int main(void) {
     hunger_transactions();
     quest_return_transactions();
     activity_transactions();
+    treatment_checks();
     activity_bridge_checks();
     activity_weekly_checks();
     weekly_bridge_checks();

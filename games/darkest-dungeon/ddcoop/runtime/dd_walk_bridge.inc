@@ -50,6 +50,9 @@ static int g_walk_party_told, g_walk_trinket_told;
 static int g_town_check_raid; /* a raid was seen: back in town, the host sends its town to compare */
 static uint64_t g_town_check_at;
 static void town_check_poll(void);
+/* When a prop (curio, chest, door, trap) was last ordered here: its overlay opens over the next frames. */
+static uint64_t g_walk_prop_used_at;
+static void bag_log_contents(const char *who, const walk_view *v);
 static uint32_t g_walk_asked_prop, g_walk_asked_door, g_walk_asked_revision;
 static int g_walk_selected = -1; /* The hero this copy last knew as selected, outside fights. */
 /* After a shared curio or loot the host walked on while a guest still had the window open; the guest walked those tiles later,
@@ -85,6 +88,7 @@ static void formation_reset(void);
 static void walk_reset(void) {
     g_prop_cancelled = 0;g_prop_revision=1;g_prop_resolved.valid=0;prop_item_reset();
     formation_reset();
+    g_walk_prop_used_at = 0;
     g_walk_free_at = 0;
     g_walk_busy_sent = -1;
     g_walk_busy_sent_at = 0;
@@ -506,6 +510,7 @@ static int walk_use_apply(const dd_action *a) {
         dd_log("Walk: prop %u of area %08x is not here", a->u.use.prop, a->u.use.area);
         return 0;
     }
+    g_walk_prop_used_at = GetTickCount64();
     if (a->u.use.door==1 || a->u.use.door==2) {
         uint32_t event=0;
         if (!walk_overlay_state(&v,&event) || event) {
@@ -873,6 +878,7 @@ static int walk_travel_apply(const dd_action *a) {
         if (bag != a->u.travel.bag) {
             dd_action ask;
             dd_log("Walk: bag differs at the door: here %08x, host %08x; asking for the host's", bag, a->u.travel.bag);
+            bag_log_contents("guest", &v);
             /* The host's bag is the truth: it sends every slot. Still different at the next door means that could not repair it. */
             if (g_walk_bag_asked && !g_walk_bag_told) {
                 g_walk_bag_told = 1;
