@@ -1082,13 +1082,19 @@ static int loot_settled(const walk_view *v) {
     return g_cfg.role == DD_ROLE_HOST && g_loot_done_at && GetTickCount64() - g_loot_done_at < 5000 && !loot_open(v);
 }
 /* The town after a raid, as three numbers both logs can show: the currencies (vector at campaign+e70, 0x48 each: amount +0, kind +44),
- * the heroes in roster order (vector at campaign+20: id at the entry, Hero at entry+8 with its stress and trinkets) and their count.
+ * heroes sorted by persistent id (vector at campaign+20: id at the entry, Hero at entry+8 with its stress and trinkets) and their count.
  * Only in town: the town display is there and no raid is. */
 /* The wallet as the town check last read it: currencies sorted by kind, empty ones left out. The order of the
  * native vector and a currency the engine created with 0 on one copy only are not differences (owner test77:
  * a currency mismatch after a raid whose loot, rewards and conversions were identical in both game logs). */
 static uint32_t g_town_wallet[32][2];
 static unsigned g_town_wallet_count;
+static uint32_t g_town_heroes[DD_HAMLET_HEROES][3];
+static unsigned g_town_hero_count;
+static void town_heroes_log(void) {
+    for (unsigned i = 0; i < g_town_hero_count; i++)
+        dd_log("Town: hero here id=%u stress_bits=%08x trinkets=%08x", g_town_heroes[i][0], g_town_heroes[i][1], g_town_heroes[i][2]);
+}
 static void town_wallet_text(char *out, size_t cap) {
     size_t k = 0;
     out[0] = 0;
@@ -1101,7 +1107,10 @@ static int town_check_here(uint32_t out[3]) {
     uint64_t panel = 0, begin = 0, end = 0;
     uint32_t money = 2166136261u, heroes = 2166136261u;
     uint32_t wallet[32][2];
+    uint32_t roster[DD_HAMLET_HEROES][3];
     unsigned n = 0;
+    unsigned hero_count = 0;
+    g_town_hero_count = 0;
     if (g_walk_view(&v) || !g_hamlet_open_model(&s) || dd_hamlet_panel(&s, 0xec00a0, &panel) != 1) return 0;
     if (!hamlet_read(&s, s.campaign + 0xe70, &begin, 8) || !hamlet_read(&s, s.campaign + 0xe78, &end, 8) || end < begin ||
         (end - begin) % 0x48 || (end - begin) / 0x48 > 32)
@@ -1132,8 +1141,19 @@ static int town_check_here(uint32_t out[3]) {
         if (!hamlet_read(&s, p, &entry, 8) || !entry || !hamlet_read(&s, entry, &values[0], 4) ||
             !hamlet_read(&s, entry + 8 + DD_HERO_STRESS, &values[1], 4) || !(values[2] = walk_trinket_hash(entry + 8)))
             return 0;
-        for (unsigned i = 0; i < 3; i++) heroes = (heroes ^ values[i]) * 16777619u;
+        unsigned at = hero_count;
+        while (at && roster[at - 1][0] > values[0]) {
+            memcpy(roster[at], roster[at - 1], sizeof values);
+            at--;
+        }
+        if (at && roster[at - 1][0] == values[0]) return 0;
+        memcpy(roster[at], values, sizeof values);
+        hero_count++;
     }
+    for (unsigned h = 0; h < hero_count; h++)
+        for (unsigned i = 0; i < 3; i++) heroes = (heroes ^ roster[h][i]) * 16777619u;
+    memcpy(g_town_heroes, roster, sizeof roster[0] * hero_count);
+    g_town_hero_count = hero_count;
     out[0] = money;
     out[1] = heroes;
     out[2] = (uint32_t)((end - begin) / 8);
@@ -1166,6 +1186,7 @@ static void town_check_poll(void) {
     a.u.item.amount = g_town.next_apply_seq;
     activity_new_epoch(a.u.item.amount);
     dd_log("Town: back from the raid; currencies %08x, heroes %08x, %u heroes", d[0], d[1], d[2]);
+    town_heroes_log();
     {
         char wallet[32 * 24 + 1];
         town_wallet_text(wallet, sizeof wallet);
@@ -1189,6 +1210,7 @@ static int town_check_apply(const dd_action *a) {
     }
     dd_log("Town: differs from the host after the raid: currencies %08x/%08x, heroes %08x/%08x, count %u/%u (here/host)", d[0], a->u.item.type, d[1],
            a->u.item.id, d[2], a->u.item.round);
+    town_heroes_log();
     {
         char wallet[32 * 24 + 1];
         town_wallet_text(wallet, sizeof wallet);

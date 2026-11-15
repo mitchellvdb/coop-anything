@@ -779,6 +779,22 @@ static void hm_town_check(void) {
         town_wallet_text(text, sizeof text);
         CHECK(strstr(text, "=20") && strstr(text, "=1"));
     }
+    /* test91: roster UI ordering is local presentation. Stable hero identity,
+     * stress and equipment still matter, including a duplicated identity. */
+    {
+        uint32_t a[3], b[3];
+        hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 0;
+        putint(hm_entries[0] + 8 + DD_HERO_STRESS, 0x41200000u);
+        putint(hm_entries[2] + 8 + DD_HERO_STRESS, 0x42200000u);
+        CHECK(town_check_here(a));
+        world_roster[0] = (uintptr_t)hm_entries[2];
+        world_roster[2] = (uintptr_t)hm_entries[0];
+        CHECK(town_check_here(b) && !memcmp(a, b, sizeof a));
+        putint(hm_entries[1] + 8 + DD_HERO_STRESS, 0x41f00000u);
+        CHECK(town_check_here(b) && a[1] != b[1]);
+        world_roster[1] = world_roster[0];
+        CHECK(!town_check_here(b));
+    }
     /* Not readable after the bounded load wait is also a failed comparison. */
     hm_reset(DD_ROLE_GUEST); g_walk_view = hm_back_view; hm_raid_now = 1;
     m.seq = 1; CHECK(queue_push(&g_incoming, &m)); dd_runtime_poll();
