@@ -1,4 +1,4 @@
-# DDCoop build and validation — test86 (ordinary kit)
+# DDCoop build and validation — test91 (ordinary kit)
 
 Start from the current source snapshot, not the older local test64 checkout.
 Windows x64 requires Visual Studio 2022 C/C++ tools, Windows SDK and Python 3.
@@ -10,10 +10,10 @@ Historical instructions remain in earlier commits and source bundles.
 
 Steam Windows x64 build 28385, SHA256:
 f9d914ca1d7d9ad3ff4f151a46e4853e532ce1f5f109f700b0c1381a3f7e0d12.
-Never relax pins for an unknown update. 141 named signatures cover 137 distinct
-native addresses:136 function entries plus one exact weekly caller witness
-(some deliberate alias names);93 live/early hook targets are distinct.
-Runtime protocol 37; exact runtime hello version86 also required. Launcher wire 3.
+Never relax pins for an unknown update. 149 named signatures cover 145 distinct
+native addresses:144 function entries plus one exact weekly caller witness
+(some deliberate alias names);96 live/early hook targets are distinct.
+Runtime protocol 39; exact runtime hello version91 also required. Launcher wire 3.
 Guests always-nosave; the host keeps its save checkbox. Only selected slots 1..9;
 profile_9/the game's restore slot is forbidden. No Circus/PlayFab/tamper path.
 
@@ -28,7 +28,7 @@ After rebuilding the runtime, compute its SHA256 and pin LR_HASH_RUNTIME in
 launcher/src/lr_hashes.h in a separate commit. Then:
 
     set "DDC_TEST_NOSAVE=0"
-    set "DDC_VERSION=0.5.0-test86"
+    set "DDC_VERSION=0.5.0-test91"
     set "DDC_MASCOT_GIF=<optional local GIF>"
     launcher\build-windows-msvc.cmd
     launcher\test-windows-msvc.cmd
@@ -60,6 +60,11 @@ Read-only proofs (do not launch or modify the game):
     python -I tests/test_town_save_layout.py "%DD_GAME_EXE%"
     python -I tests/test_full_notice_layout.py "%DD_GAME_EXE%"
     python -I tests/test_item_use_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_skill_learning_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_treatment_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_event_recruit_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_loot_widget_layout.py "%DD_GAME_EXE%"
+    python -I tests/test_trinket_bulk_layout.py "%DD_GAME_EXE%"
     python -I tests/test_dlc_readiness.py
 
 The full hook proof uses VS dumpbin from PATH or --dumpbin <tool path>. It checks
@@ -85,9 +90,9 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-No new solo/duo binary is provided for86. The old duo61 does not contain these
+No new solo/duo binary is provided for91. The old duo61 does not contain these
 changes. A new variant requires its own DD_DUO build, exact runtime pin and
-launcher tests; never relabel the older binary as86.
+launcher tests; never relabel the older binary as91.
 
 The verified custom SDL2 bootstrap pin remains:
 ad3c25374e9fb23ff5e388cde052a7359abad1cda9bf5afb6aad399e25e82589.
@@ -187,3 +192,11 @@ The launcher suites include guest claims, dead roster entries, current-PID desyn
 events and known-folder report destinations. The full preparation/restore test
 must pass after all real games close. Do not infer live engine success from these
 fixtures. See runtime/RECHECK-2026-11-12.md for explicitly unresolved causes.
+
+Test91 retains all Claude87..90 changes. Runtime39/exacthello91 adds confirmed
+Unequip All and rooted native loot-widget source resolution.25 read-only proof
+scripts (24 adapters plus hook ABI),149 named pins/145 addresses/96 hook targets
+are required; generator output is byte-identical. Full Windows runtime/FIFO,
+actual isolated GL overlay and bridge MSVC ASan pass. The launcher must pass its
+complete suite, including fake-Steam preparation/restore after real games close.
+See runtime/TRINKETS-test91.md for native/model boundaries and open live cases.

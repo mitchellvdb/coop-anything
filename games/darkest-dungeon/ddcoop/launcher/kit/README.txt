@@ -42,7 +42,7 @@ trinket slot mapping; combat item turn ownership; dead heroes hidden in F9; gues
 Take control; earlier desync report requests. Guest fallback reports go to
 %LOCALAPPDATA%\DDCoop\Reports; the combined host report remains on Desktop.
 Some return-to-Hamlet, skill and gold mismatches remain under investigation.
-Follow TESTSTAPPEN-test86.txt. Use the same86 kit on every PC.
+Follow TESTSTAPPEN-test91.txt. Use the same86 kit on every PC.
 
 Retained from test85
 Back in the provisions screen (the shop before a mission) now closes that shop on
@@ -145,7 +145,7 @@ need a fresh Host/Join or manual test-window restart. Do not rejoin an old runni
 session or copy a different campaign to work around a synchronization stop.
 
 Testing and logs
-Follow TESTSTAPPEN-test86.txt. Send the combined DDCoop-report ZIP from the host desktop.
+Follow TESTSTAPPEN-test91.txt. Send the combined DDCoop-report ZIP from the host desktop.
 Copied logs redact known authentication secrets; review them before sharing.
 
 Scope

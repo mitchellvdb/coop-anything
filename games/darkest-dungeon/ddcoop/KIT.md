@@ -1,36 +1,31 @@
-# Test86 validation
+# Test91 validation
 
-PASS Windows/MSVC optimized runtime/module/protocol/FIFO suite; actual bridge
-with independent four-role fixtures, bounded queues and modeled native effects.
-PASS actual isolated OpenGL overlay/bootstrap suite (no real game launched).
-PASS runtime bridge and actual Windows diagnostics adapter MSVC AddressSanitizer.
-PASS complete Windows launcher suite, including core/relay/update/ownership,
-living roster, normal/solo diagnostic file adapters and fake-Steam preparation/
-backup/restore after every real game window closed. The earlier run while a game
-was open refused preparation; it was rerun successfully after the owner closed it.
-PASS20 read-only native layout proofs on the exact supported owned EXE.
-PASS141 named signatures/137 addresses/93 hook targets; generator byte-identical.
-PASS owner-signed manifest serial86, CNG ECDSA owner verification and all three
-exact binary hashes; installer CRC, unique paths and byte-identical payloads.
+PASS independent review of Claude c7ad502/test90: original runtime suite,
+23 read-only proof scripts,148 signatures regenerated exactly and29/29 artifact
+manifest entries. The release source differs only in final handoff metadata.
+PASS test91 Windows runtime/module/FIFO suite and isolated actual GL overlay.
+PASS runtime bridge MSVC AddressSanitizer with modeled native effects.
+PASS25 pinned read-only proof scripts (24 adapters plus hook ABI),149 named
+signatures/145 distinct native addresses/96 live or early hooks.
+PASS owner-key signed manifest serial91, launcher CNG parser/signature and all3
+exact binary hashes; ZIP CRC, unique paths and4 exact installer payloads.
+PASS Windows launcher tests except the actual preparation/restore invocation;
+normal/solo diagnostics adapters, core, updates, relay, roster and snapshot pass.
+PENDING final fake-Steam preparation/restore against the built91 launcher:
+all real games must close first. No preparation success is claimed yet.
 
-Preserved Claude Code83..85 changes: normal-end reports, generator/GCC fixes,
-player names/connected count, protocol37 manual party order, native Back/Escape.
-New regressions cover post-combat reorder, missing startup pool probe, cosmetic
-quirk flags, remote estate slot order, living building heroes, unique known raid
-Item presentation copies, active-turn item ownership/NULL recipients, OK callbacks
-outside render and current-PID immediate desync reporting. Guest Take control,
-status3 graveyard omission and LocalAppData fallback reports are included.
+Rooted loot regression failed against90, then passed with the new route; foreign,
+closed, malformed, changed-count and identical-item occurrence guards checked.
+Unequip All fixtures cover4 initiators/3 receivers, no remote open inventory,
+reordered estate/roster, duplicates, building/dead heroes, stale/crossed/replayed
+requests, partial native effects and raid/unready/foreign-caller refusal.
 
-The former owner-label/post-combat tests failed before their repairs; the new
-post-render full-notice repro failed8 assertions before repair, then passed.
-Native effect tests are modeled, not live engine success. Dog Treats, direct
-loot equipping and the return-to-Hamlet change need live confirmation. Several
-candidate, skill and wallet causes remain open; new traces locate categories and
-first wallet/learned-skill changes. No blind state repair or waived mismatch.
-Shared press-any-key is not implemented. No new solo/duo kit; old duo61 is stale
-for these changes. No Linux/MinGW/Capstone/live DLC validation in this run.
-
-No installed game, real save, system setting or existing report was changed.
-Reports remain private. Only source/docs are committed to the owner's existing
-GitHub project branch; no Git ACL bypass. Source archive matches that subtree.
-Written by Codex,12 November2026; earlier Claude Code contributions retained.
+Wire39/exacthello91; launcher wire3 retained. All Claude87..90 work preserved.
+Native engine effects are modeled, not live gameplay QA. Owner next test is
+English T1 direct loot equip and T2 every player's confirmed Unequip All.
+Sorting remains guarded. Curio use while a copy still walks, shared inventory-full
+notice, shared press-any-key and complete live DLC verification remain open.
+No new duo kit, Linux/MinGW/Capstone or live engine test is claimed.
+No installed game, real save, system setting or existing report changed.
+Source-only per-step commits; no binaries/assets/private data/key in Git.
+Written by Codex,15 November2026; Claude Code contributions retained.
