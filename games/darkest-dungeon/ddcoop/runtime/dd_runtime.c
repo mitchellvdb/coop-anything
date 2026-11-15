@@ -60,6 +60,7 @@ static void __fastcall hook_activity_source_remove(void *,void *);
 static int formation_apply(const dd_action *a);
 static int formation_set_apply(const dd_action *a);
 static int treatment_apply(const dd_action *a);
+static int treatment_assignment_context(void *,unsigned,uint32_t);
 static int event_recruit_apply(const dd_action *a);
 static int hamlet_apply(const dd_action *a);
 static void hamlet_reset(void);
@@ -984,6 +985,8 @@ static int runtime_apply_inner(void *unused, const dd_action *a) {
     if (!activity) activity = g_activity[kind];
     else if (activity != g_activity[kind]) dd_log("hero placement: activity %u taken from the town model", kind);
     if (!activity || g_activity_kind(activity) != (int)kind) return 0;
+    if ((kind==DD_ACTIVITY_QUIRK_TREATMENT || kind==DD_ACTIVITY_DISEASE_TREATMENT) &&
+        !treatment_assignment_context(activity,a->u.assign.slot,a->u.assign.hero_id))return 0;
     int slot = (int)a->u.assign.slot;
     uint8_t result[DD_RESULT_BYTES];
     memset(result, 0, sizeof result);
@@ -1025,7 +1028,7 @@ static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint3
         if(kind>=0 && kind<6)return activity_accept_input(activity,result,hero_id);
     }
     if (g_cfg.role == DD_ROLE_GUEST && InterlockedCompareExchange(&g_campaign_active, 0, 0)) {
-        int kind = activity_kind(activity), slot = -1;
+        int kind = g_activity_kind(activity), slot = -1;
         if (kind < 0 || kind >= DD_ACTIVITY_COUNT_ ||
             !safe_read((uintptr_t)activity + DD_ACTIVITY_SLOT_OFFSET, &slot, sizeof slot) ||
             slot < 0 || slot >= DD_ACTIVITY_SLOTS || !InterlockedCompareExchange(&g_session_ready, 0, 0)) {
@@ -1047,8 +1050,15 @@ static uintptr_t __fastcall hook_assign_hero(void *activity, void *result, uint3
                   InterlockedCompareExchange(&g_campaign_active, 0, 0) &&
                   g_cfg.role == DD_ROLE_HOST && result;
     if (observe && (!safe_read((uintptr_t)activity + DD_ACTIVITY_SLOT_OFFSET, &slot, sizeof slot) ||
-                    (kind = activity_kind(activity)) < 0 || kind >= DD_ACTIVITY_COUNT_ ||
+                    (kind = g_activity_kind(activity)) < 0 || kind >= DD_ACTIVITY_COUNT_ ||
                     slot < 0 || slot >= DD_ACTIVITY_SLOTS)) observe = 0;
+    if(observe && (kind==DD_ACTIVITY_QUIRK_TREATMENT || kind==DD_ACTIVITY_DISEASE_TREATMENT) &&
+       !treatment_assignment_context(activity,(unsigned)slot,hero_id)) {
+        uint8_t answer[DD_RESULT_BYTES]={0};
+        WriteProcessMemory(GetCurrentProcess(),result,answer,sizeof answer,NULL);
+        shop_notice("This treatment's hero could not be verified. Reopen the Sanitarium and try again.");
+        return (uintptr_t)result;
+    }
     uintptr_t ret = g_original_assign(activity, result, hero_id);
     uint8_t accepted = 0;
     if (!observe || !safe_read((uintptr_t)result, &accepted, sizeof accepted) || !accepted) return ret;

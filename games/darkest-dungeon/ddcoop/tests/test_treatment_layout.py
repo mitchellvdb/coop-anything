@@ -100,6 +100,23 @@ assert read(0x14053883c,6).hex()=='418bd8488bf9' # r8d HeroID, rcx activity
 assert read(0x140538847,6).hex()=='899938020000'
 assert read(0x1405388a8,8).hex()=='3bd80f84b0000000' # equal committed -> no rebuild
 assert read(0x140538948,5).hex()=='e9e3110000' # normal hero's lists539b30
+# Native paid assignment obtains its quote through +30 with selected slot r9d.
+# Generic quote reaches QuirkTreatment +78. Its negative-group price looks up
+# activity+238 (last previewed HeroID), tests the roster quirk's locked byte +2a,
+# and uses the special price table +208. Thus replicated records alone do not
+# replicate a locked-negative debit when another copy's panel stays closed.
+assert q64(0x140e9b468+0x30)==0x1405364f0
+assert q64(0x140e9b468+0x28)==0x140536590
+assert q64(0x140e9b468+0x78)==0x14053a450
+assert read(0x14053615d,7).hex()=='448b8e90000000'
+assert read(0x140536172,3).hex()=='ff5030'
+assert read(0x1405365d5,6).hex()=='458bc1ff5078'
+assert read(0x14053a51b,4).hex()=='4183fe01'
+assert read(0x14053a540,7).hex()=='458b8538020000'
+assert read(0x14053a674,6).hex()=='43807c132a00'
+assert read(0x14053a67c,7).hex()=='498d9508020000'
+call(0x140539c17,0x1405385c0) # preview list rebuild clears prior selections
 print('PASS treatment ABI: 6a3910 functor +8/+10/+14/+18, record activity+190 + slot*1e0 + group*a0 (+18 name, +98 state), '
       'entries 0x88 (+81/+82 flags, +84 state), new name copied / same name stepped via 538580, state 0 clears; '
-      'both Sanitarium activities are QuirkTreatment with +23e on the disease one; per-slot preview538830/last hero238 and12-byte hook; no game execution')
+      'both Sanitarium activities are QuirkTreatment with +23e on the disease one; per-slot preview538830/last hero238 and12-byte hook; '
+      'paid quote5360c0/5364f0/536590/53a450 uses last hero238 and locked quirk+2a/table208; preview rebuild clears selections; no game execution')

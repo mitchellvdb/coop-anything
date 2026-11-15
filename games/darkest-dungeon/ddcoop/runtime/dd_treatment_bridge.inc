@@ -65,6 +65,23 @@ static int treatment_slot_hero(uint64_t activity,unsigned slot,uint32_t *hero) {
     if(kind>=2 || g_treatment_drafts[kind][slot].activity!=activity)return 0;
     *hero=g_treatment_drafts[kind][slot].hero;return *hero!=0;
 }
+/* 53a450's locked-negative price reads the last previewed HeroID at +238,
+ * not the paid assignment's argument. A closed panel leaves this zero/stale;
+ * opening another slot overwrites it. Bind that native pricing context to the
+ * ordered hero immediately before assign/validation. Do not call preview here:
+ * 539b30 clears the selected treatment records while rebuilding its lists. */
+static int treatment_assignment_context(void *pointer,unsigned slot,uint32_t hero) {
+    uint64_t activity=(uintptr_t)pointer,record=0;uint32_t committed=0,known=0,after=0;
+    unsigned kind=treatment_draft_index(activity);
+    if(kind>=2 || slot>=3 || !hero || !treatment_live_hero(hero) ||
+       !treatment_committed_hero(activity,slot,&committed) || committed ||
+       (treatment_slot_hero(activity,slot,&known) && known!=hero) ||
+       !treatment_record(activity,slot,0,&record))return 0;
+    if(!WriteProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)(activity+0x238),&hero,4,NULL) ||
+       !safe_read((uintptr_t)activity+0x238,&after,4) || after!=hero)return 0;
+    dd_log("Sanitarium: native price context hero=%u activity=%u slot=%u",hero,kind+DD_ACTIVITY_QUIRK_TREATMENT,slot);
+    return 1;
+}
 static void __fastcall hook_treatment_preview(void *activity,int32_t slot,uint32_t hero) {
     uint32_t committed=0;unsigned kind=treatment_draft_index((uintptr_t)activity);
     int observe=g_cfg.role!=DD_ROLE_OFF && InterlockedCompareExchange(&g_campaign_active,0,0) &&

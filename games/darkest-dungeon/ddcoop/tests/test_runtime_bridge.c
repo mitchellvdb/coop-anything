@@ -914,6 +914,65 @@ static void treatment_draft_checks(void) {
     puts("Sanitarium drafts: both modes/all4 initiators/3 closed-list peers, per-slot native preview identity before paid assignment, other-slot/global overwrite and empty initialization, conflicting preview refusal verified");
 }
 
+/* Native53a450 prices a locked negative quirk through activity+238 (the last
+ * previewed hero), independently of the selected per-slot treatment record.
+ * A closed panel or another-slot preview must not change the debit. */
+static unsigned tr_paid_calls;static int tr_paid_cost;
+static uintptr_t __fastcall tr_paid_assign(void *activity,void *result,uint32_t id) {
+    uint32_t context=0;int32_t gold=0,slot=-1;
+    CHECK(activity==tr_act && id==1);
+    memcpy(&context,tr_act+0x238,4);memcpy(&slot,tr_act+DD_ACTIVITY_SLOT_OFFSET,4);
+    CHECK(slot==1);
+    memcpy(&gold,hm_wallet,4);tr_paid_cost=context==id?4000:1200;
+    putint(hm_wallet,(uint32_t)(gold-tr_paid_cost));
+    putint(tr_slots[1],id);((uint8_t *)result)[0]=1;tr_paid_calls++;
+    return (uintptr_t)result;
+}
+static void treatment_price_checks(void) {
+    assign_hero_fn saved=g_original_assign;
+    for(unsigned initiator=0;initiator<4;initiator++)for(unsigned peer=0;peer<4;peer++)
+    for(unsigned mode=0;mode<2;mode++)for(unsigned context=0;context<3;context++) {
+        hm_reset(peer?DD_ROLE_GUEST:DD_ROLE_HOST);tr_model(context!=0);tr_reset(peer?DD_ROLE_GUEST:DD_ROLE_HOST);
+        treatment_preview_reset();g_cfg.player=peer;g_original_assign=tr_paid_assign;tr_paid_calls=0;tr_paid_cost=0;
+        tr_act[0x10]=(uint8_t)(mode+DD_ACTIVITY_QUIRK_TREATMENT);
+        putint(tr_slots[1],0);putint(tr_act+0x238,context);putint(hm_wallet,10000);
+        uint8_t *record=tr_records+0x1e0+0xa0;
+        strcpy((char *)record+0x18,"kleptomaniac");putint(record+0x98,2);
+        dd_action a={0};a.kind=DD_ACT_ASSIGN_HERO;a.u.assign.activity=(uint8_t)(mode+DD_ACTIVITY_QUIRK_TREATMENT);
+        a.u.assign.slot=1;a.u.assign.hero_id=1;
+        if(!peer && !initiator) {
+            uint8_t result[DD_RESULT_BYTES]={0};putint(tr_act+DD_ACTIVITY_SLOT_OFFSET,1);
+            hook_assign_hero(tr_act,result,1);CHECK(result[0] && sent==1);
+        } else if(!peer) {
+            dd_msg m={0};m.type=DD_MSG_TOWN_REQUEST;m.u.town.request_id=(initiator<<24)|1;m.u.town.action=a;
+            CHECK(queue_push(&g_incoming,&m));dd_runtime_poll();
+        } else {
+            if(peer==initiator) {
+                uint8_t result[DD_RESULT_BYTES]={0};putint(tr_act+DD_ACTIVITY_SLOT_OFFSET,1);
+                hook_assign_hero(tr_act,result,1);
+                CHECK(!tr_paid_calls && !result[0] && sent==1 && last_message.type==DD_MSG_TOWN_REQUEST &&
+                      last_message.u.town.action.u.assign.hero_id==1);
+            }
+            wk_push(1,&a);dd_runtime_poll();
+        }
+        int32_t gold=0;memcpy(&gold,hm_wallet,4);
+        CHECK(tr_paid_calls==1 && tr_paid_cost==4000 && gold==6000 && !g_town.needs_resync);
+        uint32_t state=0;memcpy(&state,record+0x98,4);
+        CHECK(state==2 && !strcmp((char *)record+0x18,"kleptomaniac"));
+    }
+    hm_reset(DD_ROLE_HOST);tr_model(0);tr_reset(DD_ROLE_HOST);treatment_preview_reset();
+    putint(tr_slots[1],0);putint(tr_act+0x238,2);tr_paid_calls=0;
+    hook_treatment_preview(tr_act,1,2);
+    CHECK(!treatment_assignment_context(tr_act,1,1)); /* conflicting local draft */
+    treatment_preview_reset();
+    CHECK(!treatment_assignment_context(tr_act,1,999999) &&
+          !treatment_assignment_context(tr_act,3,1) && !tr_paid_calls);
+    uint32_t context=0;memcpy(&context,tr_act+0x238,4);CHECK(context==2);
+    g_original_assign=saved;g_treatment_select=NULL;g_activity_kind=activity_kind;g_town_object=town_object;
+    treatment_preview_reset();
+    puts("Sanitarium price: all4 initiators/4 copies/both activities/closed, same and other-slot preview contexts debit the same native locked-quirk cost without rebuilding selected records");
+}
+
 #include "runtime_transport_stop_fixture.inc"
 #include "runtime_recruit_pool_fixture.inc"
 #include "runtime_notice_fixture.inc"
@@ -1003,6 +1062,7 @@ int main(void) {
     activity_transactions();
     treatment_checks();
     treatment_draft_checks();
+    treatment_price_checks();
     activity_bridge_checks();
     activity_weekly_checks();
     weekly_bridge_checks();
