@@ -155,6 +155,7 @@ FUNCTIONS = [
     ("activity_weekly_assign_call", 0x14053cbd4, "Read-only automatic weekly assignment caller witness"),
     ("party_select", 0x140606450, "Party selects a hero (party, index)"),
     ("raid_travel", 0x140770080, "RaidDisplay move to another area (display, dest, from area, flip, extra)"),
+    ("wave_continue", 0x140780240, "Normal wave-room Continue functor captures display at +8, starts native teleport/fade"),
     ("party_move", 0x140604af0, "Party move (party, direction); the game's input passes (+-1,0,0)"),
     ("raid_restore", 0x14060eee0, "Raid::Restore from persist.quest/raid; only skipped during an approved fresh co-op departure"),
     ("raid_map_generate", 0x1405f1ff0, "Raid map generator (a, b, c); seeds a local prng from rand_s at 0x5f2164"),
