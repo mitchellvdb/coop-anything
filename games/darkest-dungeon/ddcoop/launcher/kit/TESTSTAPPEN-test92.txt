@@ -1,0 +1,46 @@
+DDCoop test92 - Hamlet player locations and sending logs (2-4 players)
+
+Close every game before installing. All players use92. Existing signed update
+support is retained. There is no new solo/duo kit; ordinary network kit only.
+
+T1. Give each player a recognizable name in the launcher. Join the same campaign.
+    In the Hamlet each connected player gets ONE block, P1..P4 left to right.
+    Each block has a name and location: Hamlet, Guild, Tavern, Stagecoach etc.
+    Your block is green, others orange; unavailable information is grey.
+    Open DIFFERENT buildings on different PCs. Every player must see the same
+    per-player locations update in about a second, without opening those
+    buildings themselves. Close/reopen/switch buildings and verify every row.
+    Try Abbey, Sanitarium, Survivalist, Blacksmith, Districts, trinket inventory,
+    hero details, Heirloom exchange and expedition/provision screens as available.
+    Report any location that stays unavailable or shows the wrong building.
+
+T2. Repeat with3 or4 players if available. Long names must stay inside their
+    blocks. F9 can hide the main panel while the blocks remain visible. Enter a
+    dungeon: blocks must return to HERO ownership, ranks and stress. Return to
+    Hamlet: player/location blocks return. Actual disconnection still stops
+    shared gameplay as before; disconnected players must not remain in Guild.
+
+T3. As a guest press Send logs to host (launcher), or Send logs (F9), while
+    everyone keeps launchers open. No guest Explorer window should appear.
+    Host received logs must follow host receipt, not just clicking the button.
+    Check the combined host Desktop report/ZIP contains all connected players.
+    Repeat as each guest, then host Collect logs; simultaneous requests coalesce.
+    Ordinary play is not restarted. Known passwords/authentication are filtered;
+    these are private diagnostics to the host, not a public upload.
+    Without a connected host, the guest must see a failure, never fake success.
+    Automatic desync collection remains enabled; keep launchers open afterward.
+
+T4. With loot open and a full bag, swap a WHOLE torch stack from the bag for
+    onyx in loot, as guest and host. Repeat the opposite direction. Every copy
+    must show the same quantities/items, including after closing the window and
+    entering the next room. Repeat with gold/trinkets and duplicate item stacks.
+    Stale/unverified source must refuse before effects; no silent local swap.
+    Split-stack exchange is still refused; same-item merge uses the native path.
+
+T5. Recheck earlier91 T1-T7: direct loot trinket equipment, Unequip All by any
+    player, Farmstead wave Continue, returned hero list, Shift-discard, full-bag
+    exchange and Sanitarium choices. These older fixes are retained. Additional
+    formation/curio/bag-repair desyncs and complete DLC compatibility remain open.
+
+This kit was tested with models/isolated rendering and read-only ABI proofs.
+Real native screen recognition and gameplay still need this playtest.

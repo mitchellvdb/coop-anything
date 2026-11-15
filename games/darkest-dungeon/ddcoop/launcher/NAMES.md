@@ -41,3 +41,12 @@ the session ("2/4 players connected: ...").
 Tests: `test_lr_wire` (names, both messages, fuzz), `test_lr_core` 4a (exchange, cleaning, count), the UI
 preview self-check (players line, assign list, overlay snapshot) and `tests/test_overlay.c` (actual GL text
 in the blocks, state restored; it saves `<bmp>.party.bmp` to look at).
+
+## Test92 Hamlet player blocks
+
+The same snapshot2 players array labels Hamlet presence blocks in fixed player
+number order. Runtime PRESENCE14 carries finite location codes only; it never
+carries names, Steam IDs or arbitrary text. Membership comes from ready runtime
+connections, not nonempty names. Dungeon hero ownership/rank/stress is unchanged.
+Unknown/stale locations are grey and never grant or restrict gameplay rights.
+See runtime/PRESENCE.md. Written by Codex; previous launcher design retained.

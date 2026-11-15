@@ -1,6 +1,20 @@
 DDCoop - development test kit {VERSION}
 
-New in test91
+New in test92
+In the Hamlet the four ownership blocks now show PLAYERS instead of heroes:
+player number/name and current building or screen, e.g. Guild or Tavern.
+Your block is green, other players orange, unavailable status grey. Locations
+refresh automatically; stale/disconnected information is never kept as Guild.
+In the dungeon the blocks still represent heroes/ranks and stress as before.
+Guests can use Send logs to host in the launcher, or Send logs in F9. Logs travel
+over the current connection; no Explorer window or Desktop log pile opens for
+the guest. Host received logs appears only after the host confirms receipt.
+Desync reports are still collected automatically. Keep launchers open to finish.
+Copied bag Items now use the ordered whole-stack loot exchange too, including
+full stacks of torches swapped for onyx. Split-stack exchange remains separate.
+Follow TESTSTAPPEN-test92.txt. Everyone needs92 (runtime41/exacthello92).
+
+Earlier: test91
 Direct loot drags now recognize the current loot window's separate Item copies.
 Unequip All is available to every player after the game's normal confirmation;
 the whole native operation is shared, with item counts checked on every copy.
@@ -10,7 +24,7 @@ Sanitarium choices recognize draft heroes before accepting the paid treatment.
 Farmstead's wave-room Continue follows the first player's choice on every copy.
 The Hamlet-return hero check ignores roster list order and logs real differences.
 Full DLC compatibility is still under test. Automatic sorting remains unavailable.
-Follow T1-T7 in TESTSTAPPEN-test91.txt. All players need91 (runtime protocol40).
+Earlier91 tests remain in TESTSTAPPEN-test91.txt; the current kit uses runtime41.
 Everything from Claude's87..90 is retained; live confirmation is still needed.
 
 Earlier: test90
@@ -47,7 +61,7 @@ trinket slot mapping; combat item turn ownership; dead heroes hidden in F9; gues
 Take control; earlier desync report requests. Guest fallback reports go to
 %LOCALAPPDATA%\DDCoop\Reports; the combined host report remains on Desktop.
 Some return-to-Hamlet, skill and gold mismatches remain under investigation.
-Follow TESTSTAPPEN-test91.txt. Use the same86 kit on every PC.
+Use the same current kit on every PC.
 
 Retained from test85
 Back in the provisions screen (the shop before a mission) now closes that shop on
@@ -150,7 +164,7 @@ need a fresh Host/Join or manual test-window restart. Do not rejoin an old runni
 session or copy a different campaign to work around a synchronization stop.
 
 Testing and logs
-Follow TESTSTAPPEN-test91.txt. Send the combined DDCoop-report ZIP from the host desktop.
+Follow TESTSTAPPEN-test92.txt. Send the combined DDCoop-report ZIP from the host desktop.
 Copied logs redact known authentication secrets; review them before sharing.
 
 Scope
