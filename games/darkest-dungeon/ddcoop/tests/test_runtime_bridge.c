@@ -584,6 +584,7 @@ static void hook_machine_code(void) {
 #include "runtime_frontend_fixture.inc"
 #include "runtime_walk_fixture.inc"
 #include "runtime_wave_fixture.inc"
+#include "runtime_discard_fixture.inc"
 #include "runtime_party_fixture.inc"
 #include "runtime_battle_fixture.inc"
 #include "runtime_desync_fixture.inc"
@@ -956,6 +957,7 @@ int main(void) {
     selection_transition_checks();
     hunger_transactions();
     wave_transactions();
+    discard_transactions();
     quest_return_transactions();
     activity_transactions();
     treatment_checks();

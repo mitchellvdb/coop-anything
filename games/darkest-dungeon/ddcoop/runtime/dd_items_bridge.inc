@@ -31,6 +31,7 @@ static uint64_t (*g_item_controller)(void) = item_controller;
 static void results_bag_reset(void);
 static void hunger_reset(void);
 static void wave_reset(void);
+static void discard_reset(void);
 static void quest_return_reset(void);
 static int loot_open(const walk_view *v);
 #include "dd_full_notice_bridge.inc"
@@ -40,6 +41,7 @@ static void items_reset(void) {
     results_bag_reset();
     hunger_reset();
     wave_reset();
+    discard_reset();
     quest_return_reset();
     g_item_wait_until = g_loot_done_at = g_loot_asked_at = 0;
     g_loot_request = g_loot_asked_key = 0;
@@ -770,7 +772,6 @@ static void __fastcall hook_supply_stack_return(void *capture, int index) {
                 "or drag it to the shop.");
 }
 DD_BAG_HOOK(hook_bag_throw_a, g_bag_throw_a)
-DD_BAG_HOOK(hook_bag_throw_b, g_bag_throw_b)
 static void bag_recount(uint64_t raid, uint8_t inv);
 static void item_take_one(const walk_view *v, uint64_t item) {
     int32_t count = 0;
@@ -912,6 +913,7 @@ static void bag_send_slot_from(const walk_view *v, uint8_t inv, unsigned slot, c
     item_send(&a);
 }
 static void bag_send_slot(const walk_view *v, uint8_t inv, unsigned slot, const bag_slot *s) { bag_send_slot_from(v, inv, slot, s, 0, 0, 0); }
+#include "dd_discard_bridge.inc"
 static int bag_same(const bag_slot *a, const bag_slot *b) { return a->count > 0 && b->count > 0 && a->type == b->type && a->id == b->id; }
 /* Runs every frame. A change without a drag is the game's or an order's, and happens on the other copy by itself. */
 /* The guest found another bag at a door: every slot of the host's, filled ones first so that what moves is still there to find. */
@@ -1258,6 +1260,9 @@ static int item_gate(const dd_msg *m) {
     } else if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) {
         limit = 30000;
         go = g_quest_return_done || (have && quest_return_gate_ready(&v));
+    } else if (a->u.item.op == DD_ITEM_OP_DISCARD) {
+        limit = 30000;
+        go = have && discard_ready(&v,a->u.item.inv);
     } else if (a->u.item.op == DD_ITEM_OP_WAVE_CONTINUE) {
         limit = 30000;
         go = have && wave_gate_ready(&v, a);
@@ -1352,6 +1357,7 @@ static int item_select_apply(const walk_view *v, const dd_action *a) {
     return 1;
 }
 static int item_apply(const dd_action *a) {
+    if (a->u.item.op == DD_ITEM_OP_DISCARD) return discard_apply(a);
     if (a->u.item.op == DD_ITEM_OP_WAVE_CONTINUE) return wave_apply(a);
     if (a->u.item.op == DD_ITEM_OP_FULL_NOTICE) return full_notice_apply(a);
     if (a->u.item.op == DD_ITEM_OP_QUEST_RETURN) return quest_return_apply(a);

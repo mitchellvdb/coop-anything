@@ -545,6 +545,30 @@ static void wave_wire_checks(void) {
 }
 int main(void) {
     wave_wire_checks();
+    {
+        dd_msg m={0},decoded;uint8_t wire[512];size_t used=0;
+        m.type=DD_MSG_TOWN_APPLY;m.seq=1;
+        dd_action *a=&m.u.town.action;a->kind=DD_ACT_ITEM;a->u.item.op=DD_ITEM_OP_DISCARD;
+        a->u.item.hero=255;a->u.item.area=100;a->u.item.type=0x6a930e79;
+        a->u.item.id=0x3d7485cc;a->u.item.round=2;a->u.item.amount=2;
+        size_t n=dd_encode(&m,wire,sizeof wire);
+        CHECK(n && dd_decode(wire,n,&decoded,&used)==DD_DECODE_OK && used==n,"confirmed discard roundtrip");
+        CHECK(decoded.u.town.action.u.item.id==0x3d7485cc && decoded.u.town.action.u.item.amount==2,"cookie identity/quantity preserved");
+        for(unsigned field=0;field<8;field++) {
+            dd_msg bad=m;
+            switch(field) {
+            case 0:bad.u.town.action.u.item.type=0;break;
+            case 1:bad.u.town.action.u.item.round=0;break;
+            case 2:bad.u.town.action.u.item.amount=0;break;
+            case 3:bad.u.town.action.u.item.amount=3;break;
+            case 4:bad.u.town.action.u.item.state=29;break;
+            case 5:bad.u.town.action.u.item.hero=0;break;
+            case 6:bad.u.town.action.u.item.flag=1;break;
+            case 7:bad.u.town.action.u.item.rules=1;break;
+            }
+            CHECK(!dd_encode(&bad,wire,sizeof wire),"malformed confirmed discard refused");
+        }
+    }
     full_notice_wire_checks();
     recruit_wire_checks();
     test_desync_wire();
