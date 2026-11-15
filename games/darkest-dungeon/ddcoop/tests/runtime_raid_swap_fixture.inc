@@ -51,6 +51,34 @@ static void raid_swap_transactions(void) {
             wk_push(1,&order);dd_runtime_poll();CHECK(g_town.applied_seq==1 && hm_native==3 && !hm_item_alive && !g_town.needs_resync);
         }
     }
+    /* Ordinary supply/gem drag through the bag's copied InventorySlot, not the
+     * canonical Item pointer: regression for torches exchanged with onyx. */
+    for(unsigned player=0;player<4;player++)for(unsigned direction=0;direction<2;direction++)for(unsigned copy=0;copy<2;copy++) {
+        rs_reset(player?DD_ROLE_GUEST:DD_ROLE_HOST,direction,2);g_cfg.player=player;
+        uint8_t bag_copy[DD_ITEM_SIZE]={0};
+        putint(hm_raid_bag[1],8);putint(hm_raid_bag[1]+0x44,0x6a930e79);putint(hm_raid_bag[1]+0x88,0x378f6e20);
+        memcpy(bag_copy,hm_raid_bag[1],DD_ITEM_SIZE);
+        putint(hm_raid_loot[2],1);putint(hm_raid_loot[2]+0x44,0x47f85);putint(hm_raid_loot[2]+0x88,0x100f8a6);
+        memcpy(rs_ui_item[0],hm_raid_loot[2],DD_ITEM_SIZE);
+        uint8_t *bag_ui=direction?rs_target:rs_source;
+        putptr(bag_ui+0x28,(uintptr_t)(hm_raid+DD_WALK_RAID_INVENTORY-0x100));putptr(bag_ui+0x30,(uintptr_t)(copy?bag_copy:hm_raid_bag[1]));
+        hook_trinket_pickup_inventory(rs_source,NULL,NULL,rs_drag);
+        CHECK(g_raid_drag.valid);
+        putint(rs_drag+8,(uint32_t)g_raid_drag.item.count);
+        CHECK(!hook_trinket_drop_inventory(rs_target+0x10,NULL,rs_drag));
+        CHECK(sent==1 && last_message.u.town.action.kind==DD_ACT_RAID_SWAP);
+        if(player)CHECK(!hm_native);
+        else CHECK(hm_native==3);
+        raid_swap_reset();sent=0;hm_native=0;
+        /* A stale UI copy/index must not resolve a different matching stack. */
+        putint(bag_copy,999);putptr(bag_ui+0x30,(uintptr_t)bag_copy);
+        uint8_t inv=0;uint16_t slot=0;bag_slot item;
+        walk_view scene;CHECK(hm_raid_view(&scene));
+        CHECK(!raid_widget_endpoint(&scene,(uintptr_t)bag_ui,&inv,&slot,&item));
+        hook_trinket_pickup_inventory(bag_ui,NULL,NULL,rs_drag);
+        CHECK(g_raid_drag.valid==2 && g_raid_drag.submitted);
+        CHECK(!hook_trinket_drop_inventory((direction?rs_source:rs_target)+0x10,NULL,rs_drag) && !sent && !hm_native);
+    }
     rs_reset(DD_ROLE_GUEST,0,0);order.u.raid_swap.inv[0]=0;order.u.raid_swap.slot[0]=1;
     order.u.raid_swap.inv[1]=1;order.u.raid_swap.slot[1]=2;
     order.u.raid_swap.count[0]=8;order.u.raid_swap.type[0]=0x6a930e79;order.u.raid_swap.id[0]=301;

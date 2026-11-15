@@ -10,9 +10,23 @@ static int raid_widget_endpoint(const walk_view *v,uint64_t widget,uint8_t *inv,
     if(!safe_read(widget+0x28,&inventory,8) || !safe_read(widget+0x30,&selected,8) || !selected ||
        !safe_read(widget+0xb8,&index,4))return 0;
     for(uint8_t i=0;i<2;i++) {
-        if(inventory!=bag_base(v->raid,i) || !bag_span(v->raid,i,&begin,&count) || index>=count)continue;
-        if(selected!=begin+(uint64_t)index*DD_ITEM_SIZE || !bag_read_slot(selected,item))return 0;
+        if(!bag_span(v->raid,i,&begin,&count) || index>=count ||
+           selected!=begin+(uint64_t)index*DD_ITEM_SIZE)continue;
+        /* A canonical Item roots itself even when the UI stores its containing
+         * wrapper rather than the native inventory subobject at+100. */
+        if(!bag_read_slot(selected,item))return 0;
         *inv=i;*slot=(uint16_t)index;return 1;
+    }
+    /* The bag's native InventorySlot may hold a presentation Item too. Its
+     * wrapper+100 is the rooted raid inventory; b8 is still the physical slot.
+     * Require its complete identity/quantity at that slot, never search for a
+     * similar stack (duplicates and stale split drags must not select another). */
+    if(inventory && inventory<=UINT64_MAX-0x100 && inventory+0x100==bag_base(v->raid,0) &&
+       bag_span(v->raid,0,&begin,&count) && index<count) {
+        bag_slot shown;
+        if(!bag_read_slot(selected,&shown) || !bag_read_slot(begin+(uint64_t)index*DD_ITEM_SIZE,item) ||
+           memcmp(&shown,item,sizeof shown))return 0;
+        *inv=0;*slot=(uint16_t)index;return 1;
     }
     dd_hamlet s;uint64_t canonical=0;uint32_t owner=0,at=0;
     if(!g_hamlet_open_model(&s) || !loot_widget_source(&s,widget,selected,&canonical,&owner,&at) ||
@@ -22,10 +36,23 @@ static int raid_widget_endpoint(const walk_view *v,uint64_t widget,uint8_t *inv,
 }
 static void raid_swap_pickup(void *ui,void *data) {
     walk_view v;memset(&g_raid_drag,0,sizeof g_raid_drag);
-    if(g_game_apply_depth || !walk_shared() || !g_walk_view(&v) || !loot_ready(&v) || loot_pending(&v) ||
-       !raid_widget_endpoint(&v,(uintptr_t)ui,&g_raid_drag.inv,&g_raid_drag.slot,&g_raid_drag.item) ||
-       g_raid_drag.item.count<=0)return;
+    if(g_game_apply_depth || !walk_shared() || !g_walk_view(&v) || !loot_ready(&v) || loot_pending(&v))return;
+    uint64_t wrapper=0,bar=0,loot_wrapper=0;
+    int rooted=safe_read((uintptr_t)ui+0x28,&wrapper,8) && wrapper &&
+        (wrapper==bag_base(v.raid,0) || (wrapper<=UINT64_MAX-0x100 && wrapper+0x100==bag_base(v.raid,0)) ||
+         wrapper==bag_base(v.raid,1) || (safe_read(v.display+DD_WALK_LOOT_OVERLAY+8,&bar,8) && bar &&
+         safe_read(bar+8,&loot_wrapper,8) && wrapper==loot_wrapper));
+    if(!raid_widget_endpoint(&v,(uintptr_t)ui,&g_raid_drag.inv,&g_raid_drag.slot,&g_raid_drag.item) ||
+       g_raid_drag.item.count<=0) {
+        if(rooted) { /* A stale known raid widget cannot fall through to a local-only native exchange. */
+            g_raid_drag.ui=(uintptr_t)ui;g_raid_drag.data=(uintptr_t)data;
+            g_raid_drag.valid=2;g_raid_drag.submitted=1;
+            dd_log("Raid swap: rooted source could not be verified; drag refused before effects");
+        }
+        return;
+    }
     g_raid_drag.ui=(uintptr_t)ui;g_raid_drag.data=(uintptr_t)data;g_raid_drag.valid=1;
+    dd_log("Raid swap: rooted source inventory=%u slot=%u quantity=%d",g_raid_drag.inv,g_raid_drag.slot,g_raid_drag.item.count);
 }
 static int raid_swap_finish(void *ui,void *data) {
     if(!g_raid_drag.submitted || g_raid_drag.ui!=(uintptr_t)ui || g_raid_drag.data!=(uintptr_t)data)return 0;
@@ -41,6 +68,7 @@ static int raid_swap_finish(void *ui,void *data) {
 static int raid_swap_drop(unsigned kind,void *ui,void *data) {
     walk_view v;bag_slot target;uint8_t inv=0;uint16_t slot=0;int32_t dragged=0;
     if(g_game_apply_depth || !g_raid_drag.valid || kind>=2 || !walk_shared() || !g_walk_view(&v))return -1;
+    if(g_raid_drag.valid==2)return 0;
     /* Existing drop hooks receive the secondary slot interface at primary+10. */
     if((uintptr_t)ui<0x10 || !raid_widget_endpoint(&v,(uintptr_t)ui-0x10,&inv,&slot,&target))return -1;
     if(inv==g_raid_drag.inv)return -1; /* existing within-bag drag/stack path */
