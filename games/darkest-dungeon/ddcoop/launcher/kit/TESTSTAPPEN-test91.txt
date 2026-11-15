@@ -1,4 +1,4 @@
-DDCoop test91 - trinkets and Farmstead Continue (2-4 players)
+DDCoop test91 - loot, Sanitarium and Farmstead fixes (2-4 players)
 
 Close every game before installing. Everyone uses91; a supported older launcher
 can accept the signed update from the host. No new solo/duo kit is included.
@@ -26,6 +26,20 @@ T4. Finish the raid and return to the Hamlet. Hero list sorting may differ
     remains, the combined report now includes each hero's stress/trinket digest.
     Also check the town event and blueprint reward if offered. Complete DLC
     compatibility is still under test; native shard shops are not integrated.
+T5. Shift-click Dog Treats in the raid bag. Cancel the game's confirmation first:
+    nothing changes. Confirm next: only that stack disappears on every screen.
+    Try as host and as a guest; another identical stack must remain untouched.
+T6. With a full bag, drag a whole stack onto a different item still in loot,
+    and repeat from loot onto a filled bag slot. Try supplies, gold and trinkets.
+    Both items must exchange places on every screen without a free bag slot.
+    Also swap an equipped trinket with one in loot. Split-stack exchange is not
+    added by this change; native same-item stacking keeps its existing path.
+T7. In the Sanitarium, place a hero and choose a negative quirk before accepting
+    the payment. Confirm the treatment; it must be the same everywhere. Repeat
+    as a guest with the host's panel closed, and with a disease/positive quirk.
+    Preview two different slots and then change the earlier one's treatment.
+    Conflicting different heroes in the same Sanitarium slot can be refused;
+    full visual preview reservations for that building are still separate work.
 
 If a move is refused or sharing stops, keep every launcher open and send the
 combined report from the host. Actual/expected trinket slots now have more detail.
