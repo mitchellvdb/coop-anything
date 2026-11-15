@@ -1,54 +1,56 @@
-# Current: test91 candidate — final preparation check pending (Codex,15 Nov2026)
+# Current: test91 — Codex,15 November2026
 
-Reviewed and retained Claude c7ad502/test90, including all87..90 changes. Independent
-baseline runtime and23 proof scripts pass;148 pins regenerate;29/29 release hashes
-and installer CRC match. Neither shared Cdev worktree was edited.
+Continue from the final test91 source archive / authorized GitHub project branch,
+not the stale local codex checkout. Reviewed Claude c7ad502/test90 and retained
+all87..90 changes; original runtime/23 proofs and29 artifact entries verified.
+Shared Cdev worktrees unchanged (old codex HANDOFF/PROVISIONS edits preserved).
 
-Owner's two requests are implemented and committed to the existing GitHub project
-branch: direct loot trinket equipping and Unequip All for every player.
-- Rooted ready OverlayLoot InventoryBar/widget/Item-copy resolution -> canonical
-  loot slot. Equal counts and occurrence distinguish duplicate items. Foreign,
-  closed/malformed/stale copies refuse; no arbitrary global ID search. The rooted
-  fixture failed against90, then passed. Separate non-trinket endpoint refusal now
-  logs exact expected/actual endpoints; do not claim every inventory cause solved.
-- Normal Unequip All confirmation opens locally; its exact confirmed model call
- 58ce70 from6ae19f becomes DD_ACT_UNEQUIP_ALL28, wire39/exacthello91. Four initiators,
- three receivers, logical pre/post digests, native model once, conservation,
- duplicate counts, building/dead heroes, closed peer panels, crossed/replayed/stale
- requests and partial effects covered. Native roster save/notify, guest-nosave,
- optional rooted RealmInventory+4058 dirty+538. Sorting remains guarded.
+Artifact: C:/dev/ddcoop-handoff/0.5.0-test91/DDCoop-install.zip
+Kit SHA256 6a9e40574f2f18f6b5b418a6f0211182e89ca21f54f9ea60839eee6b3272dd93
+Runtime SHA256 4204c85b29e64febdf86a357b4e7e5ad668422ebaf6541ef5cdaebaf551f655c
+Launcher SHA256 35a238eaecf404a6b8491340bd81af4ef719eff1daa625fedc304b29f565df47
+Owner-key CNG manifest serial91 verifies all3 binaries; runtime40/exacthello91,
+launcher wire3. No new duo kit. English test sheet T1-T7.
 
-The candidate is built and signed with the existing owner key (serial91), verified
-with launcher CNG and exact3 binary hashes. Installer CRC and exact payloads pass.
-Runtime daa5bdab900cd217175dbe946101807d7e6811cbd5bef26f8e1b12de0efb7044
-Launcher f7bfa8dc8b54520e0454a787cfe9fd29499df207b3c38e8ea9bb887f6d55464c
-Candidate installer bdef0e92a59f23d3afd330d9e9a01a5b13e18dd396dca368b01859d85637dfd4
-No new duo kit. No completed91 handoff/release metadata claim yet.
+Changes:
+- Current rooted OverlayLoot InventoryBar/widget Item copies resolve canonical
+  quantities/occurrences, including ID0 gold. Hero equipment resolves copied loot
+  destinations too; class/duplicate rules remain. Foreign/stale roots refuse.
+- Confirmed normal Unequip All58ce70/return6ae19f is action28; native operation
+  once, sorted logical pre/post digests and conservation, dead exclusion,
+  remote closed panels, native saves/notify and RealmInventory+4058 dirty+538.
+- RAID_SWAP29 exchanges whole different stacks between bag/loot with both exact
+  endpoints, area and last loot sequence, full bag, native owning Item lifetime,
+  postchecks and source finish/cancel suppression. No duplicate bag-delta publish.
+  Split exchange refuses; native same-item merge/within-bag routes unchanged.
+- Confirmed Shift helper737070 becomes ITEM24 before effects; exact canonical
+  source/count and quest guard; native decrement/clear/recount once then postcheck.
+- Sanitarium538830 preview observation tracks record hero per slot before paid
+  allocation. +238 alone is last-global and wrong for older slots. Closed-list
+  peers validate live draft hero then write the same existing treatment record.
+  Conflicting drafts refuse safely; payment/native confirmation unchanged.
+- Wave Continue780240/76fda0 is ITEM23; all players order the explicit native
+  teleport/fade once. Exact normal wave model/scene/phase/group/dungeon/Rules
+  preflight. Automatic WaveLogic/battle creation untouched; late copy waits.
+- Post-raid hero tuples sort by persistent ID; real stress/equipment/count/wallet
+  differences still stop. Numeric per-hero diagnostics added. Private return
+  report had matching wallet/count, different hero hash; Hear Ye/blueprint is
+  not a proven cause. Native roster-order false positive reproduced and fixed.
 
-PASS91 full Windows runtime/module/FIFO, isolated actual GL, bridge MSVC ASan,
-25 read-only proof scripts (24 adapters plus hook ABI),149 pins/145 addresses/96
-hooks. PASS Windows launcher tests apart from the actual preparation invocation,
-including core/relay/update/roster/snapshot and normal/solo diagnostics adapters.
-Native effects are modeled; real loot/Unequip All still need the owner's playtest.
+PASS final Windows runtime/module/FIFO, bridge MSVC ASan, isolated actual GL,
+full launcher including fake-Steam preparation/backup/restore after the owner
+closed real games,28 read-only proofs,151 pins/147 addresses/98 hooks, CNG
+signature/exact payload hashes/ZIP CRC and source privacy/tree verification.
+All4 initiators/3 receivers modeled. No actual game/save/installed mod changes.
 
-PENDING: the final fake-Steam preparation/restore test. A real game remains open;
-BUILD.md requires all real Darkest processes closed. Owner has been asked once.
-Never close it for them or bypass the guard. All fixtures use workspace files.
-After closure, run the compiled preparation test against final91 DDCoop/fake Steam,
-then finalize KIT/RELEASES/HANDOFF, source archive and verified new artifact folder
-C:/dev/ddcoop-handoff/0.5.0-test91. Current local continuation notes are outside
-publishable source. No actual game/save/installed mod/system change was made.
-
-New owner feedback while final test waits: Farmstead first-room-to-fight transition
-does not pull other copies along; latest return report has matching currencies
-and hero count17 but a different hero digest. Hear Ye/blueprint are suggestions,
-not proven causes. Investigate current private Desktop logs; do not alter a live game.
-
-Open90 curio-while-walking and shared inventory-full notice cases remain. Shared
-press-any-key and full live DLC verification remain open. No Linux/MinGW/Capstone
-or live native/game validation claimed. See runtime/TRINKETS-test91.md and the
-English91 T1/T2 test steps. All source changes are checkpointed; final release
-must not claim that the pending preparation check passed.
+Owner now tests T1-T7. Native effects/UI still need live confirmation. Open:
+Sanitarium same-slot visual preview reservations (conflicts currently refuse),
+split-stack exchanges, old curio-while-walking/full-notice cases, shared loading
+continuation, native shard shops/endless waves and complete all-DLC gameplay.
+No Linux/MinGW/Capstone or live native success claimed. Source-only per-step
+GitHub commits; no binaries, artwork, saves, private logs or keys in Git.
+See KIT.md and runtime/TRINKETS-test91.md, WAVE-test91.md, DISCARD-test91.md,
+RAID-SWAP-test91.md and TREATMENT-DRAFT-test91.md. Prior Claude credit retained.
 
 # Current: test90 (Claude Code, 15 Nov 2026): test89 plus Hamlet-return fix, town event recruit, Sanitarium
 
