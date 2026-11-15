@@ -94,9 +94,9 @@ Native supply integration remains gold-only; the shard APIs are model groundwork
 
 ## Variants and packaging
 
-No new solo/duo binary is provided for91. The old duo61 does not contain these
+No new solo/duo binary is provided for92. The old duo61 does not contain these
 changes. A new variant requires its own DD_DUO build, exact runtime pin and
-launcher tests; never relabel the older binary as91.
+launcher tests; never relabel the older binary as92.
 
 The verified custom SDL2 bootstrap pin remains:
 ad3c25374e9fb23ff5e388cde052a7359abad1cda9bf5afb6aad399e25e82589.
