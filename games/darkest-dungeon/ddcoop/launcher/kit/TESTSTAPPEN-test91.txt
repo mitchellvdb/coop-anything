@@ -1,4 +1,4 @@
-DDCoop test91 - direct loot equipment and Unequip All (2-4 players)
+DDCoop test91 - trinkets and Farmstead Continue (2-4 players)
 
 Close every game before installing. Everyone uses91; a supported older launcher
 can accept the signed update from the host. No new solo/duo kit is included.
@@ -16,6 +16,16 @@ T2. In the Hamlet equip several heroes, including a hero another player owns.
     Test each guest while the host stays idle with its inventory window closed.
     Try two players confirming at almost the same time: no lost/extra item.
     Automatic sorting is still blocked; that is separate from Unequip All.
+
+T3. In a Farmstead wave mission, let a guest press Continue from the first room
+    into the fight while the host does nothing. Every copy must start the same
+    fight without another click. Repeat from the host and, when available, at
+    a later wave-room Continue. Two simultaneous clicks must count only once.
+T4. Finish the raid and return to the Hamlet. Hero list sorting may differ
+    between players; that alone must not stop sharing. If a true hero difference
+    remains, the combined report now includes each hero's stress/trinket digest.
+    Also check the town event and blueprint reward if offered. Complete DLC
+    compatibility is still under test; native shard shops are not integrated.
 
 If a move is refused or sharing stops, keep every launcher open and send the
 combined report from the host. Actual/expected trinket slots now have more detail.
